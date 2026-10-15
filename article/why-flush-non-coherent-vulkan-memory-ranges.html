@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Why Flush Non-Coherent Vulkan Memory Ranges - vulkan</title>
+    <meta name="description" content="In Vulkan, managing device memory requires explicit control over synchronization between the host CPU and the graphics device. When working with memory types that lack the VKMEMORYPROPERTYHOSTCOHERENTBIT property, developers must explicitly call vkFlushMa">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/why-flush-non-coherent-vulkan-memory-ranges">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Why Flush Non-Coherent Vulkan Memory Ranges - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/why-flush-non-coherent-vulkan-memory-ranges" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Vulkan, managing device memory requires explicit control over synchronization between the host CPU and the graphics device. When working with memory types that lack the VKMEMORYPROPERTYHOSTCOHERENTBIT property, developers must explicitly call vkFlushMa" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="why-flush-non-coherent-vulkan-memory-ranges">Why Flush
+Non-Coherent Vulkan Memory Ranges</h1>
+<p>In Vulkan, managing device memory requires explicit control over
+synchronization between the host CPU and the graphics device. When
+working with memory types that lack the
+<code>VK_MEMORY_PROPERTY_HOST_COHERENT_BIT</code> property, developers
+must explicitly call <code>vkFlushMappedMemoryRanges</code> after
+writing data from the host. This article explains the architectural
+reasons behind this requirement, focusing on CPU caching behavior,
+hardware-level memory coherency, and performance implications.</p>
+<h3 id="the-role-of-cpu-caches">The Role of CPU Caches</h3>
+<p>When a CPU thread writes to a mapped Vulkan memory pointer via
+<code>vkMapMemory</code>, the write operation does not immediately
+travel to physical system RAM or VRAM. Instead, modern CPUs write to
+high-speed local caches (L1, L2, and L3) to minimize latency. These
+cached modifications remain "dirty" within the CPU's local cache
+hierarchy until the cache lines are evicted or explicitly pushed to
+downstream memory.</p>
+<h3 id="host-coherent-vs-non-coherent-memory">Host-Coherent vs.
+Non-Coherent Memory</h3>
+<p>Vulkan categorizes host-accessible memory using specific property
+flags:</p>
+<ul>
+<li><strong>Host-Coherent Memory
+(<code>VK_MEMORY_PROPERTY_HOST_COHERENT_BIT</code>):</strong> The
+hardware automatically guarantees that writes made by the host are made
+visible to the device without manual intervention. This is typically
+achieved via hardware cache snooping or write-through cache
+policies.</li>
+<li><strong>Non-Coherent Memory:</strong> The hardware does not
+automatically synchronize CPU caches with the device. The memory
+subsystem relies entirely on the application to signal when cached data
+must be transferred.</li>
+</ul>
+<h3 id="why-flushing-is-required">Why Flushing Is Required</h3>
+<p>Because non-coherent memory lacks automatic synchronization
+mechanisms, the GPU has no way of knowing that data in the CPU cache has
+changed. If the GPU attempts to read from a mapped range before the
+cache is written back, it will read stale or uninitialized data directly
+from RAM.</p>
+<p>Calling <code>vkFlushMappedMemoryRanges</code> instructs the CPU to
+clean the specified dirty cache lines, forcing the written bytes out of
+the host caches and into a memory domain accessible by the GPU. Only
+after this flush operation completes—and after appropriate pipeline
+barriers or semaphores synchronize the transfer—can the GPU reliably
+access the modified payload.</p>
+<h3 id="architectural-flexibility-and-performance">Architectural
+Flexibility and Performance</h3>
+<p>Vulkan delegates cache flushing to the developer to maximize
+performance across diverse hardware architectures:</p>
+<ol type="1">
+<li><strong>Eliminating Hardware Overhead:</strong> On architectures
+without hardware-level cache snooping (common in mobile System-on-Chips
+and certain discrete GPU configurations), enforcing automatic coherency
+requires expensive write-through caches or bus monitoring, which
+consumes significant memory bandwidth and power.</li>
+<li><strong>Batching Memory Operations:</strong> Explicit flushing
+allows developers to perform multiple writes across large buffers and
+flush them in a single, batched operation. This minimizes cache line
+evictions and reduces memory bus traffic compared to continuous implicit
+synchronization.</li>
+</ol>
+<p>In summary, <code>vkFlushMappedMemoryRanges</code> is essential for
+non-coherent memory because it bridges the gap between host CPU caches
+and device-visible storage, ensuring data integrity without imposing
+hardware-enforced performance penalties.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

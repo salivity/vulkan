@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Non-Temporal Memory Access in Vulkan Explained - vulkan</title>
+    <meta name="description" content="Non-temporal memory access is a technique used to read or write data while bypassing or minimizing retention in the cache hierarchy, preventing large, single-use datasets from evicting useful cached data. In Vulkan, developers can signal non-temporal acce">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/non-temporal-memory-access-in-vulkan-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Non-Temporal Memory Access in Vulkan Explained - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/non-temporal-memory-access-in-vulkan-explained" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Non-temporal memory access is a technique used to read or write data while bypassing or minimizing retention in the cache hierarchy, preventing large, single-use datasets from evicting useful cached data. In Vulkan, developers can signal non-temporal acce" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="non-temporal-memory-access-in-vulkan-explained">Non-Temporal
+Memory Access in Vulkan Explained</h1>
+<p>Non-temporal memory access is a technique used to read or write data
+while bypassing or minimizing retention in the cache hierarchy,
+preventing large, single-use datasets from evicting useful cached data.
+In Vulkan, developers can signal non-temporal access primarily at the
+shader level through SPIR-V memory access operands and compiler
+intrinsics, rather than through coarse device memory allocation flags.
+This article explains how non-temporal memory operates, its benefits in
+graphics and compute workloads, and how to implement it within the
+Vulkan API ecosystem.</p>
+<h3 id="what-is-non-temporal-memory-access">What Is Non-Temporal Memory
+Access?</h3>
+<p>Standard memory transactions rely on temporal locality: the
+assumption that memory accessed once is likely to be accessed again in
+the near future. As a result, processors automatically populate multiple
+levels of cache (L1, L2, L3) with fetched or written cache lines.</p>
+<p>Non-temporal memory access explicitly breaks this assumption. It
+informs the underlying memory controller and processor cores that the
+target data is "streaming" in nature—read once or written once, and
+unlikely to be reused immediately. Common examples include writing final
+frame output to a framebuffer, reading continuous sensory or particle
+data, or processing large compute staging buffers.</p>
+<p>By applying non-temporal hints:</p>
+<ul>
+<li><strong>Cache Pollution is Reduced:</strong> Single-use data does
+not push high-priority, frequently reused data out of the cache.</li>
+<li><strong>Bandwidth is Optimized:</strong> On write operations,
+non-temporal operations can avoid "read-for-ownership" cache allocation
+stalls, streaming writes directly to lower-level memory or main
+RAM.</li>
+</ul>
+<h3 id="signaling-non-temporal-access-in-vulkan">Signaling Non-Temporal
+Access in Vulkan</h3>
+<p>Vulkan handles non-temporal signaling through a combination of
+shader-level execution instructions and memory architecture
+configurations rather than a dedicated high-level API call.</p>
+<h4 id="1-spir-v-memory-operands">1. SPIR-V Memory Operands</h4>
+<p>The core mechanism for signaling non-temporal access in Vulkan
+happens in the intermediate representation (SPIR-V) executed by the
+GPU.</p>
+<p>The SPIR-V specification defines the <code>NonTemporal</code> memory
+operand for memory operations such as <code>OpLoad</code> and
+<code>OpStore</code>. When a compiler generates a load or store
+instruction with the <code>NonTemporal</code> mask set, it acts as a
+direct hint to the GPU driver and hardware compiler that the transaction
+has low temporal locality.</p>
+<p>Depending on the GPU architecture (such as AMD RDNA or NVIDIA Ada
+Lovelace/Hopper), the shader compiler may translate this operand into
+specialized machine instructions:</p>
+<ul>
+<li>On architectures with explicit bypass instructions, it instructs the
+hardware to bypass the L1 cache or mark the cache lines as immediately
+evictable (e.g., LRU - Least Recently Used bias).</li>
+<li>On hardware that does not support non-temporal instructions, the GPU
+driver simply treats the instruction as a standard load or store,
+preserving execution correctness.</li>
+</ul>
+<h4 id="2-shading-languages-glsl-and-hlsl">2. Shading Languages (GLSL
+and HLSL)</h4>
+<p>Because Vulkan shaders are written in high-level languages and
+compiled to SPIR-V, developers must ensure their shading code emits the
+<code>NonTemporal</code> operand.</p>
+<ul>
+<li><strong>GLSL:</strong> The <code>GL_EXT_vulkan_memory_model</code>
+or modern GLSL revisions allow memory qualifiers. Compilers like
+<code>glslang</code> map volatile or non-temporal qualifiers to the
+corresponding SPIR-V flags on storage buffers or image variables.</li>
+<li><strong>HLSL via DXC:</strong> Microsoft's DirectX Shader Compiler
+(DXC) can target SPIR-V (<code>-spirv</code>). Utilizing structured
+buffer or raw buffer read/write intrinsics that support non-temporal
+hints translates into the corresponding SPIR-V flags during
+compilation.</li>
+</ul>
+<h4 id="3-host-side-memory-properties">3. Host-Side Memory
+Properties</h4>
+<p>For host-to-device communication, Vulkan does not feature an explicit
+<code>VK_MEMORY_PROPERTY_NON_TEMPORAL_BIT</code>. Instead, developers
+control caching behavior through specific memory types discovered via
+<code>vkGetPhysicalDeviceMemoryProperties</code>:</p>
+<ul>
+<li><strong>Uncached Host Memory:</strong> Allocating memory without the
+<code>VK_MEMORY_PROPERTY_HOST_CACHED_BIT</code> allows writes from the
+CPU to stream directly without populating the CPU's cache, functioning
+similarly to non-temporal stores (such as write-combining memory).</li>
+<li><strong>Explicit Cache Flushing:</strong> When using host-visible,
+non-coherent memory, explicit calls to
+<code>vkFlushMappedMemoryRanges</code> push data out of host write
+buffers without maintaining strict cache retention policies.</li>
+</ul>
+<h3 id="hardware-considerations">Hardware Considerations</h3>
+<p>Because non-temporal hints in Vulkan are implemented at the
+instruction level, they are fundamentally treated as hints. A GPU is
+never required to bypass its cache if doing so contradicts internal
+hardware state or synchronization guarantees. However, when applied
+correctly to massive streaming datasets, non-temporal operations remain
+an effective tool for preventing GPU cache thrashing and maximizing
+sustained memory bandwidth.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

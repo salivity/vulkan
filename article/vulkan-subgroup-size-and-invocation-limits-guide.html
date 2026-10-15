@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Subgroup Size and Invocation Limits Guide - vulkan</title>
+    <meta name="description" content="In Vulkan, efficient GPU computing relies on understanding the hardware execution granularity known as subgroups. This article explains what a subgroup size represents, why it varies across hardware architectures, and how an engine queries subgroup limits">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-subgroup-size-and-invocation-limits-guide">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Subgroup Size and Invocation Limits Guide - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-subgroup-size-and-invocation-limits-guide" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Vulkan, efficient GPU computing relies on understanding the hardware execution granularity known as subgroups. This article explains what a subgroup size represents, why it varies across hardware architectures, and how an engine queries subgroup limits" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-subgroup-size-and-invocation-limits-guide">Vulkan
+Subgroup Size and Invocation Limits Guide</h1>
+<p>In Vulkan, efficient GPU computing relies on understanding the
+hardware execution granularity known as subgroups. This article explains
+what a subgroup size represents, why it varies across hardware
+architectures, and how an engine queries subgroup limits and
+capabilities using standard Vulkan structures to deploy portable,
+vendor-agnostic compute and graphics pipelines.</p>
+<h3 id="understanding-subgroup-size">Understanding Subgroup Size</h3>
+<p>A subgroup is a collection of invocations (threads) executing
+concurrently in lockstep on GPU execution units. Depending on the
+hardware vendor, this concept is physically implemented as an NVIDIA
+Warp (typically 32 invocations), an AMD Wavefront (either 32 or 64
+invocations), or an Intel Execution Unit thread (often 8, 16, or 32
+invocations).</p>
+<p>The <code>subgroupSize</code> is the number of invocations in a
+single subgroup. Invocations within the same subgroup can communicate
+directly through on-chip SIMD-lane registers via subgroup
+operations—such as ballots, shuffles, votes, and arithmetic
+reductions—without needing to synchronize through slower Workgroup
+Shared Memory (<code>shared</code> variables) or global memory.</p>
+<h3 id="querying-base-subgroup-properties">Querying Base Subgroup
+Properties</h3>
+<p>Vulkan 1.1 standardized subgroup functionality into core API queries.
+To determine the subgroup characteristics of a device, an engine chains
+<code>VkPhysicalDeviceSubgroupProperties</code> into the
+<code>pNext</code> pointer of <code>VkPhysicalDeviceProperties2</code>
+and calls <code>vkGetPhysicalDeviceProperties2</code>:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>VkPhysicalDeviceSubgroupProperties subgroupProperties<span class="op">{};</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>subgroupProperties<span class="op">.</span>sType <span class="op">=</span> VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES<span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>VkPhysicalDeviceProperties2 deviceProperties<span class="op">{};</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>deviceProperties<span class="op">.</span>sType <span class="op">=</span> VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2<span class="op">;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>deviceProperties<span class="op">.</span>pNext <span class="op">=</span> <span class="op">&amp;</span>subgroupProperties<span class="op">;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>vkGetPhysicalDeviceProperties2<span class="op">(</span>physicalDevice<span class="op">,</span> <span class="op">&amp;</span>deviceProperties<span class="op">);</span></span></code></pre></div>
+<p>After the call, <code>subgroupProperties</code> provides critical
+vendor-independent baseline information:</p>
+<ul>
+<li><code>subgroupSize</code>: The default invocation size of a subgroup
+for the physical device.</li>
+<li><code>supportedStages</code>: A bitmask of
+<code>VkShaderStageFlagBits</code> indicating in which pipeline stages
+subgroup operations can be executed (e.g., compute, fragment,
+vertex).</li>
+<li><code>supportedOperations</code>: A bitfield representing supported
+subgroup operations, including
+<code>VK_SUBGROUP_FEATURE_BASIC_BIT</code>,
+<code>VK_SUBGROUP_FEATURE_VOTE_BIT</code>,
+<code>VK_SUBGROUP_FEATURE_BALLOT_BIT</code>, and
+<code>VK_SUBGROUP_FEATURE_SHUFFLE_BIT</code>.</li>
+<li><code>quadOperationsInAllStages</code>: A boolean indicating whether
+2x2 quad operations (like derivative-adjacent helpers) are available in
+all supported stages.</li>
+</ul>
+<h3 id="querying-dynamic-and-variable-subgroup-limits">Querying Dynamic
+and Variable Subgroup Limits</h3>
+<p>Modern architectures, such as AMD's RDNA, support multiple wave sizes
+(e.g., Wave32 and Wave64) selectable per-pipeline. To query and control
+variable subgroup sizes, engines use features introduced in the
+<code>VK_EXT_subgroup_size_control</code> extension and integrated into
+Vulkan 1.3 core.</p>
+<p>An engine queries the bounds of subgroup sizes by appending
+<code>VkPhysicalDeviceSubgroupSizeControlProperties</code> to
+<code>VkPhysicalDeviceProperties2</code>:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>VkPhysicalDeviceSubgroupSizeControlProperties extSubgroupProperties<span class="op">{};</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>extSubgroupProperties<span class="op">.</span>sType <span class="op">=</span> VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_PROPERTIES<span class="op">;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>VkPhysicalDeviceProperties2 deviceProperties<span class="op">{};</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>deviceProperties<span class="op">.</span>sType <span class="op">=</span> VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2<span class="op">;</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>deviceProperties<span class="op">.</span>pNext <span class="op">=</span> <span class="op">&amp;</span>extSubgroupProperties<span class="op">;</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>vkGetPhysicalDeviceProperties2<span class="op">(</span>physicalDevice<span class="op">,</span> <span class="op">&amp;</span>deviceProperties<span class="op">);</span></span></code></pre></div>
+<p>This struct exposes:</p>
+<ul>
+<li><code>minSubgroupSize</code>: The minimum subgroup size supported by
+the device (e.g., 32 on AMD, 8 on Intel).</li>
+<li><code>maxSubgroupSize</code>: The maximum subgroup size supported by
+the device (e.g., 64 on AMD, 32 on Intel/NVIDIA).</li>
+<li><code>maxComputeWorkgroupSubgroups</code>: The maximum number of
+subgroups that can participate in a single compute workgroup.</li>
+<li><code>requiredSubgroupSizeStages</code>: A bitmask of shader stages
+where a developer can explicitly force a specific subgroup size.</li>
+</ul>
+<h3 id="requesting-explicit-subgroup-sizes-in-pipelines">Requesting
+Explicit Subgroup Sizes in Pipelines</h3>
+<p>When <code>subgroupSizeControl</code> features are enabled via
+<code>VkPhysicalDeviceSubgroupSizeControlFeatures</code>, an engine can
+request a specific subgroup size for a shader stage by attaching
+<code>VkPipelineShaderStageRequiredSubgroupSizeCreateInfo</code> to the
+<code>pNext</code> of <code>VkPipelineShaderStageCreateInfo</code>.</p>
+<p>Engines typically use these queries to tailor compute workloads:
+selecting smaller sizes to maximize register allocation and occupancy,
+or choosing larger sizes to maximize cross-invocation sharing across
+broader data sets.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

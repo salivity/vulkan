@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Shader Pointer Safety: Buffer Device Addresses - vulkan</title>
+    <meta name="description" content="The introduction of the Buffer Device Address feature in Vulkan allows shaders to access memory directly through raw 64-bit GPU pointers, significantly reducing descriptor management overhead while introducing the potential for memory corruption and devic">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-shader-pointer-safety-buffer-device-addresses">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Shader Pointer Safety: Buffer Device Addresses - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-shader-pointer-safety-buffer-device-addresses" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The introduction of the Buffer Device Address feature in Vulkan allows shaders to access memory directly through raw 64-bit GPU pointers, significantly reducing descriptor management overhead while introducing the potential for memory corruption and devic" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-shader-pointer-safety-buffer-device-addresses">Vulkan
+Shader Pointer Safety: Buffer Device Addresses</h1>
+<p>The introduction of the Buffer Device Address feature in Vulkan
+allows shaders to access memory directly through raw 64-bit GPU
+pointers, significantly reducing descriptor management overhead while
+introducing the potential for memory corruption and device crashes.
+Dereferencing raw GPU addresses bypasses the safety guarantees provided
+by traditional descriptor sets, requiring developers to manually enforce
+rules that prevent hardware faults, undefined behavior, and security
+vulnerabilities. This article covers the essential pointer safety
+precautions required when working with physical storage buffers and raw
+GPU pointer dereferencing in Vulkan shaders.</p>
+<h3 id="enforce-strict-memory-alignment">Enforce Strict Memory
+Alignment</h3>
+<p>SPIR-V and GLSL physical storage buffer pointers mandate strict data
+alignment according to the underlying type and layout qualifiers.
+Accessing memory through an unaligned address can cause silent data
+corruption, performance degradation, or immediate device loss depending
+on the underlying GPU architecture:</p>
+<ul>
+<li><strong>Explicit Alignment Qualifiers:</strong> Always declare
+structs with the <code>layout(buffer_reference, scalar)</code> or
+standard layout decorations, explicitly using the
+<code>layout(align = N)</code> modifier where necessary.</li>
+<li><strong>Match Scalar Boundaries:</strong> Ensure that 64-bit values
+(such as <code>uint64_t</code> or nested pointers) are aligned to 8-byte
+boundaries, vectors are aligned to their total vector size or scalar
+alignment depending on the active layout rules, and complex structures
+meet the base alignment of their largest member.</li>
+<li><strong>Address Arithmetic Verification:</strong> When performing
+pointer arithmetic on the GPU or calculating offsets dynamically, ensure
+computed addresses are integer multiples of the target data type's
+required alignment.</li>
+</ul>
+<h3 id="validate-pointer-bounds-and-address-ranges">Validate Pointer
+Bounds and Address Ranges</h3>
+<p>Because raw pointers do not inherently store buffer limits, hardware
+cannot automatically detect out-of-bounds reads or writes:</p>
+<ul>
+<li><strong>Metadata Structures:</strong> Pair raw memory pointers with
+an explicit size or element count when passing data to the shader.
+Structure your payload so the pointer and its allowable size travel
+together (e.g., a custom <code>FatPointer</code> struct containing
+<code>uint64_t address</code> and
+<code>uint32_t sizeInBytes</code>).</li>
+<li><strong>In-Shader Clamping:</strong> Verify that calculated offsets
+remain within the allocated buffer range prior to dereferencing. If an
+index exceeds the safe range, branch away from the dereference or clamp
+the read to a known dummy structure.</li>
+<li><strong>Pipeline Robustness:</strong> When available, evaluate
+extensions such as <code>VK_EXT_pipeline_robustness</code> or native
+hardware robustness features. Note, however, that standard
+<code>robustBufferAccess</code> typically does not cover physical
+storage buffer access; manual checks remain the primary defense.</li>
+</ul>
+<h3 id="guard-against-null-and-uninitialized-pointers">Guard Against
+Null and Uninitialized Pointers</h3>
+<p>GPU MMUs handle null dereferences differently across hardware
+vendors; some hang the GPU, while others return undefined data:</p>
+<ul>
+<li><strong>Explicit Null Checks:</strong> Standard SPIR-V physical
+storage buffer implementations define a null pointer as <code>0</code>
+(or <code>uint64_t(0)</code>). Always check <code>if (ptr != 0)</code>
+before attempting any memory access on pointers that may be
+conditionally populated.</li>
+<li><strong>Initialization Guarantees:</strong> Ensure all pointer
+variables in shader storage blocks or push constants are explicitly set
+to zero on the host CPU or by a compute clearing pass before being
+dispatched to consumer shaders.</li>
+</ul>
+<h3 id="manage-lifetime-and-synchronization">Manage Lifetime and
+Synchronization</h3>
+<p>Raw device addresses do not carry dependency tracking or automatic
+resource lifetime management:</p>
+<ul>
+<li><strong>Host Resource Lifetime:</strong> The CPU application must
+guarantee that underlying <code>VkDeviceMemory</code> allocations remain
+valid for the entire duration of all command buffers accessing those
+addresses. Freeing or aliasing a buffer while the GPU executes
+invalidates the address.</li>
+<li><strong>Pipeline Barriers:</strong> Ensure explicit memory barriers
+(<code>vkCmdPipelineBarrier2</code>) define the correct source and
+destination stages and access masks. For raw addresses, operations fall
+under <code>VK_ACCESS_2_SHADER_STORAGE_READ_BIT</code> and
+<code>VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT</code>.</li>
+<li><strong>Coherency and Visibility:</strong> Use non-cached memory
+flags or manage host-to-device visibility transitions correctly if
+pointers point to host-visible memory accessed concurrently by the host
+and device.</li>
+</ul>
+<h3 id="utilize-gpu-assisted-validation">Utilize GPU-Assisted
+Validation</h3>
+<p>Debugging raw pointer faults in production shaders is difficult due
+to asynchronous execution:</p>
+<ul>
+<li><strong>Vulkan Validation Layers:</strong> Enable GPU-Assisted
+Validation (<code>VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT</code>)
+in the Khronos validation layer during development. This layer
+instruments shaders at runtime to verify that raw device addresses fall
+within valid <code>VkBuffer</code> allocations.</li>
+<li><strong>Shader Printf:</strong> Use
+<code>VK_KHR_shader_non_semantic_info</code> to enable debug printing
+within shaders. If an unexpected memory state occurs, printing the
+64-bit hex value of the address helps verify whether base offsets or
+alignment computations have drifted.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

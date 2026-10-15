@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Synchronization Validation: Catching Data Hazards - vulkan</title>
+    <meta name="description" content="The Vulkan synchronization validation layer tracks resource states and simulated execution timelines to identify missing pipeline barriers, improper access flags, and data hazards like Read-After-Write (RAW), Write-After-Read (WAR), and Write-After-Write">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-synchronization-validation-catching-data-hazards">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Synchronization Validation: Catching Data Hazards - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-synchronization-validation-catching-data-hazards" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The Vulkan synchronization validation layer tracks resource states and simulated execution timelines to identify missing pipeline barriers, improper access flags, and data hazards like Read-After-Write (RAW), Write-After-Read (WAR), and Write-After-Write" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-synchronization-validation-catching-data-hazards">Vulkan
+Synchronization Validation: Catching Data Hazards</h1>
+<p>The Vulkan synchronization validation layer tracks resource states
+and simulated execution timelines to identify missing pipeline barriers,
+improper access flags, and data hazards like Read-After-Write (RAW),
+Write-After-Read (WAR), and Write-After-Write (WAW). Because Vulkan
+requires developers to manage memory visibility and execution
+dependencies explicitly, manual synchronization is prone to subtle bugs.
+The synchronization validation layer automates bug detection by
+intercepting API commands, tracking resource usage per subresource, and
+checking whether proper execution and memory dependencies exist before
+operations are scheduled.</p>
+<h3 id="shadow-state-and-resource-access-tracking">Shadow State and
+Resource Access Tracking</h3>
+<p>To catch missing barriers, the synchronization validation layer
+maintains an internal shadow state of every active resource, including
+buffers and individual image subresources (down to specific mip levels
+and array layers). Whenever a command that accesses a resource is
+recorded—such as <code>vkCmdDraw</code>, <code>vkCmdDispatch</code>, or
+<code>vkCmdCopyBuffer</code>—the layer logs an access record. This
+record stores:</p>
+<ul>
+<li>The specific resource and subresource range.</li>
+<li>The pipeline stage executing the command (e.g.,
+<code>VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT</code>).</li>
+<li>The access type (e.g., <code>VK_ACCESS_SHADER_READ_BIT</code> or
+<code>VK_ACCESS_SHADER_WRITE_BIT</code>).</li>
+<li>The sequence order and queue context in which the command
+occurs.</li>
+</ul>
+<h3 id="detecting-data-hazards">Detecting Data Hazards</h3>
+<p>Whenever a new read or write operation is encountered, the validation
+layer compares the incoming access against the previous recorded access
+for that exact memory region. A data hazard is flagged if:</p>
+<ol type="1">
+<li><strong>Read-After-Write (RAW):</strong> A read command follows a
+write command without an execution barrier ensuring the write has
+completed and an access barrier ensuring memory visibility to the
+reading stage.</li>
+<li><strong>Write-After-Read (WAR):</strong> A write command is recorded
+on memory that is currently being read by an earlier pipeline stage that
+has not finished execution.</li>
+<li><strong>Write-After-Write (WAW):</strong> Two successive write
+commands target the same memory location concurrently or out of order
+without an explicit barrier ordering them.</li>
+</ol>
+<p>If a hazard is detected, the layer generates an error detailing the
+current command, the previous conflicting command, the involved stages,
+and the exact missing access masks.</p>
+<h3 id="modeling-pipeline-barriers-and-render-passes">Modeling Pipeline
+Barriers and Render Passes</h3>
+<p>The layer continuously evaluates synchronization commands, such as
+<code>vkCmdPipelineBarrier</code>, <code>vkCmdPipelineBarrier2</code>,
+<code>vkCmdWaitEvents</code>, and subpass dependencies in
+<code>VkRenderPass</code>. When a barrier is recorded, the layer updates
+its tracking state machine:</p>
+<ul>
+<li><strong>Execution Dependencies:</strong> It verifies that
+<code>srcStageMask</code> covers the pipeline stages of prior operations
+and <code>dstStageMask</code> covers the stages of subsequent
+operations.</li>
+<li><strong>Memory Dependencies:</strong> It checks whether
+<code>srcAccessMask</code> flushes pending writes to memory and
+<code>dstAccessMask</code> invalidates caches so that subsequent reads
+receive updated data.</li>
+<li><strong>Layout Transitions:</strong> For images, it verifies that
+transitions between <code>VkImageLayout</code> states do not occur while
+writes are pending or reads are still in-flight.</li>
+</ul>
+<p>If a barrier defines insufficient stages or access masks to resolve
+prior writes, the layer leaves the hazard state unresolved and reports
+an error as soon as the dependent access occurs.</p>
+<h3 id="cross-queue-and-multi-command-buffer-tracking">Cross-Queue and
+Multi-Command Buffer Tracking</h3>
+<p>Hazards can span multiple command buffers and queue submissions. The
+validation layer tracks queue submissions (<code>vkQueueSubmit</code>)
+and evaluates synchronization primitives such as timeline semaphores,
+binary semaphores, and fences. It ensures that queue family ownership
+transfers (<code>VK_SHARING_MODE_EXCLUSIVE</code>) are correctly
+initiated on the release queue and matched on the acquire queue before
+the destination queue accesses the resource. By evaluating the
+collective graph of command buffers, semaphores, and barriers, the layer
+identifies race conditions that standard Vulkan validation checks cannot
+detect.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

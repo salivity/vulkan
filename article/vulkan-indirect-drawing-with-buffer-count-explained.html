@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Indirect Drawing with Buffer Count Explained - vulkan</title>
+    <meta name="description" content="Indirect drawing with buffer count is an advanced rendering technique in Vulkan that allows the GPU to determine both the parameters of a draw call and the total number of draws executed, without requiring CPU intervention. In modern GPU-driven particle s">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-indirect-drawing-with-buffer-count-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Indirect Drawing with Buffer Count Explained - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-indirect-drawing-with-buffer-count-explained" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Indirect drawing with buffer count is an advanced rendering technique in Vulkan that allows the GPU to determine both the parameters of a draw call and the total number of draws executed, without requiring CPU intervention. In modern GPU-driven particle s" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-indirect-drawing-with-buffer-count-explained">Vulkan
+Indirect Drawing with Buffer Count Explained</h1>
+<p>Indirect drawing with buffer count is an advanced rendering technique
+in Vulkan that allows the GPU to determine both the parameters of a draw
+call and the total number of draws executed, without requiring CPU
+intervention. In modern GPU-driven particle simulations, this mechanism
+allows compute shaders to simulate, cull, and allocate active particles
+entirely in device memory. By reading the execution count directly from
+a GPU buffer, Vulkan eliminates CPU-GPU synchronization bottlenecks,
+enabling large-scale particle systems to run with maximum throughput and
+minimal CPU overhead.</p>
+<h3 id="what-is-indirect-drawing-with-buffer-count">What is Indirect
+Drawing with Buffer Count?</h3>
+<p>Standard indirect rendering in Vulkan, performed using commands like
+<code>vkCmdDrawIndirect</code> or <code>vkCmdDrawIndexedIndirect</code>,
+shifts the specification of draw parameters—such as vertex count,
+instance count, and offsets—from the CPU into a <code>VkBuffer</code>.
+However, standard indirect calls still require the CPU to define the
+exact number of draw commands (<code>drawCount</code>) to execute.</p>
+<p>Vulkan expands this capability through
+<code>vkCmdDrawIndirectCount</code> and
+<code>vkCmdDrawIndexedIndirectCount</code> (introduced via the
+<code>VK_KHR_draw_indirect_count</code> extension and integrated into
+core Vulkan 1.2). With indirect drawing with buffer count, the CPU
+specifies a conservative <code>maxDrawCount</code>, but the actual
+number of draw calls to process is read directly from a designated
+<code>countBuffer</code> at a specific byte offset. This means the GPU
+itself dictates how many commands within the indirect parameter buffer
+are executed at draw time.</p>
+<h3 id="the-challenge-of-traditional-particle-rendering">The Challenge
+of Traditional Particle Rendering</h3>
+<p>Particle simulations are inherently dynamic. Particles continuously
+spawn, disperse, collide, and expire.</p>
+<p>In traditional rendering architectures, managing variable particle
+counts creates a structural dilemma:</p>
+<ol type="1">
+<li><strong>CPU Readback:</strong> The GPU simulates particles in a
+compute pass, determines how many are alive, and sends this count back
+to the CPU. This readback causes pipeline bubbles, stalls the rendering
+pipeline, and introduces multi-frame latency.</li>
+<li><strong>Padding and Redundancy:</strong> The GPU issues a fixed
+maximum number of draws, and dead particles are handled via degenerated
+geometry or discarded in the vertex/fragment shader. This approach
+wastes memory bandwidth and vertex processing hardware on non-existent
+elements.</li>
+</ol>
+<h3 id="powering-gpu-driven-particle-simulations">Powering GPU-Driven
+Particle Simulations</h3>
+<p>Indirect drawing with buffer count resolves these issues by allowing
+the simulation, culling, and rendering pipelines to run autonomously on
+the GPU.</p>
+<h4 id="1-simulation-via-compute-shaders">1. Simulation via Compute
+Shaders</h4>
+<p>A compute shader simulates the particle state (position, velocity,
+life cycle). Particles that remain alive are written to a compacted
+active buffer, or their geometry parameters are written into an array of
+<code>VkDrawIndirectCommand</code> structures stored in an indirect
+command buffer.</p>
+<h4 id="2-atomic-count-generation">2. Atomic Count Generation</h4>
+<p>During the simulation or compaction pass, the compute shader uses
+atomic operations (such as <code>atomicAdd</code>) to maintain a tally
+of living particles. The resulting value is written directly into the
+<code>countBuffer</code> as a 32-bit unsigned integer. This value
+represents the exact number of valid commands the GPU needs to
+execute.</p>
+<h4 id="3-execution-synchronization">3. Execution Synchronization</h4>
+<p>To transition from the compute stage to the rasterization stage, a
+pipeline barrier is inserted:</p>
+<ul>
+<li><strong>Source Stage:</strong>
+<code>VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT</code></li>
+<li><strong>Destination Stage:</strong>
+<code>VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT</code></li>
+<li><strong>Access Mask:</strong>
+<code>VK_ACCESS_SHADER_WRITE_BIT</code> to
+<code>VK_ACCESS_INDIRECT_COMMAND_READ_BIT</code></li>
+</ul>
+<p>This barrier guarantees that all compute writes to both the indirect
+draw command buffer and the count buffer are visible before the draw
+command executes.</p>
+<h4 id="4-issuing-vkcmddrawindirectcount">4. Issuing
+<code>vkCmdDrawIndirectCount</code></h4>
+<p>The host records <code>vkCmdDrawIndirectCount</code> during command
+buffer generation:</p>
+<ul>
+<li>The indirect command buffer provides the draw arguments.</li>
+<li>The <code>countBuffer</code> provides the dynamic execution
+count.</li>
+<li>The <code>maxDrawCount</code> prevents buffer overruns if the
+simulation exceeds anticipated limits.</li>
+</ul>
+<p>The GPU evaluates the count directly from memory and renders only the
+live particles.</p>
+<h3 id="architectural-advantages">Architectural Advantages</h3>
+<ul>
+<li><strong>Zero Host-Device Roundtrips:</strong> Because the CPU never
+queries particle states or counts, the rendering pipeline remains
+completely asynchronous, eliminating pipeline synchronization
+stalls.</li>
+<li><strong>Hardware Efficiency:</strong> Vertex and primitive
+processing stages process only viable geometry, conserving rasterization
+throughput and bandwidth.</li>
+<li><strong>High Scalability:</strong> Complex operations—such as
+frustum culling, occlusion culling, dynamic Level of Detail (LOD)
+sorting, and dynamic emitter spawning—can be layered into the compute
+step, scaling gracefully to millions of active particles.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

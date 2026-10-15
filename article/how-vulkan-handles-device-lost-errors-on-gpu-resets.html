@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How Vulkan Handles Device Lost Errors on GPU Resets - vulkan</title>
+    <meta name="description" content="This article explores how the Vulkan API manages the VKERRORDEVICELOST error when a GPU encounters a hardware hang, crash, or driver reset. It covers the root causes of device loss—such as operating system watchdog timeouts—how Vulkan signals this state t">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/how-vulkan-handles-device-lost-errors-on-gpu-resets">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How Vulkan Handles Device Lost Errors on GPU Resets - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/how-vulkan-handles-device-lost-errors-on-gpu-resets" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explores how the Vulkan API manages the VKERRORDEVICELOST error when a GPU encounters a hardware hang, crash, or driver reset. It covers the root causes of device loss—such as operating system watchdog timeouts—how Vulkan signals this state t" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-vulkan-handles-device-lost-errors-on-gpu-resets">How Vulkan
+Handles Device Lost Errors on GPU Resets</h1>
+<p>This article explores how the Vulkan API manages the
+<code>VK_ERROR_DEVICE_LOST</code> error when a GPU encounters a hardware
+hang, crash, or driver reset. It covers the root causes of device
+loss—such as operating system watchdog timeouts—how Vulkan signals this
+state to the host application, the architectural invalidation of
+resources, and the technical steps required to cleanly recover the
+rendering pipeline without crashing the host process.</p>
+<h2 id="causes-of-device-lost-errors">Causes of Device Lost Errors</h2>
+<p>A device lost state occurs when the physical GPU stops responding, is
+physically removed, or is forcibly reset by the operating system. Common
+triggers include:</p>
+<ul>
+<li><strong>Timeout Detection and Recovery (TDR):</strong> Operating
+systems like Windows and Linux monitor GPU execution. If a compute or
+graphics command runs longer than a set threshold (typically two seconds
+on Windows), the OS kernel resets the GPU driver to keep the desktop
+responsive.</li>
+<li><strong>Invalid Memory Access:</strong> Accessing unmapped memory,
+writing out of bounds inside shaders, or binding null descriptors can
+cause a GPU page fault.</li>
+<li><strong>Hardware Instability:</strong> Overheating, power delivery
+issues, or aggressive overclocks can force a hardware reboot.</li>
+<li><strong>Driver Crashes:</strong> Internal driver bugs triggered by
+specific API usage sequences.</li>
+</ul>
+<h2 id="how-vulkan-signals-the-error">How Vulkan Signals the Error</h2>
+<p>Unlike APIs that maintain implicit global state, Vulkan relies on
+explicit return codes. When a GPU reset occurs, Vulkan commands will not
+throw exceptions. Instead, execution-related functions will immediately
+return <code>VK_ERROR_DEVICE_LOST</code>.</p>
+<p>Functions that frequently return this error include:</p>
+<ul>
+<li><code>vkQueueSubmit</code></li>
+<li><code>vkWaitForFences</code></li>
+<li><code>vkQueueWaitIdle</code> / <code>vkDeviceWaitIdle</code></li>
+<li><code>vkAcquireNextImageKHR</code></li>
+<li><code>vkQueuePresentKHR</code></li>
+</ul>
+<p>Once <code>VK_ERROR_DEVICE_LOST</code> is returned by any command
+associated with a specific <code>VkDevice</code>, the device enters a
+"lost" state permanently. Most subsequent calls using that
+<code>VkDevice</code> or its child objects will fail or return the same
+error code.</p>
+<h2 id="the-state-of-vulkan-objects-after-device-loss">The State of
+Vulkan Objects After Device Loss</h2>
+<p>When a <code>VkDevice</code> is lost:</p>
+<ol type="1">
+<li><strong>Logical Device Invalidation:</strong> The
+<code>VkDevice</code> instance can no longer execute work. It cannot be
+repaired or reset back to a functional state.</li>
+<li><strong>Child Object Invalidation:</strong> All child objects
+created from the lost <code>VkDevice</code>—including
+<code>VkQueue</code>, <code>VkCommandBuffer</code>,
+<code>VkBuffer</code>, <code>VkImage</code>, <code>VkPipeline</code>,
+and <code>VkSwapchainKHR</code>—are considered invalid for future
+execution.</li>
+<li><strong>Instance Validity:</strong> The parent
+<code>VkInstance</code> and the associated <code>VkPhysicalDevice</code>
+handle typically remain valid unless the graphics driver completely
+crashed and unloaded at the operating system level.</li>
+<li><strong>Host Memory:</strong> CPU-side memory and handles remain
+allocated until explicitly freed by the application.</li>
+</ol>
+<h2 id="the-recovery-lifecycle">The Recovery Lifecycle</h2>
+<p>To recover gracefully from a device lost event, an application must
+execute a full tear-down and reinitialization cycle:</p>
+<h3 id="1-detect-and-halt">1. Detect and Halt</h3>
+<p>Catch the <code>VK_ERROR_DEVICE_LOST</code> return value on fence
+waits or queue submissions. Immediately halt the main render loop to
+prevent issuing further invalid commands.</p>
+<h3 id="2-destroy-dependent-resources">2. Destroy Dependent
+Resources</h3>
+<p>Clean up all objects created from the failed <code>VkDevice</code> in
+the reverse order of creation. This includes pipelines, framebuffers,
+render passes, descriptor pools, command pools, and buffers.</p>
+<h3 id="3-destroy-the-logical-device">3. Destroy the Logical Device</h3>
+<p>Call <code>vkDestroyDevice</code> on the lost <code>VkDevice</code>.
+Note that memory allocated through <code>vkAllocateMemory</code> must
+still be freed using <code>vkFreeMemory</code> prior to destroying the
+device to avoid host memory leaks.</p>
+<h3 id="4-query-physical-device-status">4. Query Physical Device
+Status</h3>
+<p>Check whether the physical hardware is still available by calling
+<code>vkEnumeratePhysicalDevices</code>. If a discrete GPU was detached
+or the driver was completely disabled, the device list may change.</p>
+<h3 id="5-reinitialize-and-recreate">5. Reinitialize and Recreate</h3>
+<ul>
+<li>Create a new <code>VkDevice</code> via
+<code>vkCreateDevice</code>.</li>
+<li>Recreate command pools, queues, and swapchain resources.</li>
+<li>Reload or recreate pipeline states, descriptor sets, and GPU
+buffers.</li>
+<li>Restore the application's visual state to the last known valid
+frame.</li>
+</ul>
+<h2 id="debugging-and-diagnostics">Debugging and Diagnostics</h2>
+<p>Identifying the exact instruction or command buffer that caused a
+device hang requires diagnostic extensions, as normal validation layers
+cannot prevent hardware-level timeouts.</p>
+<ul>
+<li><strong><code>VK_EXT_device_fault</code>:</strong> Provides an API
+to query technical diagnostic information after a device loss, such as
+memory addresses that generated page faults.</li>
+<li><strong><code>VK_NV_device_diagnostic_checkpoints</code> /
+<code>VK_AMD_buffer_marker</code>:</strong> Allow writing "breadcrumbs"
+or markers into command buffers before execution. When a crash occurs,
+the host can read the last reached marker to locate the offending draw
+or dispatch call.</li>
+<li><strong>NVIDIA Aftermath / AMD Crash Defender:</strong>
+Vendor-specific SDK integrations that generate mini-dumps during GPU
+hangs, mapping crash locations directly back to the original HLSL, GLSL,
+or SPIR-V shader code.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

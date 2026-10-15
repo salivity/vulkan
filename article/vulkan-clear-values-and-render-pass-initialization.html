@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Clear Values and Render Pass Initialization - vulkan</title>
+    <meta name="description" content="In Vulkan, initializing attachments with clear operations is fundamentally tied to the render pass lifecycle rather than standalone clearing commands. When configuring a render pass, attachments can be marked to clear automatically upon execution, allowin">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-clear-values-and-render-pass-initialization">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Clear Values and Render Pass Initialization - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-clear-values-and-render-pass-initialization" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Vulkan, initializing attachments with clear operations is fundamentally tied to the render pass lifecycle rather than standalone clearing commands. When configuring a render pass, attachments can be marked to clear automatically upon execution, allowin" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-clear-values-and-render-pass-initialization">Vulkan Clear
+Values and Render Pass Initialization</h1>
+<p>In Vulkan, initializing attachments with clear operations is
+fundamentally tied to the render pass lifecycle rather than standalone
+clearing commands. When configuring a render pass, attachments can be
+marked to clear automatically upon execution, allowing the graphics
+driver and hardware—especially tile-based architectures—to optimize
+memory bandwidth. This article explores how
+<code>VkRenderPassBeginInfo</code>, <code>VkClearValue</code>, and
+attachment load operations interact to efficiently clear color and
+depth-stencil targets during render pass initialization.</p>
+<h2 id="attachment-descriptions-and-load-operations">Attachment
+Descriptions and Load Operations</h2>
+<p>The decision to clear an attachment at the start of a render pass
+begins with <code>VkAttachmentDescription</code>. When defining a render
+pass using <code>vkCreateRenderPass</code> (or
+<code>vkCreateRenderPass2</code>), each attachment defines its
+initialization behavior via the <code>loadOp</code> and
+<code>stencilLoadOp</code> fields.</p>
+<p>To clear a target when the render pass begins, you set:</p>
+<ul>
+<li><code>loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR</code> for color or depth
+data.</li>
+<li><code>stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR</code> for stencil
+data.</li>
+</ul>
+<p>Setting this flag informs the driver that the previous contents of
+the image view bound to this attachment slot are not needed and should
+be overwritten with a predefined clear value at initialization.</p>
+<h2 id="providing-clear-values-in-vkrenderpassbegininfo">Providing Clear
+Values in <code>VkRenderPassBeginInfo</code></h2>
+<p>The actual clear colors and depth/stencil values are not baked into
+the render pass object itself; they are supplied dynamically when
+recording the command to begin the render pass via
+<code>vkCmdBeginRenderPass</code>.</p>
+<p>The <code>VkRenderPassBeginInfo</code> structure contains two
+relevant fields:</p>
+<ul>
+<li><code>clearValueCount</code>: The number of elements in the
+<code>pClearValues</code> array.</li>
+<li><code>pClearValues</code>: A pointer to an array of
+<code>VkClearValue</code> unions.</li>
+</ul>
+<h3 id="attachment-index-mapping">Attachment Index Mapping</h3>
+<p>The <code>pClearValues</code> array maps directly by index to the
+<code>pAttachments</code> array defined in the
+<code>VkRenderPassCreateInfo</code> used to create the render pass:</p>
+<ul>
+<li>Attachment index <code>0</code> uses
+<code>pClearValues[0]</code>.</li>
+<li>Attachment index <code>1</code> uses <code>pClearValues[1]</code>,
+and so on.</li>
+</ul>
+<p>This 1:1 mapping applies regardless of whether an attachment actually
+uses <code>VK_ATTACHMENT_LOAD_OP_CLEAR</code>. If attachment index
+<code>0</code> uses <code>VK_ATTACHMENT_LOAD_OP_LOAD</code> and
+attachment index <code>1</code> uses
+<code>VK_ATTACHMENT_LOAD_OP_CLEAR</code>, <code>clearValueCount</code>
+must still be at least <code>2</code>, and a dummy entry must be present
+at <code>pClearValues[0]</code>. Supplying fewer clear values than the
+highest cleared attachment index results in undefined behavior.</p>
+<h2 id="the-vkclearvalue-union">The <code>VkClearValue</code> Union</h2>
+<p>Each entry in <code>pClearValues</code> is a
+<code>VkClearValue</code> union, which can represent either a color or a
+depth/stencil combination:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">typedef</span> <span class="kw">union</span> VkClearValue <span class="op">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    VkClearColorValue           color<span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    VkClearDepthStencilValue    depthStencil<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="op">}</span> VkClearValue<span class="op">;</span></span></code></pre></div>
+<ul>
+<li><strong><code>color</code></strong>: Used for color attachments. It
+allows clearing via <code>float32[4]</code>, <code>int32[4]</code>, or
+<code>uint32[4]</code>, matching the underlying format of the attachment
+image view.</li>
+<li><strong><code>depthStencil</code></strong>: Used for depth/stencil
+attachments. It contains a <code>float depth</code> value (typically
+<code>1.0f</code> for standard depth testing or <code>0.0f</code> for
+reverse-Z) and a <code>uint32_t stencil</code> value.</li>
+</ul>
+<h2 id="interaction-with-vulkan-13-dynamic-rendering">Interaction with
+Vulkan 1.3 Dynamic Rendering</h2>
+<p>In modern Vulkan (version 1.3 or via the
+<code>VK_KHR_dynamic_rendering</code> extension), traditional
+<code>VkRenderPass</code> and <code>VkFramebuffer</code> objects can be
+bypassed in favor of <code>vkCmdBeginRendering</code>.</p>
+<p>Under dynamic rendering, clear values are decoupled from indexed
+arrays. Instead, each attachment is configured using a
+<code>VkRenderingAttachmentInfo</code> structure that directly pairs the
+<code>loadOp</code> with its specific <code>clearValue</code>:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>VkRenderingAttachmentInfo colorAttachment<span class="op">{};</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>colorAttachment<span class="op">.</span>sType <span class="op">=</span> VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO<span class="op">;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>colorAttachment<span class="op">.</span>imageView <span class="op">=</span> colorImageView<span class="op">;</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>colorAttachment<span class="op">.</span>imageLayout <span class="op">=</span> VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL<span class="op">;</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>colorAttachment<span class="op">.</span>loadOp <span class="op">=</span> VK_ATTACHMENT_LOAD_OP_CLEAR<span class="op">;</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>colorAttachment<span class="op">.</span>clearValue<span class="op">.</span>color <span class="op">=</span> <span class="op">{{</span> <span class="fl">0.0</span><span class="bu">f</span><span class="op">,</span> <span class="fl">0.0</span><span class="bu">f</span><span class="op">,</span> <span class="fl">0.0</span><span class="bu">f</span><span class="op">,</span> <span class="fl">1.0</span><span class="bu">f</span> <span class="op">}};</span></span></code></pre></div>
+<p>This removes the requirement to maintain placeholder values in
+indexed arrays for non-cleared attachments.</p>
+<h2 id="performance-considerations">Performance Considerations</h2>
+<p>Clearing attachments via render pass initialization is significantly
+faster than using explicit commands like
+<code>vkCmdClearColorImage</code> or
+<code>vkCmdClearAttachments</code>.</p>
+<p>On Tile-Based Deferred Rendering (TBDR) architectures commonly found
+in mobile devices, setting <code>VK_ATTACHMENT_LOAD_OP_CLEAR</code>
+enables the GPU to clear on-chip tile memory directly before
+rasterization begins, avoiding expensive memory round-trips to VRAM. On
+desktop architectures, it allows the hardware to initialize metadata
+compression tables (such as DCC) without touching the actual image
+memory.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

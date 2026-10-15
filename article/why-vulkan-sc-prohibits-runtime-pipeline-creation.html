@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Why Vulkan SC Prohibits Runtime Pipeline Creation - vulkan</title>
+    <meta name="description" content="Vulkan SC (Safety Critical) is an open API standard designed for deployment in high-reliability domains such as automotive, avionics, and medical systems. A core architectural departure from standard Vulkan is the prohibition of creating new pipeline stat">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/why-vulkan-sc-prohibits-runtime-pipeline-creation">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Why Vulkan SC Prohibits Runtime Pipeline Creation - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/why-vulkan-sc-prohibits-runtime-pipeline-creation" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Vulkan SC (Safety Critical) is an open API standard designed for deployment in high-reliability domains such as automotive, avionics, and medical systems. A core architectural departure from standard Vulkan is the prohibition of creating new pipeline stat" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="why-vulkan-sc-prohibits-runtime-pipeline-creation">Why Vulkan SC
+Prohibits Runtime Pipeline Creation</h1>
+<p>Vulkan SC (Safety Critical) is an open API standard designed for
+deployment in high-reliability domains such as automotive, avionics, and
+medical systems. A core architectural departure from standard Vulkan is
+the prohibition of creating new pipeline state objects after system
+startup. This article examines the critical factors behind this design
+constraint, detailing how deterministic execution, static memory
+management, the elimination of runtime compilation, and stringent
+certification standards dictate this strict lifecycle model.</p>
+<h3 id="1-deterministic-execution-and-real-time-guarantees">1.
+Deterministic Execution and Real-Time Guarantees</h3>
+<p>In standard Vulkan, compiling shaders and assembling pipeline objects
+dynamically can cause non-deterministic latency. Compiling graphics and
+compute pipelines involves instruction scheduling, register allocation,
+and hardware-specific optimization passes that introduce unpredictable
+execution spikes.</p>
+<p>In safety-critical systems—such as automated driving assist systems
+(ADAS) or primary flight displays—missed frame deadlines or processing
+hiccups can lead to catastrophic failures. Prohibiting pipeline creation
+after startup ensures that all execution paths operate within strictly
+bounded, predictable timeframes during runtime.</p>
+<h3 id="2-elimination-of-the-runtime-compiler">2. Elimination of the
+Runtime Compiler</h3>
+<p>To maintain absolute reliability, Vulkan SC completely removes the
+runtime shader compiler from the driver stack.</p>
+<ul>
+<li><strong>Standard Vulkan:</strong> Applications pass SPIR-V
+intermediate representation to the driver at runtime, which compiles it
+into native machine code.</li>
+<li><strong>Vulkan SC:</strong> Pipelines and shaders are compiled
+entirely offline using an offline Pipeline Cache Compiler (PCC).</li>
+</ul>
+<p>Because the target device driver lacks an integrated compiler, the
+system cannot generate or assemble new pipeline state configurations
+while running. All pipeline caches must be generated in advance and
+loaded during the application's initialization sequence.</p>
+<h3 id="3-predictable-memory-management-and-avoiding-oom-errors">3.
+Predictable Memory Management and Avoiding OOM Errors</h3>
+<p>Safety-critical certifications, such as ISO 26262 (automotive) and
+DO-178C (avionics), strictly discourage or prohibit dynamic memory
+allocation after the system initialization phase.</p>
+<p>Runtime pipeline creation necessitates variable, dynamic memory
+allocations within both the driver and the GPU. This introduces risks
+of:</p>
+<ul>
+<li>Heap fragmentation.</li>
+<li>Unpredictable memory exhaustion (Out of Memory/OOM errors).</li>
+<li>Memory leaks during continuous system operation.</li>
+</ul>
+<p>By restricting pipeline creation to the startup phase, Vulkan SC
+forces developers to pre-allocate all necessary resources, guaranteeing
+that the application never exceeds its physical memory footprint during
+mission-critical tasks.</p>
+<h3 id="4-reduced-driver-complexity-and-certification-overhead">4.
+Reduced Driver Complexity and Certification Overhead</h3>
+<p>A driver that includes an integrated, dynamic shader and pipeline
+compiler contains millions of lines of complex code. Safety
+certification requires rigorous verification, static analysis, and code
+coverage metrics (such as MC/DC).</p>
+<p>Removing the runtime pipeline creation logic drastically simplifies
+the Vulkan SC driver codebase. A smaller, leaner driver:</p>
+<ul>
+<li>Minimizes the attack surface for cybersecurity vulnerabilities.</li>
+<li>Lowers the probability of latent driver bugs.</li>
+<li>Makes formal safety qualification and verification practically
+achievable and cost-effective.</li>
+</ul>
+<h3 id="summary-of-the-vulkan-sc-lifecycle">Summary of the Vulkan SC
+Lifecycle</h3>
+<p>Under Vulkan SC, the software lifecycle is divided strictly into an
+<strong>Initialization Phase</strong> and an <strong>Execution
+Phase</strong>:</p>
+<ol type="1">
+<li><strong>Offline Phase:</strong> Shaders and pipelines are
+pre-compiled and packaged into pipeline caches.</li>
+<li><strong>Startup / Initialization Phase:</strong> The application
+initializes resources, loads the pipeline caches, creates all required
+pipeline objects, and locks the memory state.</li>
+<li><strong>Operational Phase:</strong> The system transitions into its
+main loop. No new pipelines, shader modules, or dynamic allocation
+requests may occur, ensuring safe, stable, and deterministic
+operation.</li>
+</ol></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

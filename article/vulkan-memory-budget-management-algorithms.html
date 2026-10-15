@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Memory Budget Management Algorithms - vulkan</title>
+    <meta name="description" content="Managing device memory in Vulkan requires applications to explicitly handle allocation, tracking, and reclamation without automatic driver-level safety nets. Because exceeding physical memory constraints leads to fatal VKERROROUTOFDEVICEMEMORY crashes, mo">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-memory-budget-management-algorithms">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Memory Budget Management Algorithms - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-memory-budget-management-algorithms" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Managing device memory in Vulkan requires applications to explicitly handle allocation, tracking, and reclamation without automatic driver-level safety nets. Because exceeding physical memory constraints leads to fatal VKERROROUTOFDEVICEMEMORY crashes, mo" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-memory-budget-management-algorithms">Vulkan Memory Budget
+Management Algorithms</h1>
+<p>Managing device memory in Vulkan requires applications to explicitly
+handle allocation, tracking, and reclamation without automatic
+driver-level safety nets. Because exceeding physical memory constraints
+leads to fatal <code>VK_ERROR_OUT_OF_DEVICE_MEMORY</code> crashes,
+modern engines rely on structured memory budgeting algorithms to ensure
+stability. This article outlines the optimal algorithms and structural
+approaches used to monitor resource usage, sub-allocate large memory
+blocks, dynamically evict lower-priority assets, and handle memory
+fragmentation under tight budget constraints.</p>
+<h3 id="the-foundation-dynamic-budget-querying">The Foundation: Dynamic
+Budget Querying</h3>
+<p>Before applying management algorithms, an application must determine
+available system headroom. Operating systems dynamically reassign GPU
+memory across multiple processes, meaning static allocations are prone
+to failure.</p>
+<p>Vulkan provides the <code>VK_EXT_memory_budget</code> extension,
+which exposes real-time information through
+<code>VkPhysicalDeviceMemoryBudgetPropertiesEXT</code>. By polling
+<code>heapBudget</code> and <code>heapUsage</code> values periodically,
+an engine gains the real-time ground truth of its allocation boundaries.
+Optimal memory managers use this query to continuously update a global
+safety envelope, adapting algorithms dynamically based on current memory
+pressure.</p>
+<h3 id="two-level-segregated-fit-tlsf-for-sub-allocation">Two-Level
+Segregated Fit (TLSF) for Sub-Allocation</h3>
+<p>Vulkan caps the total number of live allocations through the physical
+device limit <code>maxMemoryAllocationCount</code> (often restricted to
+a few thousand). Direct OS-level allocations via
+<code>vkAllocateMemory</code> per individual resource will quickly cause
+out-of-memory errors regardless of remaining bytes.</p>
+<p>The optimal solution is to allocate large blocks (typically 64 MiB to
+256 MiB) and manage internal allocations via the Two-Level Segregated
+Fit (TLSF) algorithm:</p>
+<ul>
+<li><strong>Bounded Latency:</strong> TLSF executes in <span
+class="math inline">\(O(1)\)</span> time complexity for both allocation
+and deallocation, making it ideal for rendering loops.</li>
+<li><strong>Low Fragmentation:</strong> It segregates free memory blocks
+into classes using a two-tier array system (powers-of-two coarse lists
+with linear sub-divisions), minimizing internal fragmentation.</li>
+<li><strong>Buddy Allocation Alternative:</strong> While buddy
+allocators provide simpler coalescence, TLSF consistently demonstrates
+lower internal fragmentation when managing varied resource sizes such as
+non-power-of-two textures, transient buffers, and acceleration
+structures.</li>
+</ul>
+<h3 id="dual-watermark-threshold-throttling">Dual-Watermark (Threshold)
+Throttling</h3>
+<p>A dual-watermark algorithm prevents sudden memory spikes from
+triggering hard crashes by staging engine reactions across two defined
+usage thresholds:</p>
+<ol type="1">
+<li><strong>Soft Limit (typically 75–85% of heap budget):</strong>
+Crossing this mark triggers asynchronous shedding of non-essential
+resources. The engine stops speculative prefetching, downgrades texture
+Streaming Mipmap levels, and signals background loading queues to halt
+new allocations.</li>
+<li><strong>Hard Limit (typically 90–95% of heap budget):</strong>
+Crossing this threshold enforces synchronous throttling. The engine
+flushes garbage collection queues, cancels in-flight staging transfers,
+unloads cached procedural data, and forces lowest-fidelity fallbacks for
+dynamic geometry and particle systems.</li>
+<li><strong>Emergency Fallback:</strong> Any allocation that cannot fit
+in <code>VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT</code> shifts to
+<code>VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT</code> (system RAM) if
+supported by the memory type architecture, trading bus bandwidth for
+system stability.</li>
+</ol>
+<h3 id="priority-based-least-recently-used-lru-eviction">Priority-Based
+Least Recently Used (LRU) Eviction</h3>
+<p>When memory reaches capacity, active resources must be evicted or
+downsized. An optimal eviction architecture relies on a multi-queue
+Priority-Based LRU (Least Recently Used) algorithm:</p>
+<ul>
+<li><strong>Categorization:</strong> Resources are assigned static
+priority buckets (e.g., Critical/Render Targets, High/Active Geometry,
+Medium/Secondary Textures, Low/Audio or Cache).</li>
+<li><strong>Execution:</strong> Each bucket contains a double-linked
+list ordered by last-accessed frame index. When memory pressure requires
+eviction, the algorithm iterates from the lowest-priority queue upward,
+scanning from the tail (oldest item).</li>
+<li><strong>Vulkan Paging Extensions:</strong> Modern implementations
+can leverage <code>VK_EXT_pageable_device_local_memory</code>. This
+extension standardizes interaction with operating system memory managers
+(such as Windows D3D12/WDDM or Linux drivers), allowing the application
+to explicitly define priority via
+<code>vkSetDeviceMemoryPriorityEXT</code> so the OS driver pages out
+appropriate allocations cleanly without crashing.</li>
+</ul>
+<h3 id="incremental-compaction-and-defragmentation">Incremental
+Compaction and Defragmentation</h3>
+<p>Over time, interleaved allocation and destruction of resources causes
+external fragmentation, leaving memory chunks that are large enough in
+aggregate but too scattered to satisfy an allocation.</p>
+<p>An optimal defragmentation strategy uses an incremental, non-blocking
+compaction algorithm:</p>
+<ul>
+<li><strong>Scoring:</strong> Sub-allocation blocks are scored by
+fragmentation level (ratio of free memory to the largest contiguous free
+chunk).</li>
+<li><strong>Targeted Migration:</strong> The most fragmented blocks are
+marked for compaction. The engine creates a new target block and
+schedules asynchronous copy commands (<code>vkCmdCopyBuffer</code>,
+<code>vkCmdCopyImage</code>) over multiple frames.</li>
+<li><strong>Handle Redirection:</strong> Internal references are updated
+to point to the new offsets, and old memory blocks are released back to
+the driver. By spreading copy commands across multiple frames, the
+application prevents pipeline bubbles while consistently regaining
+contiguous memory headroom.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

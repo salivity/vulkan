@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VK_KHR_sampler_ycbcr_conversion in Mobile Vulkan - vulkan</title>
+    <meta name="description" content="The VKKHRsamplerycbcrconversion extension enables Vulkan applications to read and sample textures stored in YCbCr (YUV) color spaces directly, converting them to RGB on the fly within the texture sampling hardware. In mobile development, this extension br">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vk-khr-sampler-ycbcr-conversion-in-mobile-vulkan">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="VK_KHR_sampler_ycbcr_conversion in Mobile Vulkan - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vk-khr-sampler-ycbcr-conversion-in-mobile-vulkan" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The VKKHRsamplerycbcrconversion extension enables Vulkan applications to read and sample textures stored in YCbCr (YUV) color spaces directly, converting them to RGB on the fly within the texture sampling hardware. In mobile development, this extension br" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="vk_khr_sampler_ycbcr_conversion-in-mobile-vulkan">VK_KHR_sampler_ycbcr_conversion
+in Mobile Vulkan</h1>
+<p>The <code>VK_KHR_sampler_ycbcr_conversion</code> extension enables
+Vulkan applications to read and sample textures stored in YCbCr (YUV)
+color spaces directly, converting them to RGB on the fly within the
+texture sampling hardware. In mobile development, this extension bridges
+the gap between media frameworks and the graphics pipeline, allowing
+developers to process video streams and camera feeds with minimal memory
+bandwidth overhead and significantly lower power consumption.</p>
+<h3 id="the-problem-with-yuv-and-rgb-on-mobile">The Problem with YUV and
+RGB on Mobile</h3>
+<p>Mobile camera sensors and hardware video decoders naturally produce
+image data in YCbCr formats, such as NV12 or YUV 4:2:0, because
+subsampling color data saves substantial memory bandwidth and storage.
+However, graphics pipelines and display hardware traditionally operate
+in RGB color spaces.</p>
+<p>Without specialized sampling support, bringing a video or camera
+frame into Vulkan requires an intermediate step. Developers either have
+to run custom compute shaders or CPU routines to manually convert
+multi-planar YUV buffers into interleaved RGB textures before rendering.
+On mobile devices, this intermediate pass wastes valuable memory
+bandwidth, increases latency, and quickly drains the battery.</p>
+<h3 id="direct-hardware-color-conversion">Direct Hardware Color
+Conversion</h3>
+<p>The <code>VK_KHR_sampler_ycbcr_conversion</code> extension eliminates
+the intermediate conversion pass by introducing the
+<code>VkSamplerYcbcrConversion</code> object. This object configures the
+GPU's fixed-function texture sampler to handle non-RGB formats
+natively.</p>
+<p>When a shader samples from a YCbCr image using an associated
+conversion sampler, the hardware automatically handles:</p>
+<ul>
+<li><strong>Color Model Conversion:</strong> Translates YCbCr channels
+into standard RGB channels according to specified standards (such as
+ITU-R BT.601 or BT.709).</li>
+<li><strong>Chroma Reconstruction:</strong> Accurately interpolates
+subsampled chrominance planes (which are often half the resolution of
+the luminance plane) to align with luminance samples.</li>
+<li><strong>Range Expansion:</strong> Expands narrow-range (studio
+swing) video levels to full-range graphics color values.</li>
+</ul>
+<p>The fragment shader receives standard RGB <code>vec4</code> values
+directly from a standard <code>texture()</code> call, abstracting away
+the complex multi-planar memory layout.</p>
+<h3 id="zero-copy-camera-and-video-integration">Zero-Copy Camera and
+Video Integration</h3>
+<p>On mobile operating systems like Android, media decoders and camera
+HALs allocate buffers as system-level memory (such as
+<code>AHardwareBuffer</code>). Through extensions like
+<code>VK_ANDROID_external_memory_android_hardware_buffer</code> combined
+with <code>VK_KHR_sampler_ycbcr_conversion</code>, a mobile application
+can bind these external native buffers directly to a Vulkan image.</p>
+<p>This creates a true zero-copy pipeline: the camera hardware writes
+directly into a buffer, and Vulkan samples from that exact buffer in
+real time to apply filters, augment reality, or render UI overlays.</p>
+<h3 id="performance-and-efficiency-impact">Performance and Efficiency
+Impact</h3>
+<p>For mobile devices, thermal management and battery conservation are
+critical constraints. By offloading YCbCr-to-RGB conversion to dedicated
+texture sampling hardware, <code>VK_KHR_sampler_ycbcr_conversion</code>
+avoids extra memory read/write cycles across the system bus. This makes
+it a fundamental extension for modern mobile Vulkan development,
+ensuring high-frame-rate video playback, camera viewports, and computer
+vision pipelines run efficiently.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

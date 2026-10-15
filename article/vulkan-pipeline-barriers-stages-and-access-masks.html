@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Pipeline Barriers: Stages and Access Masks - vulkan</title>
+    <meta name="description" content="In the Vulkan API, pipeline barriers synchronize execution and memory access between commands submitted to a queue. Configuring a barrier requires setting pipeline stage masks (srcStageMask and dstStageMask) to establish an execution dependency and access">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-pipeline-barriers-stages-and-access-masks">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Pipeline Barriers: Stages and Access Masks - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-pipeline-barriers-stages-and-access-masks" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In the Vulkan API, pipeline barriers synchronize execution and memory access between commands submitted to a queue. Configuring a barrier requires setting pipeline stage masks (srcStageMask and dstStageMask) to establish an execution dependency and access" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-pipeline-barriers-stages-and-access-masks">Vulkan
+Pipeline Barriers: Stages and Access Masks</h1>
+<p>In the Vulkan API, pipeline barriers synchronize execution and memory
+access between commands submitted to a queue. Configuring a barrier
+requires setting pipeline stage masks (<code>srcStageMask</code> and
+<code>dstStageMask</code>) to establish an execution dependency and
+access masks (<code>srcAccessMask</code> and <code>dstAccessMask</code>)
+to establish a memory dependency. Properly configuring these parameters
+guarantees that data written by prior commands is completed and made
+visible before subsequent operations attempt to read from or write to
+the same resources, avoiding race conditions without introducing
+unnecessary GPU stalls.</p>
+<h3 id="execution-dependencies-pipeline-stages">Execution Dependencies:
+Pipeline Stages</h3>
+<p>Execution dependencies govern <em>when</em> operations happen
+relative to one another in the GPU pipeline. They are defined using
+<code>VkPipelineStageFlags</code> (or <code>VkPipelineStageFlags2</code>
+in Vulkan 1.3 / <code>VK_KHR_synchronization2</code>).</p>
+<ul>
+<li><strong>Source Stage Mask (<code>srcStageMask</code>)</strong>:
+Identifies the pipeline stages of prior commands that must finish
+executing before the barrier takes effect. Any work submitted before the
+barrier in these stages will complete prior to proceeding past the
+barrier.</li>
+<li><strong>Destination Stage Mask (<code>dstStageMask</code>)</strong>:
+Identifies the pipeline stages of subsequent commands that must wait.
+Any work submitted after the barrier requiring these stages will pause
+execution until the barrier's conditions are fulfilled.</li>
+</ul>
+<p>Using coarse flags such as
+<code>VK_PIPELINE_STAGE_ALL_COMMANDS_BIT</code> or
+<code>VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT</code> /
+<code>VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT</code> should be avoided when
+possible. Specifying exact stages—such as
+<code>VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT</code> or
+<code>VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT</code>—allows the GPU to
+overlap independent operations across different stages.</p>
+<h3 id="memory-dependencies-access-masks">Memory Dependencies: Access
+Masks</h3>
+<p>An execution dependency alone does not guarantee that written data is
+visible to other stages, because GPUs use distinct, non-coherent caches
+across different functional units. Access masks define <em>how</em>
+resources are accessed and handle cache flushing and invalidation using
+<code>VkAccessFlags</code> (or <code>VkAccessFlags2</code>).</p>
+<ul>
+<li><strong>Source Access Mask (<code>srcAccessMask</code>)</strong>:
+Specifies the memory write operations that must be completed and made
+<em>available</em> (flushed from internal caches to common memory or L2
+cache). If the previous operations only performed reads,
+<code>srcAccessMask</code> can be set to <code>0</code>.</li>
+<li><strong>Destination Access Mask
+(<code>dstAccessMask</code>)</strong>: Specifies the memory operations
+that must be made <em>visible</em> (caches invalidated so that
+subsequent reads or writes fetch the freshest data).</li>
+</ul>
+<h3 id="stage-and-access-mask-compatibility">Stage and Access Mask
+Compatibility</h3>
+<p>Vulkan strictly enforces that access masks correspond logically to
+the stages provided in the pipeline stage masks:</p>
+<ol type="1">
+<li>Every access flag in <code>srcAccessMask</code> must be supported by
+at least one stage in <code>srcStageMask</code>.</li>
+<li>Every access flag in <code>dstAccessMask</code> must be supported by
+at least one stage in <code>dstStageMask</code>.</li>
+</ol>
+<p>For instance, pairing
+<code>VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT</code> with
+<code>VK_PIPELINE_STAGE_VERTEX_SHADER_BIT</code> is invalid because
+color attachment writes do not occur during vertex shading.</p>
+<h3 id="common-configuration-patterns">Common Configuration
+Patterns</h3>
+<h4 id="1-color-attachment-write-to-fragment-shader-sample">1. Color
+Attachment Write to Fragment Shader Sample</h4>
+<p>When a render pass writes to an image and the next pass samples that
+image as a texture:</p>
+<ul>
+<li><strong><code>srcStageMask</code></strong>:
+<code>VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT</code></li>
+<li><strong><code>srcAccessMask</code></strong>:
+<code>VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT</code></li>
+<li><strong><code>dstStageMask</code></strong>:
+<code>VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT</code></li>
+<li><strong><code>dstAccessMask</code></strong>:
+<code>VK_ACCESS_SHADER_READ_BIT</code></li>
+<li><strong>Layout Transition</strong>:
+<code>VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL</code> to
+<code>VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL</code></li>
+</ul>
+<h4 id="2-compute-shader-write-to-vertex-shader-read">2. Compute Shader
+Write to Vertex Shader Read</h4>
+<p>When a compute shader writes to a storage buffer that will
+subsequently be read as a vertex buffer or uniform buffer:</p>
+<ul>
+<li><strong><code>srcStageMask</code></strong>:
+<code>VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT</code></li>
+<li><strong><code>srcAccessMask</code></strong>:
+<code>VK_ACCESS_SHADER_WRITE_BIT</code></li>
+<li><strong><code>dstStageMask</code></strong>:
+<code>VK_PIPELINE_STAGE_VERTEX_INPUT_BIT</code></li>
+<li><strong><code>dstAccessMask</code></strong>:
+<code>VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT</code></li>
+</ul>
+<h4 id="3-host-write-to-gpu-device-read">3. Host Write to GPU Device
+Read</h4>
+<p>When updating host-visible memory without explicit host coherent
+flushes, or synchronizing after a <code>vkQueueSubmit</code>:</p>
+<ul>
+<li><strong><code>srcStageMask</code></strong>:
+<code>VK_PIPELINE_STAGE_HOST_BIT</code></li>
+<li><strong><code>srcAccessMask</code></strong>:
+<code>VK_ACCESS_HOST_WRITE_BIT</code></li>
+<li><strong><code>dstStageMask</code></strong>: Target pipeline stage
+(e.g., <code>VK_PIPELINE_STAGE_TRANSFER_BIT</code>)</li>
+<li><strong><code>dstAccessMask</code></strong>: Corresponding access
+type (e.g., <code>VK_ACCESS_TRANSFER_READ_BIT</code>)</li>
+</ul>
+<h3 id="vulkan-13-and-synchronization2">Vulkan 1.3 and
+Synchronization2</h3>
+<p>In modern Vulkan, <code>vkCmdPipelineBarrier2</code> replaces the
+original pipeline barrier command. It consolidates stage and access
+masks directly into <code>VkMemoryBarrier2</code>,
+<code>VkBufferMemoryBarrier2</code>, and
+<code>VkImageMemoryBarrier2</code> structures via 64-bit flags
+(<code>VkPipelineStageFlags2</code> and <code>VkAccessFlags2</code>).
+This eliminates the mismatch risk between global stage masks and
+per-resource access masks, simplifying configuration while maintaining
+identical underlying synchronization logic.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

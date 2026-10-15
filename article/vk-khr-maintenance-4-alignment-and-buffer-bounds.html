@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VK_KHR_maintenance4: Alignment and Buffer Bounds - vulkan</title>
+    <meta name="description" content="The VKKHRmaintenance4 extension, introduced to address developer pain points and later integrated into core Vulkan 1.3, provides several targeted optimizations to shader interfaces and memory management. This article examines how the extension relaxed pus">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vk-khr-maintenance-4-alignment-and-buffer-bounds">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="VK_KHR_maintenance4: Alignment and Buffer Bounds - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vk-khr-maintenance-4-alignment-and-buffer-bounds" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The VKKHRmaintenance4 extension, introduced to address developer pain points and later integrated into core Vulkan 1.3, provides several targeted optimizations to shader interfaces and memory management. This article examines how the extension relaxed pus" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="vk_khr_maintenance4-alignment-and-buffer-bounds">VK_KHR_maintenance4:
+Alignment and Buffer Bounds</h1>
+<p>The <code>VK_KHR_maintenance4</code> extension, introduced to address
+developer pain points and later integrated into core Vulkan 1.3,
+provides several targeted optimizations to shader interfaces and memory
+management. This article examines how the extension relaxed push
+constant interface bounds checking, eliminated the need to create dummy
+buffer objects to query alignment constraints, streamlined buffer usage
+flags for memory allocators, and defined explicit limits on buffer
+bounds via the <code>maxBufferSize</code> property.</p>
+<h3 id="relaxing-push-constant-bounds-and-interface-matching">Relaxing
+Push Constant Bounds and Interface Matching</h3>
+<p>Prior to <code>VK_KHR_maintenance4</code>, Vulkan enforced strict
+interface matching rules between SPIR-V shader modules and the
+<code>VkPipelineLayout</code>. If a pipeline layout defined a push
+constant range, shaders were required to statically access and match
+those ranges precisely. Any mismatch between the declared SPIR-V block
+size and the pipeline layout range could trigger validation layer errors
+or undefined behavior.</p>
+<p><code>VK_KHR_maintenance4</code> relaxed these interface matching
+rules:</p>
+<ul>
+<li><strong>Partial Block Declaration:</strong> Shaders are no longer
+required to declare all push constants defined in the pipeline layout. A
+shader can declare a push constant block that is smaller than the range
+specified during pipeline layout creation.</li>
+<li><strong>Relaxed Bounds Validation:</strong> Vulkan allows shaders to
+statically access only a subset of the push constant memory. As long as
+the shader does not access offsets outside the pipeline layout's push
+constant range, the pipeline can be created and executed safely. This
+eliminated the need for boilerplate padding or identical struct layouts
+across different shader stages.</li>
+</ul>
+<h3 id="decoupling-alignment-queries-from-buffer-creation">Decoupling
+Alignment Queries from Buffer Creation</h3>
+<p>Before this extension, determining memory alignment, size, and type
+requirements required creating an actual <code>VkBuffer</code> handle
+first using <code>vkCreateBuffer</code> and then calling
+<code>vkGetBufferMemoryRequirements</code>. For general-purpose memory
+allocators (such as Vulkan Memory Allocator), this necessitated creating
+"dummy" buffers solely to inspect physical device alignment
+restrictions.</p>
+<p><code>VK_KHR_maintenance4</code> introduced
+<code>vkGetDeviceBufferMemoryRequirementsKHR</code>, which allows
+applications to query alignment and allocation constraints directly from
+the logical device using a
+<code>VkDeviceBufferMemoryRequirementsKHR</code> structure. Developers
+can supply the intended buffer creation parameters (size, usage flags,
+and creation flags) directly to retrieve:</p>
+<ul>
+<li><code>alignment</code>: The required byte alignment for the
+underlying memory allocation.</li>
+<li><code>size</code>: The total memory size required, accounting for
+internal driver padding.</li>
+<li><code>memoryTypeBits</code>: Supported memory types for the
+requested configuration.</li>
+</ul>
+<p>This shift removed resource-creation overhead and streamlined how
+memory allocators compute alignment offsets before allocating backing
+<code>VkDeviceMemory</code>.</p>
+<h3
+id="relaxing-vk_buffer_usage_shader_device_address_bit-restrictions">Relaxing
+<code>VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT</code> Restrictions</h3>
+<p>Under earlier specifications, setting
+<code>VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT</code> on a buffer
+required the <code>bufferDeviceAddress</code> feature to be explicitly
+enabled on the device. Memory allocators that attempted to apply
+generic, universal usage flags to all allocations would fail if the
+feature was not enabled.</p>
+<p><code>VK_KHR_maintenance4</code> removed this restriction during
+buffer creation. Applications can create buffers with the
+<code>VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT</code> flag regardless
+of whether the <code>bufferDeviceAddress</code> feature is active. The
+feature is only required when the application actually queries the
+64-bit GPU virtual address via <code>vkGetBufferDeviceAddress</code>.
+This allows memory allocators to use unified buffer templates and
+standard alignment logic across varied device capabilities.</p>
+<h3 id="clarifying-buffer-bounds-with-maxbuffersize">Clarifying Buffer
+Bounds with <code>maxBufferSize</code></h3>
+<p>To eliminate ambiguity regarding buffer bounds and 64-bit addressing
+limits, <code>VK_KHR_maintenance4</code> introduced the
+<code>maxBufferSize</code> limit in
+<code>VkPhysicalDeviceMaintenance4Properties</code>.</p>
+<p>Previously, the maximum valid size of a <code>VkBuffer</code> was
+bounded implicitly by the maximum memory allocation size
+(<code>maxMemoryAllocationSize</code>) or internal implementation
+limits, leading to inconsistent bounds checking across different
+hardware vendors. The extension formalized <code>maxBufferSize</code>
+with a guaranteed minimum of <span class="math inline">\(2^{30}\)</span>
+bytes (1 GB) and support up to <span class="math inline">\(2^{64} -
+1\)</span> bytes on 64-bit architectures, establishing a predictable
+bound for uniform, storage, and vertex buffers across compute and
+graphics workloads.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

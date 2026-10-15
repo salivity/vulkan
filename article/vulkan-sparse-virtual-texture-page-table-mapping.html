@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Sparse Virtual Texture Page Table Mapping - vulkan</title>
+    <meta name="description" content="This article explains how the page table mapping mechanism operates for sparse virtual textures in the Vulkan API. It details how Vulkan decouples virtual image allocations from physical memory backing, how tile granularities and mip tails are structured,">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-sparse-virtual-texture-page-table-mapping">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Sparse Virtual Texture Page Table Mapping - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-sparse-virtual-texture-page-table-mapping" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how the page table mapping mechanism operates for sparse virtual textures in the Vulkan API. It details how Vulkan decouples virtual image allocations from physical memory backing, how tile granularities and mip tails are structured," />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-sparse-virtual-texture-page-table-mapping">Vulkan Sparse
+Virtual Texture Page Table Mapping</h1>
+<p>This article explains how the page table mapping mechanism operates
+for sparse virtual textures in the Vulkan API. It details how Vulkan
+decouples virtual image allocations from physical memory backing, how
+tile granularities and mip tails are structured, and how the driver and
+GPU translate runtime virtual texel accesses into physical memory
+addresses via sparse queue binding operations.</p>
+<h2 id="the-virtual-vs-physical-memory-decoupling">The Virtual vs.
+Physical Memory Decoupling</h2>
+<p>In standard Vulkan texture creation, a <code>VkImage</code> must be
+bound to a contiguous block of physical device memory
+(<code>VkDeviceMemory</code>) large enough to accommodate the entire
+texture across all mip levels and array layers. Sparse virtual texturing
+bypasses this requirement by separating the image's virtual address
+space from its physical backing.</p>
+<p>When an image is created with
+<code>VK_IMAGE_CREATE_SPARSE_BINDING_BIT</code> and
+<code>VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT</code>, the Vulkan driver
+reserves an address range in the GPU’s virtual memory space without
+committing actual VRAM. Memory is only allocated and committed for
+regions of the texture that are actively requested or rendered,
+drastically reducing memory footprints for high-resolution surfaces.</p>
+<h2 id="tile-granularity-and-memory-requirements">Tile Granularity and
+Memory Requirements</h2>
+<p>Sparse textures are partitioned into standardized, multi-dimensional
+blocks called sparse memory tiles (or pages). To establish the page
+table mappings, the application queries these dimensions using
+<code>vkGetImageSparseMemoryRequirements</code>.</p>
+<p>The implementation returns one or more
+<code>VkSparseImageMemoryRequirements</code> structures that
+dictate:</p>
+<ul>
+<li><strong>Tile Dimensions:</strong> The width, height, and depth of a
+memory page for a given format and aspect (typically aligning with
+standard GPU hardware pages, such as 64 KB blocks).</li>
+<li><strong>Mip Tail First LOD:</strong> The mip level at which
+individual mips become smaller than a single memory tile.</li>
+<li><strong>Mip Tail Size and Offset:</strong> The aggregate memory
+requirements needed to back all smaller mip levels as a single
+continuous unit.</li>
+</ul>
+<p>Because each standard tile corresponds to a discrete page in the
+underlying memory architecture, virtual address translation happens at
+the granularity of these individual tiles.</p>
+<h2 id="the-sparse-binding-process-vkqueuebindsparse">The Sparse Binding
+Process (<code>vkQueueBindSparse</code>)</h2>
+<p>The physical-to-virtual connection is not updated through command
+buffers; instead, it is executed directly on a queue that supports
+sparse binding (a queue family marked with
+<code>VK_QUEUE_SPARSE_BINDING_BIT</code>) using the
+<code>vkQueueBindSparse</code> function.</p>
+<p>The mapping workflow functions as follows:</p>
+<ol type="1">
+<li><strong>Allocating Physical Pages:</strong> The application
+allocates dedicated <code>VkDeviceMemory</code> blocks or sub-allocates
+from a pre-allocated pool to act as physical page frames.</li>
+<li><strong>Defining the Bind Array:</strong> The application builds
+<code>VkSparseImageMemoryBind</code> structures. Each structure defines:
+<ul>
+<li><code>subresource</code>: The mip level and array layer.</li>
+<li><code>offset</code>: The 3D coordinates (x, y, z) defining the
+tile's position in the virtual image.</li>
+<li><code>extent</code>: The dimensions of the region to be mapped
+(matching tile multiples).</li>
+<li><code>memory</code>: The <code>VkDeviceMemory</code> handle
+providing physical storage.</li>
+<li><code>memoryOffset</code>: The byte offset within the physical
+device memory.</li>
+</ul></li>
+<li><strong>Submission and Synchronization:</strong> The mapping request
+is packaged into a <code>VkBindSparseInfo</code> structure and submitted
+via <code>vkQueueBindSparse</code>. Because binding updates the GPU’s
+internal page tables asynchronously, Vulkan provides semaphores and
+fences to synchronize these updates with rendering commands.</li>
+</ol>
+<p>To unbind or evict a tile, the same operation is submitted with the
+<code>memory</code> field set to <code>VK_NULL_HANDLE</code>.</p>
+<h2 id="gpu-page-table-architecture-and-address-translation">GPU Page
+Table Architecture and Address Translation</h2>
+<p>The GPU’s internal memory management unit (MMU) handles runtime
+address translation using a multi-level page table structure:</p>
+<ol type="1">
+<li><strong>Texture Coordinate Calculation:</strong> A shader samples a
+texture coordinate <span class="math inline">\((u, v, w)\)</span> at a
+specific level of detail (LOD).</li>
+<li><strong>Virtual Page Identification:</strong> The texture mapping
+unit (TMU) calculates the corresponding virtual tile index based on the
+texel coordinate and the tile dimensions reported by the driver.</li>
+<li><strong>Page Table Lookup:</strong> The MMU traverses the GPU page
+tables:
+<ul>
+<li><strong>Resident Tile (Page Hit):</strong> If the page table entry
+(PTE) contains a valid physical address, the MMU resolves the virtual
+tile index to the corresponding physical offset in
+<code>VkDeviceMemory</code>. The texel data is fetched normally.</li>
+<li><strong>Unbound Tile (Page Fault / Non-resident):</strong> If the
+entry points to <code>VK_NULL_HANDLE</code> (unmapped), the page table
+entry is marked as non-resident.</li>
+</ul></li>
+</ol>
+<h2 id="residency-handling-in-shaders">Residency Handling in
+Shaders</h2>
+<p>Unlike standard CPU virtual memory that triggers an interrupt on an
+unmapped page fault, Vulkan handles sparse non-residency gracefully
+inside hardware sampling units.</p>
+<p>When sampling from partially populated sparse textures, shaders use
+specialized SPIR-V instructions (such as
+<code>OpImageSparseSampleImplicitLod</code>). These instructions return
+two components:</p>
+<ol type="1">
+<li>The fetched color/data value (typically returning zero or a defined
+default if unmapped).</li>
+<li>A residency status code.</li>
+</ol>
+<p>Shaders query the residency code via the Vulkan GLSL/HLSL intrinsic
+<code>sparseImageOpResult()</code>. If a tile is determined to be
+non-resident, the application can record this miss and dynamically
+stream in the missing page, queuing a new <code>vkQueueBindSparse</code>
+operation for subsequent frames.</p>
+<h2 id="mip-tail-mapping">Mip Tail Mapping</h2>
+<p>When mip levels become smaller than the dimension of a single
+hardware tile, managing individual page table entries becomes
+inefficient. Vulkan solves this with the <strong>Mip Tail</strong>.</p>
+<p>All mip levels equal to or greater than the
+<code>imageMipTailFirstLod</code> index are grouped together. Rather
+than mapping discrete 3D tiles, the entire tail is mapped using a single
+<code>VkSparseImageMemoryBind</code> entry that covers the combined byte
+size of the remaining mip levels. This reduces page table fragmentation
+and minimizes metadata overhead on the memory management unit.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

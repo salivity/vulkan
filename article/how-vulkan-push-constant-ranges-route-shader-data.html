@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How Vulkan Push Constant Ranges Route Shader Data - vulkan</title>
+    <meta name="description" content="In the Vulkan graphics and compute API, push constants provide a lightweight, high-performance mechanism for passing small amounts of uniform data directly to shaders without the overhead of descriptor sets or uniform buffer objects. This article explains">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/how-vulkan-push-constant-ranges-route-shader-data">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How Vulkan Push Constant Ranges Route Shader Data - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/how-vulkan-push-constant-ranges-route-shader-data" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In the Vulkan graphics and compute API, push constants provide a lightweight, high-performance mechanism for passing small amounts of uniform data directly to shaders without the overhead of descriptor sets or uniform buffer objects. This article explains" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-vulkan-push-constant-ranges-route-shader-data">How Vulkan
+Push Constant Ranges Route Shader Data</h1>
+<p>In the Vulkan graphics and compute API, push constants provide a
+lightweight, high-performance mechanism for passing small amounts of
+uniform data directly to shaders without the overhead of descriptor sets
+or uniform buffer objects. This article explains how push constant
+ranges (<code>VkPushConstantRange</code>) define memory layouts, map
+byte offsets, and route specific subsets of data to individual shader
+stages across graphics and compute pipelines.</p>
+<h3 id="the-purpose-of-push-constants">The Purpose of Push
+Constants</h3>
+<p>Push constants are embedded directly into the Vulkan command buffer
+rather than being stored in separate device memory allocations. Because
+hardware architectures often map push constants to GPU registers or
+specialized on-chip cache, they offer significantly lower latency than
+standard buffer-backed descriptors. However, Vulkan guarantees a minimum
+limit of only 128 bytes (<code>maxPushConstantsSize</code>), making
+precise memory management and stage-level data routing critical.</p>
+<h3 id="the-structure-of-a-push-constant-range">The Structure of a Push
+Constant Range</h3>
+<p>Push constant ranges are declared at pipeline creation through the
+<code>VkPushConstantRange</code> structure. This structure consists of
+three primary fields:</p>
+<ul>
+<li><strong><code>stageFlags</code></strong>: A bitmask specifying the
+shader stages (such as <code>VK_SHADER_STAGE_VERTEX_BIT</code> or
+<code>VK_SHADER_STAGE_FRAGMENT_BIT</code>) that will access the
+data.</li>
+<li><strong><code>offset</code></strong>: The byte offset where this
+range begins within the total push constant memory block.</li>
+<li><strong><code>size</code></strong>: The size, in bytes, allocated
+for this specific range.</li>
+</ul>
+<p>These ranges are supplied to the
+<code>VkPipelineLayoutCreateInfo</code> structure to form the pipeline
+layout, informing the GPU driver how to distribute the incoming byte
+stream to the appropriate execution units.</p>
+<h3 id="routing-data-to-specific-shader-stages">Routing Data to Specific
+Shader Stages</h3>
+<p>Vulkan uses push constant ranges to decouple the global push constant
+buffer from individual shader stage consumption. This routing operates
+via two primary configurations:</p>
+<h4 id="1-non-overlapping-independent-ranges">1. Non-Overlapping
+(Independent) Ranges</h4>
+<p>A pipeline can allocate distinct slices of the total push constant
+capacity to different stages. For example:</p>
+<ul>
+<li>A vertex stage might use offset <code>0</code> with a size of
+<code>64</code> bytes for a model-view-projection matrix.</li>
+<li>A fragment stage might use offset <code>64</code> with a size of
+<code>16</code> bytes for material parameters.</li>
+</ul>
+<p>In this scenario, each shader stage only has access to its designated
+memory window. When updating push constants via
+<code>vkCmdPushConstants</code>, you can update the vertex parameters
+independently of the fragment parameters by specifying the respective
+offset, size, and matching stage flag. This prevents unnecessary data
+transfers to hardware stages that do not require an update.</p>
+<h4 id="2-overlapping-shared-ranges">2. Overlapping (Shared) Ranges</h4>
+<p>Multiple shader stages can share access to the same memory offset. By
+combining stage flags (e.g.,
+<code>VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT</code>)
+or defining overlapping offsets across separate range structs, data
+written to that memory window becomes visible to all specified stages.
+This is useful for global scene information, such as camera positions,
+elapsed time, or lighting data, eliminating the need to duplicate
+identical data across multiple offsets.</p>
+<h3 id="command-buffer-execution-and-driver-efficiency">Command Buffer
+Execution and Driver Efficiency</h3>
+<p>Data is committed to the push constant block using the
+<code>vkCmdPushConstants</code> command. This call takes the pipeline
+layout, the target <code>stageFlags</code>, an <code>offset</code>, a
+<code>size</code>, and a pointer to host memory.</p>
+<p>The push constant ranges defined in the pipeline layout allow the
+Vulkan driver to validate that:</p>
+<ul>
+<li>The offset and size of the command fit within the hardware's maximum
+push constant capacity.</li>
+<li>The data is routed only to the execution pipelines containing the
+requested shader stages.</li>
+<li>Alignment requirements (multiples of 4 bytes) are enforced per
+Vulkan specification.</li>
+</ul>
+<p>By explicitly declaring which shader stages can read each segment of
+push constant data, the GPU can optimize register allocation and avoid
+invalidating caches on stages that do not consume the incoming
+updates.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

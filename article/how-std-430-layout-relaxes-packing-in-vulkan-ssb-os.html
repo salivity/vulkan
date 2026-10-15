@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How std430 Layout Relaxes Packing in Vulkan SSBOs - vulkan</title>
+    <meta name="description" content="In the Vulkan graphics and compute API, the std430 memory layout standard significantly reduces the padding overhead traditionally imposed by std140 when defining data structures inside Shader Storage Buffer Objects (SSBOs). While Uniform Buffer Objects (">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/how-std-430-layout-relaxes-packing-in-vulkan-ssb-os">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How std430 Layout Relaxes Packing in Vulkan SSBOs - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/how-std-430-layout-relaxes-packing-in-vulkan-ssb-os" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In the Vulkan graphics and compute API, the std430 memory layout standard significantly reduces the padding overhead traditionally imposed by std140 when defining data structures inside Shader Storage Buffer Objects (SSBOs). While Uniform Buffer Objects (" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-std430-layout-relaxes-packing-in-vulkan-ssbos">How std430
+Layout Relaxes Packing in Vulkan SSBOs</h1>
+<p>In the Vulkan graphics and compute API, the <code>std430</code>
+memory layout standard significantly reduces the padding overhead
+traditionally imposed by <code>std140</code> when defining data
+structures inside Shader Storage Buffer Objects (SSBOs). While Uniform
+Buffer Objects (UBOs) strictly adhere to <code>std140</code>, SSBOs
+support <code>std430</code> to allow arrays and nested structures to
+match native C/C++ memory layouts much more closely. This article
+examines the mechanics of <code>std430</code>, detailing how it relaxes
+array stride and struct alignment rules to conserve memory and eliminate
+tedious host-side data packing.</p>
+<h3 id="the-problem-with-std140-in-uniform-buffers">The Problem with
+std140 in Uniform Buffers</h3>
+<p>To understand how <code>std430</code> relaxes packing, it is
+necessary to examine the constraints of its predecessor,
+<code>std140</code>. Under <code>std140</code>, the base alignment of
+any array of scalars or vectors is rounded up to the size of a
+four-component vector (<code>vec4</code>), which is 16 bytes.</p>
+<p>For instance, an array defined as <code>float data[10];</code> in
+<code>std140</code> enforces a 16-byte stride between consecutive
+elements. Each 4-byte <code>float</code> consumes 16 bytes of buffer
+memory, leaving 12 bytes of unused padding per entry. This forces
+developers to either waste 75% of their buffer storage or manually
+interleave multiple components into tightly packed <code>vec4</code>
+constructs on the CPU.</p>
+<h3 id="how-std430-relaxes-array-and-structure-packing">How std430
+Relaxes Array and Structure Packing</h3>
+<p>The <code>std430</code> qualifier addresses these memory
+inefficiencies by aligning array elements according to their intrinsic
+base component alignment rather than forcing a 16-byte boundary.</p>
+<ul>
+<li><strong>Scalar Arrays:</strong> In <code>std430</code>, an array of
+scalars (such as <code>float</code>, <code>int</code>, or
+<code>uint</code>) has an element stride equal to the scalar’s size (4
+bytes). An array of 10 floats occupies exactly 40 bytes sequentially,
+rather than 160 bytes.</li>
+<li><strong>Vector Arrays:</strong> An array of two-component vectors
+(such as <code>vec2</code>, which has an 8-byte alignment) maintains an
+8-byte stride in <code>std430</code>. In <code>std140</code>, each
+<code>vec2</code> in an array would still require 16 bytes.</li>
+<li><strong>Structures in Arrays:</strong> Structures within arrays have
+an alignment equal to their largest member's alignment, but they are not
+artificially rounded up to multiples of 16 bytes unless a contained
+member explicitly requires 16-byte alignment (such as a
+<code>vec4</code> or <code>mat4</code>).</li>
+</ul>
+<h3 id="direct-cc-structure-compatibility">Direct C/C++ Structure
+Compatibility</h3>
+<p>The relaxed rules of <code>std430</code> bridge the gap between GPU
+layout requirements and standard CPU struct packing.</p>
+<p>Under <code>std430</code>, a GLSL SSBO defined as:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">std430</span><span class="op">,</span> set <span class="op">=</span> <span class="dv">0</span><span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="kw">buffer</span> ParticleBuffer <span class="op">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec2</span> position<span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec2</span> velocity<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> mass<span class="op">;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> lifetime<span class="op">;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span> particles<span class="op">[];</span></span></code></pre></div>
+<p>maps directly to standard C++ memory layout:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> Particle <span class="op">{</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> position<span class="op">[</span><span class="dv">2</span><span class="op">];</span> <span class="co">// 8-byte aligned, 8 bytes size</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> velocity<span class="op">[</span><span class="dv">2</span><span class="op">];</span> <span class="co">// 8-byte aligned, 8 bytes size</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> mass<span class="op">;</span>        <span class="co">// 4-byte aligned, 4 bytes size</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> lifetime<span class="op">;</span>    <span class="co">// 4-byte aligned, 4 bytes size</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="op">};</span> <span class="co">// Total size: 24 bytes, 8-byte alignment</span></span></code></pre></div>
+<p>Because the array stride matches the 24-byte size of the struct, a
+developer can upload an array of <code>Particle</code> structs directly
+to the GPU via <code>vkCmdCopyBuffer</code> or mapped memory without
+interleaving dummy padding variables.</p>
+<h3 id="what-remains-unchanged-in-std430">What Remains Unchanged in
+std430</h3>
+<p>While <code>std430</code> relaxes array and struct padding, it does
+not alter base primitive alignment requirements:</p>
+<ul>
+<li>Scalars (<code>float</code>, <code>int</code>, <code>uint</code>)
+still require 4-byte alignment.</li>
+<li>Two-component vectors (<code>vec2</code>) still require 8-byte
+alignment.</li>
+<li>Three-component (<code>vec3</code>) and four-component
+(<code>vec4</code>) vectors still require 16-byte alignment. A
+<code>vec3</code> still introduces a 4-byte padding offset if followed
+immediately by another scalar or vector that does not fit into the same
+16-byte boundary.</li>
+</ul>
+<p>By removing the mandatory 16-byte rounding rule for arrays and nested
+structs, <code>std430</code> dramatically reduces memory bandwidth
+consumption, simplifies host-to-device serialization, and allows SSBOs
+in Vulkan to function as dense, flexible data stores for heavy compute
+workloads.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

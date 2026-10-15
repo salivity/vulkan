@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Index Types for Indexed Drawing Commands - vulkan</title>
+    <meta name="description" content="When issuing indexed drawing commands such as vkCmdDrawIndexed in Vulkan, the API requires an index buffer bound with a specific index type to determine the format and byte size of each index. This article provides a direct overview of the supported index">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-index-types-for-indexed-drawing-commands">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Index Types for Indexed Drawing Commands - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-index-types-for-indexed-drawing-commands" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="When issuing indexed drawing commands such as vkCmdDrawIndexed in Vulkan, the API requires an index buffer bound with a specific index type to determine the format and byte size of each index. This article provides a direct overview of the supported index" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-index-types-for-indexed-drawing-commands">Vulkan Index
+Types for Indexed Drawing Commands</h1>
+<p>When issuing indexed drawing commands such as
+<code>vkCmdDrawIndexed</code> in Vulkan, the API requires an index
+buffer bound with a specific index type to determine the format and byte
+size of each index. This article provides a direct overview of the
+supported index types defined by the <code>VkIndexType</code>
+enumeration in Vulkan, covering both standard core types and modern
+extensions, along with their practical usage and performance
+implications.</p>
+<h2 id="core-vulkan-index-types">Core Vulkan Index Types</h2>
+<p>In base Vulkan (version 1.0 and later), two index types are
+universally supported on all conforming implementations without needing
+additional extensions or features enabled:</p>
+<ul>
+<li><strong><code>VK_INDEX_TYPE_UINT16</code></strong>: Represents
+16-bit unsigned integers (<code>uint16_t</code>). This format consumes 2
+bytes per index and supports meshes with up to 65,536 distinct vertex
+indices. It is the most common choice for general rendering because it
+provides a strong balance between vertex capacity and memory
+bandwidth.</li>
+<li><strong><code>VK_INDEX_TYPE_UINT32</code></strong>: Represents
+32-bit unsigned integers (<code>uint32_t</code>). This format consumes 4
+bytes per index and supports meshes with over 4 billion vertices. It is
+reserved for large, dense meshes where index values exceed the 16-bit
+threshold.</li>
+</ul>
+<h2 id="extended-index-types">Extended Index Types</h2>
+<p>Vulkan also provides support for smaller index sizes through
+extensions and newer core versions:</p>
+<ul>
+<li><strong><code>VK_INDEX_TYPE_UINT8_KHR</code> (or
+<code>VK_INDEX_TYPE_UINT8_EXT</code>)</strong>: Represents 8-bit
+unsigned integers (<code>uint8_t</code>), consuming 1 byte per index
+with a maximum range of 256 vertices. This type is provided by the
+<code>VK_KHR_index_type_uint8</code> (or
+<code>VK_EXT_index_type_uint8</code>) extension and integrated into
+Vulkan 1.4 core. It is ideal for UI elements, simple primitives, or
+compact geometry to minimize memory bandwidth and storage overhead. Use
+of this type requires checking and enabling the
+<code>indexTypeUint8</code> feature in
+<code>VkPhysicalDeviceIndexTypeUint8FeaturesKHR</code>.</li>
+</ul>
+<p><em>(Note: While <code>VK_INDEX_TYPE_NONE_KHR</code> or
+<code>VK_INDEX_TYPE_NONE_NV</code> exists in the
+<code>VkIndexType</code> enumeration for acceleration structure builds
+in ray tracing, it cannot be used for traditional indexed draw
+commands.)</em></p>
+<h2 id="applying-index-types-in-draw-commands">Applying Index Types in
+Draw Commands</h2>
+<p>To use an index type, specify it when binding the index buffer via
+<code>vkCmdBindIndexBuffer</code>:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>vkCmdBindIndexBuffer<span class="op">(</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    commandBuffer<span class="op">,</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    indexBuffer<span class="op">,</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    offset<span class="op">,</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    VK_INDEX_TYPE_UINT16 <span class="co">// Specifies the index type</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="op">);</span></span></code></pre></div>
+<p>Once bound, drawing commands like <code>vkCmdDrawIndexed</code> or
+<code>vkCmdDrawIndexedIndirect</code> read indices from the bound buffer
+according to the byte stride dictated by the chosen
+<code>VkIndexType</code>.</p>
+<h2 id="performance-considerations">Performance Considerations</h2>
+<ul>
+<li><strong>Bandwidth Efficiency</strong>: Smaller index types reduce
+memory bus traffic and improve post-transform vertex cache utilization.
+Use <code>UINT16</code> or <code>UINT8</code> whenever the vertex count
+allows.</li>
+<li><strong>Buffer Alignment</strong>: The offset passed to
+<code>vkCmdBindIndexBuffer</code> must be an integer multiple of the
+index type size (e.g., a multiple of 2 for <code>UINT16</code>, or 4 for
+<code>UINT32</code>).</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

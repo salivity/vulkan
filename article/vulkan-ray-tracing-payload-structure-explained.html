@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Ray Tracing Payload Structure Explained - vulkan</title>
+    <meta name="description" content="In Vulkan ray tracing pipelines, the ray payload is a user-defined data structure used to pass execution context and shading results back and forth between different ray tracing shader stages. This article explains the technical definition of ray payloads">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-ray-tracing-payload-structure-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Ray Tracing Payload Structure Explained - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-ray-tracing-payload-structure-explained" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Vulkan ray tracing pipelines, the ray payload is a user-defined data structure used to pass execution context and shading results back and forth between different ray tracing shader stages. This article explains the technical definition of ray payloads" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-ray-tracing-payload-structure-explained">Vulkan Ray
+Tracing Payload Structure Explained</h1>
+<p>In Vulkan ray tracing pipelines, the ray payload is a user-defined
+data structure used to pass execution context and shading results back
+and forth between different ray tracing shader stages. This article
+explains the technical definition of ray payloads, how they are declared
+and used in GLSL shaders, how data flows across ray generation, hit, and
+miss stages, and the performance considerations that dictate their
+design.</p>
+<h2 id="what-is-a-ray-payload">What is a Ray Payload?</h2>
+<p>A ray payload functions as the primary communication bridge during
+ray traversal. When a ray is cast, the calling shader provides a payload
+instance to store data that downstream stages need to access or modify.
+Typical payload data includes surface hit colors, hit distances, surface
+normals, ray bounce counters, and visibility flags.</p>
+<p>Because Vulkan allows custom payloads, there is no fixed hardware
+structure; developers define the layout according to the specific
+rendering algorithm being implemented (such as direct lighting, ambient
+occlusion, or path tracing).</p>
+<h2 id="payload-declarations-across-shader-stages">Payload Declarations
+Across Shader Stages</h2>
+<p>Ray payloads are declared using GLSL storage qualifiers linked by
+specific location indices. The declaration syntax depends on whether the
+shader initiates the ray or responds to the ray traversal.</p>
+<h3 id="1-caller-shaders-ray-generation-closest-hit">1. Caller Shaders
+(Ray Generation, Closest Hit)</h3>
+<p>Shaders that call <code>traceRayEXT()</code> declare the payload with
+the <code>rayPayloadEXT</code> qualifier, assigning it an explicit
+location index.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> RayPayload <span class="op">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> hitValue<span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> hitDistance<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> depth<span class="op">;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> rayPayloadEXT RayPayload prd<span class="op">;</span></span></code></pre></div>
+<p>When invoking <code>traceRayEXT()</code>, the last parameter must
+match the location index assigned to the payload:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">traceRayEXT</span><span class="op">(</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    topLevelAS<span class="op">,</span>           <span class="co">// Acceleration structure</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    gl_RayFlagsOpaqueEXT<span class="op">,</span> <span class="co">// Ray flags</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    <span class="bn">0xFF</span><span class="op">,</span>                 <span class="co">// Cull mask</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    <span class="dv">0</span><span class="op">,</span>                    <span class="co">// SBT record offset</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    <span class="dv">0</span><span class="op">,</span>                    <span class="co">// SBT record stride</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    <span class="dv">0</span><span class="op">,</span>                    <span class="co">// Miss index</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    rayOrigin<span class="op">,</span>            <span class="co">// Origin</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    tMin<span class="op">,</span>                 <span class="co">// Min distance</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    rayDirection<span class="op">,</span>         <span class="co">// Direction</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>    tMax<span class="op">,</span>                 <span class="co">// Max distance</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>    <span class="dv">0</span>                     <span class="co">// Payload location</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a><span class="op">);</span></span></code></pre></div>
+<h3 id="2-callee-shaders-closest-hit-any-hit-miss">2. Callee Shaders
+(Closest Hit, Any Hit, Miss)</h3>
+<p>Shaders executed as a result of traversal—such as Miss shaders
+(<code>rmiss</code>), Closest Hit shaders (<code>rchit</code>), and Any
+Hit shaders (<code>rahit</code>)—receive the payload using the
+<code>rayPayloadInEXT</code> qualifier at the same location index.</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> RayPayload <span class="op">{</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> hitValue<span class="op">;</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> hitDistance<span class="op">;</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> depth<span class="op">;</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> rayPayloadInEXT RayPayload prd<span class="op">;</span></span></code></pre></div>
+<p>These shaders write directly to the fields of <code>prd</code>. Once
+traversal concludes, control returns to the calling shader, where the
+modified payload fields can be read.</p>
+<h2 id="data-flow-lifecycle">Data Flow Lifecycle</h2>
+<ol type="1">
+<li><strong>Initialization:</strong> The Ray Generation shader
+instantiates the payload structure, initializes its values (e.g.,
+setting the bounce count or initial color), and calls
+<code>traceRayEXT()</code>.</li>
+<li><strong>Traversal:</strong> The hardware Traversal Engine processes
+bounding volume hierarchies (BVH). If an Any Hit shader is present and
+active, it can read or write to <code>rayPayloadInEXT</code> to handle
+effects like alpha-tested transparency.</li>
+<li><strong>Evaluation:</strong>
+<ul>
+<li>If an intersection is confirmed and traversal finishes, the Closest
+Hit shader executes, writing the evaluated lighting or material
+parameters into <code>rayPayloadInEXT</code>.</li>
+<li>If no intersection occurs, the Miss shader executes, typically
+writing background or environment map color into
+<code>rayPayloadInEXT</code>.</li>
+</ul></li>
+<li><strong>Resolution:</strong> Control returns to the Ray Generation
+shader immediately following the <code>traceRayEXT()</code> invocation,
+where the final values stored in <code>rayPayloadEXT</code> are
+composited into an image or used to launch subsequent rays.</li>
+</ol>
+<h2 id="memory-and-performance-considerations">Memory and Performance
+Considerations</h2>
+<p>While payloads are flexible, their size directly affects hardware
+performance:</p>
+<ul>
+<li><strong>Hardware Limits:</strong> Devices expose maximum payload
+size limits via
+<code>VkPhysicalDeviceRayTracingPipelinePropertiesKHR::maxRayPayloadSize</code>.
+The payload must not exceed this value.</li>
+<li><strong>Register Pressure:</strong> Large payload structures
+increase register usage across all ray tracing stages. If a payload
+cannot fit into GPU registers, the driver spills the data into
+high-latency device memory (VRAM), reducing throughput.</li>
+<li><strong>Data Packing:</strong> Payloads should be tightly packed.
+Align members along 4-byte or 16-byte boundaries (following standard
+alignment rules) and compress data types (such as packing floating-point
+normals into octahedral representations or 8-bit integers) to keep the
+total payload footprint as small as possible.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

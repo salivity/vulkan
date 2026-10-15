@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VK_EXT_fragment_density_map for Vulkan Foveated Rendering - vulkan</title>
+    <meta name="description" content="The VKEXTfragmentdensitymap extension in Vulkan provides a standardized mechanism for variable-rate shading primarily designed to accelerate foveated rendering in virtual and augmented reality applications. By allowing developers to supply a low-resolutio">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vk-ext-fragment-density-map-for-vulkan-foveated-rendering">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="VK_EXT_fragment_density_map for Vulkan Foveated Rendering - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vk-ext-fragment-density-map-for-vulkan-foveated-rendering" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The VKEXTfragmentdensitymap extension in Vulkan provides a standardized mechanism for variable-rate shading primarily designed to accelerate foveated rendering in virtual and augmented reality applications. By allowing developers to supply a low-resolutio" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="vk_ext_fragment_density_map-for-vulkan-foveated-rendering">VK_EXT_fragment_density_map
+for Vulkan Foveated Rendering</h1>
+<p>The <code>VK_EXT_fragment_density_map</code> extension in Vulkan
+provides a standardized mechanism for variable-rate shading primarily
+designed to accelerate foveated rendering in virtual and augmented
+reality applications. By allowing developers to supply a low-resolution
+2D map that defines the fragment invocation rate across different
+regions of a render target, the GPU can concentrate compute-heavy
+shading operations where visual acuity is highest—such as the center of
+the user's field of view—while reducing shading density in the
+periphery.</p>
+<h3 id="the-problem-it-solves-fill-rate-bottlenecks">The Problem It
+Solves: Fill-Rate Bottlenecks</h3>
+<p>High-resolution displays in modern XR headsets require rendering
+millions of pixels at high refresh rates (often 90Hz to 120Hz) to
+prevent motion sickness. Shading every pixel at native resolution across
+the entire field of view is computationally expensive. Human vision is
+sharpest only in a small central area known as the fovea, while
+peripheral vision is significantly less sensitive to high-frequency
+visual detail.</p>
+<p>Before this extension, implementing foveated rendering typically
+required complex workarounds, such as multi-pass rendering to multiple
+viewports with varying resolutions or applying radial lens distortions.
+These methods introduced significant geometry overhead and pipeline
+complexity.</p>
+<h3 id="how-vk_ext_fragment_density_map-operates">How
+VK_EXT_fragment_density_map Operates</h3>
+<p>The <code>VK_EXT_fragment_density_map</code> extension introduces an
+efficient, single-pass hardware solution:</p>
+<ol type="1">
+<li><strong>Density Map Input</strong>: The application creates a small,
+2D view of a density texture (typically formatted with two channels,
+representing horizontal and vertical density values).</li>
+<li><strong>Render Pass Integration</strong>: This density map is bound
+to the render pass via
+<code>VkRenderPassFragmentDensityMapCreateInfoEXT</code>.</li>
+<li><strong>Rasterization Control</strong>: During rasterization, the
+GPU automatically queries the density map to determine the size of the
+fragment shading invocations for different screen regions. In areas
+designated with lower density, single fragment shader invocations cover
+multiple pixels (such as 2x1, 2x2, or 4x4 pixel areas), while
+high-density areas maintain full 1x1 resolution.</li>
+<li><strong>Subsampling and Upscaling</strong>: The hardware natively
+handles the subsampling during shading and expands the results to the
+full framebuffer resolution without requiring extra post-processing
+passes.</li>
+</ol>
+<h3 id="support-for-fixed-and-dynamic-foveated-rendering">Support for
+Fixed and Dynamic Foveated Rendering</h3>
+<p>The extension accommodates both primary implementations of foveated
+rendering:</p>
+<ul>
+<li><strong>Fixed Foveated Rendering (FFR)</strong>: The density map
+remains static or centered on the display, optimizing performance based
+on the assumption that the user looks primarily through the optical
+center of the headset lenses.</li>
+<li><strong>Dynamic Foveated Rendering (DFR)</strong>: When combined
+with hardware eye-tracking, the density map can be updated dynamically
+each frame to shift the high-density shading area to match the exact
+point of the user's current gaze.</li>
+</ul>
+<h3 id="performance-advantages">Performance Advantages</h3>
+<p>By decoupling fragment shading frequency from geometry and render
+target resolution, <code>VK_EXT_fragment_density_map</code> drastically
+reduces fragment shader executions and memory bandwidth. It achieves
+this while preserving sharp geometric edges and depth buffers across the
+entire image, allowing developers to maintain strict frame-rate targets
+on mobile and standalone VR platforms.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

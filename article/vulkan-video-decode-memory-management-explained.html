@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Video Decode Memory Management Explained - vulkan</title>
+    <meta name="description" content="Vulkan Video integrates hardware-accelerated video decoding into the Vulkan ecosystem, requiring developers to explicitly handle device memory rather than relying on high-level driver abstractions. This article explains how memory management operates duri">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-video-decode-memory-management-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Video Decode Memory Management Explained - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-video-decode-memory-management-explained" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Vulkan Video integrates hardware-accelerated video decoding into the Vulkan ecosystem, requiring developers to explicitly handle device memory rather than relying on high-level driver abstractions. This article explains how memory management operates duri" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-video-decode-memory-management-explained">Vulkan Video
+Decode Memory Management Explained</h1>
+<p>Vulkan Video integrates hardware-accelerated video decoding into the
+Vulkan ecosystem, requiring developers to explicitly handle device
+memory rather than relying on high-level driver abstractions. This
+article explains how memory management operates during Vulkan video
+decoding sessions, covering session-specific memory requirements,
+Decoded Picture Buffer (DPB) allocation, bitstream buffer management,
+and image layout transitions.</p>
+<h3 id="video-session-initialization-and-memory-binding">Video Session
+Initialization and Memory Binding</h3>
+<p>A decoding workflow begins with the creation of a
+<code>VkVideoSessionKHR</code> object, which encapsulates the codec
+profile, resolution, and hardware decoder state. Unlike standard Vulkan
+objects that allocate internal resources invisibly, a video session
+requires explicit memory allocations provided by the application.</p>
+<p>Developers query these requirements using
+<code>vkGetVideoSessionMemoryRequirementsKHR</code>. The implementation
+returns one or more memory requirements structures representing distinct
+memory types needed by the hardware, such as scratch spaces, internal
+working memory, or context buffers.</p>
+<p>Each requirement specifies:</p>
+<ul>
+<li>Memory size and alignment requirements.</li>
+<li>Memory type bits indicating supported host or device memory
+types.</li>
+<li>A binding index corresponding to the specific internal purpose
+defined by the driver.</li>
+</ul>
+<p>The application allocates the necessary <code>VkDeviceMemory</code>
+via <code>vkAllocateMemory</code> and binds it to the session using
+<code>vkBindVideoSessionMemoryKHR</code>. A video session cannot execute
+decoding commands until all required memory bindings are satisfied.</p>
+<h3 id="the-decoded-picture-buffer-dpb">The Decoded Picture Buffer
+(DPB)</h3>
+<p>Inter-frame prediction codecs (such as H.264, H.265, and AV1) require
+previously decoded frames to reconstruct subsequent pictures. These
+frames reside in the Decoded Picture Buffer (DPB).</p>
+<p>In Vulkan, DPB memory is explicitly managed using standard
+<code>VkImage</code> allocations configured with the
+<code>VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR</code> flag. Depending on
+the implementation and chosen profile, DPB storage can follow two
+structural approaches:</p>
+<ol type="1">
+<li><strong>Individual Images:</strong> Separate <code>VkImage</code>
+allocations for each reference slot in the DPB.</li>
+<li><strong>Arrayed Image:</strong> A single layered
+<code>VkImage</code> where each layer represents a reference frame
+slot.</li>
+</ol>
+<p>Developers query decoder capabilities via
+<code>VkVideoDecodeCapabilitiesKHR</code> to determine the maximum
+number of active references and whether the hardware prefers array or
+independent image structures. Memory for DPB images must be allocated
+from device-local memory
+(<code>VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT</code>) to ensure low-latency
+access for the video hardware engine.</p>
+<h3 id="destination-and-display-images">Destination and Display
+Images</h3>
+<p>The target image that receives the newly decoded frame is flagged
+with <code>VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR</code>.</p>
+<p>Depending on codec configuration and implementation limits, the
+destination image and the DPB image may be distinct resources or the
+same resource:</p>
+<ul>
+<li><strong>Coinciding DPB and Destination:</strong> When the decoded
+frame immediately enters the reference list, the destination image can
+serve directly as a DPB entry, avoiding extra memory transfers.</li>
+<li><strong>Distinct DPB and Destination:</strong> If the implementation
+requires separate output storage, or if the format of the output needs
+post-processing (such as format conversion for rendering), distinct
+images are allocated, and the decoder writes simultaneously or copies to
+the target.</li>
+</ul>
+<h3 id="bitstream-source-buffers">Bitstream Source Buffers</h3>
+<p>The compressed video stream fed into the decoder must be placed in a
+<code>VkBuffer</code> created with
+<code>VK_BUFFER_USAGE_VIDEO_DECODE_SRC_BIT_KHR</code>.</p>
+<p>Because bitstream data is written by the CPU and read by the GPU,
+memory management for these buffers typically utilizes host-visible,
+host-coherent memory
+(<code>VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT</code>)
+or staging buffers with fast copy operations into device-local buffers.
+Ring buffers are frequently used to manage continuous streaming without
+constant reallocation.</p>
+<h3 id="memory-layouts-and-synchronization">Memory Layouts and
+Synchronization</h3>
+<p>Video operations must transition images into appropriate layouts
+using memory barriers (<code>vkCmdPipelineBarrier2</code> with
+<code>VkImageMemoryBarrier2</code>):</p>
+<ul>
+<li>Bitstream input buffers must be synchronized with
+<code>VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR</code> and access flag
+<code>VK_ACCESS_2_VIDEO_DECODE_READ_BIT_KHR</code>.</li>
+<li>Reference frames in the DPB require the layout
+<code>VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR</code> and access
+<code>VK_ACCESS_2_VIDEO_DECODE_READ_BIT_KHR</code>.</li>
+<li>Target output frames require the layout
+<code>VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR</code> and access
+<code>VK_ACCESS_2_VIDEO_DECODE_WRITE_BIT_KHR</code>.</li>
+</ul>
+<p>Once decoding is complete, standard image layout transitions allow
+the output frame to be handed off to the graphics queue
+(<code>VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL</code>) for rendering or
+presentation to the swapchain
+(<code>VK_IMAGE_LAYOUT_PRESENT_SRC_KHR</code>). Active DPB slots cannot
+be reused or transitioned away until the codec’s reference picture
+marking processes indicate that the referenced pictures are no longer
+needed.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

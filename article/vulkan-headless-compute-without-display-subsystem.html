@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Headless Compute Without Display Subsystem - vulkan</title>
+    <meta name="description" content="This article explains how the Vulkan API enables headless compute execution completely decoupled from any graphical display server or windowing subsystem. It details how applications configure instance and device creation without Window System Integration">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-headless-compute-without-display-subsystem">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Headless Compute Without Display Subsystem - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-headless-compute-without-display-subsystem" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how the Vulkan API enables headless compute execution completely decoupled from any graphical display server or windowing subsystem. It details how applications configure instance and device creation without Window System Integration" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-headless-compute-without-display-subsystem">Vulkan
+Headless Compute Without Display Subsystem</h1>
+<p>This article explains how the Vulkan API enables headless compute
+execution completely decoupled from any graphical display server or
+windowing subsystem. It details how applications configure instance and
+device creation without Window System Integration (WSI), allocate
+storage resources, dispatch compute shaders via specialized queues, and
+retrieve processed data directly back to host memory.</p>
+<h3 id="bypassing-window-system-integration-wsi">Bypassing Window System
+Integration (WSI)</h3>
+<p>Unlike legacy APIs that rely on an existing display context (such as
+EGL, GLX, or WGL), Vulkan treats presentation as an entirely optional
+layer. Window system integration is handled through extensions like
+<code>VK_KHR_surface</code> and platform-specific surface extensions
+(e.g., <code>VK_KHR_win32_surface</code> or
+<code>VK_KHR_xcb_surface</code>).</p>
+<p>To run headlessly, an application simply omits all surface and
+swapchain extensions when populating the
+<code>VkInstanceCreateInfo</code> structure. The Vulkan loader
+initializes cleanly on environments without an active X11, Wayland, or
+Windows desktop session, such as cloud compute instances, containerized
+microservices, or headless server nodes.</p>
+<h3 id="device-selection-and-compute-queues">Device Selection and
+Compute Queues</h3>
+<p>Once the instance is created, <code>vkEnumeratePhysicalDevices</code>
+exposes all available hardware. Headless compute nodes can target GPUs,
+dedicated accelerators, or software rasterizers.</p>
+<p>During device evaluation, the application inspects the
+<code>VkQueueFamilyProperties</code> of each device:</p>
+<ul>
+<li>The queue family must support
+<code>VK_QUEUE_COMPUTE_BIT</code>.</li>
+<li>The queue family does not need <code>VK_QUEUE_GRAPHICS_BIT</code>,
+allowing execution on dedicated compute queues that can operate
+asynchronously and with lower scheduling overhead than graphics-capable
+queues.</li>
+<li>Support for presentation is completely ignored, as
+<code>vkGetPhysicalDeviceSurfaceSupportKHR</code> is never called.</li>
+</ul>
+<p>The logical device (<code>VkDevice</code>) is then created requesting
+only the necessary compute queues and device-level compute extensions,
+completely omitting <code>VK_KHR_swapchain</code>.</p>
+<h3 id="resource-allocation-without-a-swapchain">Resource Allocation
+Without a Swapchain</h3>
+<p>In a graphical Vulkan workflow, the swapchain provides render targets
+that are presented to a screen. In headless compute, all inputs and
+outputs are typically represented as <code>VkBuffer</code> objects or
+headless <code>VkImage</code> objects bound to standard device
+memory.</p>
+<ol type="1">
+<li><strong>Input Buffers</strong>: Created with
+<code>VK_BUFFER_USAGE_STORAGE_BUFFER_BIT</code> or
+<code>VK_BUFFER_USAGE_TRANSFER_SRC_BIT</code>.</li>
+<li><strong>Output Buffers</strong>: Configured with
+<code>VK_BUFFER_USAGE_STORAGE_BUFFER_BIT</code> and
+<code>VK_BUFFER_USAGE_TRANSFER_SRC_BIT</code> to allow transferring
+results to host-accessible memory.</li>
+<li><strong>Memory Backing</strong>: Memory is allocated via
+<code>vkAllocateMemory</code>. For output retrieval, developers either
+allocate host-visible memory directly or allocate high-speed
+<code>VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT</code> memory and issue a
+<code>vkCmdCopyBuffer</code> command to copy results into a host-visible
+staging buffer upon completion.</li>
+</ol>
+<h3 id="pipeline-configuration-and-work-dispatch">Pipeline Configuration
+and Work Dispatch</h3>
+<p>Headless execution uses compute pipelines defined by
+<code>VkComputePipelineCreateInfo</code>. The pipeline references a
+compiled SPIR-V compute shader via a
+<code>VkPipelineShaderStageCreateInfo</code> with the stage set to
+<code>VK_SHADER_STAGE_COMPUTE_BIT</code>. Descriptor sets link the
+allocated storage buffers to the compute shader bindings.</p>
+<p>Execution follows standard command buffer recording:</p>
+<ol type="1">
+<li>Bind the compute pipeline with <code>vkCmdBindPipeline</code>.</li>
+<li>Bind the descriptor sets via
+<code>vkCmdBindDescriptorSets</code>.</li>
+<li>Issue <code>vkCmdDispatch</code> or
+<code>vkCmdDispatchIndirect</code> to specify the workgroup
+dimensions.</li>
+<li>Record pipeline barriers (<code>VkMemoryBarrier</code> or
+<code>VkBufferMemoryBarrier</code>) to ensure writes are completed and
+made available for transfer or host reads.</li>
+</ol>
+<h3 id="synchronization-and-data-retrieval">Synchronization and Data
+Retrieval</h3>
+<p>Because there is no presentation step
+(<code>vkQueuePresentKHR</code>), the lifecycle of the execution
+concludes through explicit synchronization primitives:</p>
+<ul>
+<li>A <code>VkFence</code> is submitted alongside the command buffer via
+<code>vkQueueSubmit</code>.</li>
+<li>The CPU waits for the GPU to finish execution using
+<code>vkWaitForFences</code>.</li>
+<li>Alternatively, timeline semaphores
+(<code>VK_KHR_timeline_semaphore</code>) can be used to synchronize
+fine-grained compute jobs across multiple host threads.</li>
+</ul>
+<p>Once the fence signals, the host maps the output buffer using
+<code>vkMapMemory</code>, invalidates the memory caches if the memory is
+not coherent, reads the processed results directly into system RAM, and
+unmaps the memory via <code>vkUnmapMemory</code>. The entire pipeline
+executes with direct hardware access and zero dependency on a graphical
+user environment.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

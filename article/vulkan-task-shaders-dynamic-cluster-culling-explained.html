@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Task Shaders: Dynamic Cluster Culling Explained - vulkan</title>
+    <meta name="description" content="In modern Vulkan rendering, the mesh shading pipeline replaces traditional fixed-function geometry pipelines with an efficient, compute-like approach divided into task and mesh shaders. This article explores how task shader payload sharing acts as the cri">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-task-shaders-dynamic-cluster-culling-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Task Shaders: Dynamic Cluster Culling Explained - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-task-shaders-dynamic-cluster-culling-explained" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In modern Vulkan rendering, the mesh shading pipeline replaces traditional fixed-function geometry pipelines with an efficient, compute-like approach divided into task and mesh shaders. This article explores how task shader payload sharing acts as the cri" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-task-shaders-dynamic-cluster-culling-explained">Vulkan
+Task Shaders: Dynamic Cluster Culling Explained</h1>
+<p>In modern Vulkan rendering, the mesh shading pipeline replaces
+traditional fixed-function geometry pipelines with an efficient,
+compute-like approach divided into task and mesh shaders. This article
+explores how task shader payload sharing acts as the critical bridge for
+dynamic cluster culling. By executing coarse-grained visibility tests
+and compacting surviving meshlet identifiers into a shared payload
+buffer before spawning mesh shader workgroups, developers can
+dramatically eliminate redundant geometry processing early in the
+graphics pipeline.</p>
+<h2 id="the-mesh-shading-pipeline-architecture">The Mesh Shading
+Pipeline Architecture</h2>
+<p>The Vulkan mesh shading extension (<code>VK_EXT_mesh_shader</code>)
+introduces a two-tier execution model designed to handle geometry in
+dense, localized batches known as meshlets or clusters:</p>
+<ol type="1">
+<li><strong>Task Shader:</strong> An optional amplification stage that
+operates similarly to a compute shader. It evaluates bounding geometry,
+computes level of detail (LOD), and dynamically dictates how many mesh
+shader workgroups to spawn.</li>
+<li><strong>Mesh Shader:</strong> The primary geometry generation stage
+that outputs vertex and primitive data directly to the rasterizer.</li>
+</ol>
+<p>Because mesh shaders consume significant register space and memory
+bandwidth to unpack vertices and build primitives, executing them on
+invisible or occluded geometry is inefficient. The task shader serves as
+a programmable filter that discards culled clusters prior to this
+expensive stage.</p>
+<h2 id="the-role-of-the-task-payload">The Role of the Task Payload</h2>
+<p>Communication between the task shader and the downstream mesh shader
+occurs through a user-defined payload structure, declared using the
+<code>taskPayloadSharedEXT</code> storage qualifier in GLSL.</p>
+<p>The task payload functions as shared memory across the workgroup and
+persists down to the child mesh shader invocations. Its primary
+characteristics include:</p>
+<ul>
+<li><strong>Sized by the Application:</strong> The payload holds
+application-specific data, typically consisting of an array of surviving
+cluster indices, transformation matrices, or draw parameters.</li>
+<li><strong>Per-Dispatch Persistence:</strong> Data written to the
+payload by the task shader workgroup is read-only by the mesh shader
+workgroups spawned by that specific task invocation.</li>
+<li><strong>Compact Footprint:</strong> Because task payload memory
+consumes on-chip storage, keeping the structure minimal ensures high
+hardware occupancy and lower memory pressure.</li>
+</ul>
+<h2 id="the-dynamic-cluster-culling-process">The Dynamic Cluster Culling
+Process</h2>
+<p>Dynamic cluster culling takes advantage of the task payload through a
+multi-step parallel evaluation process:</p>
+<h3 id="1-coarse-bounding-evaluation">1. Coarse Bounding Evaluation</h3>
+<p>Each invocation within a task shader workgroup reads the metadata for
+an individual cluster or a set of clusters. This metadata includes
+bounding spheres or oriented bounding boxes (OBBs), along with normal
+cones for orientation.</p>
+<p>The invocation then executes standard culling algorithms:</p>
+<ul>
+<li><strong>Frustum Culling:</strong> Testing the cluster bounding
+volume against the active camera view frustum planes.</li>
+<li><strong>Cone Culling (Backface Culling):</strong> Comparing the
+cluster's normal cone apex and angle against the view vector to
+eliminate clusters pointing entirely away from the camera.</li>
+<li><strong>Occlusion Culling:</strong> Testing cluster bounds against a
+hierarchical Z-buffer (HZB) or depth pyramid.</li>
+</ul>
+<h3 id="2-stream-compaction">2. Stream Compaction</h3>
+<p>Clusters that pass all culling checks are marked as visible. To
+prevent holes in the dispatch and optimize mesh shader utilization, the
+task shader performs a parallel stream compaction:</p>
+<ul>
+<li>Subgroup ballot operations (<code>subgroupBallot</code>,
+<code>subgroupInclusiveAdd</code>) compute the total number of surviving
+clusters and assign each visible cluster a contiguous index.</li>
+<li>Each thread with a surviving cluster writes the cluster's global ID
+into the array defined in the <code>taskPayloadSharedEXT</code>
+struct.</li>
+</ul>
+<h3 id="3-dynamic-dispatch-emission">3. Dynamic Dispatch Emission</h3>
+<p>Once compaction is complete, a single invocation in the task
+workgroup issues the dispatch call via
+<code>EmitMeshTasksEXT(visibleCount, 1, 1)</code>.</p>
+<p>If zero clusters survive the tests,
+<code>EmitMeshTasksEXT(0, 0, 0)</code> is called. This immediately halts
+execution for that branch, preventing any mesh shaders from being
+scheduled on the GPU. If clusters survive, the exact number of required
+mesh shader workgroups is instantiated.</p>
+<h2 id="receiving-the-payload-in-the-mesh-shader">Receiving the Payload
+in the Mesh Shader</h2>
+<p>When the spawned mesh shader workgroups begin execution:</p>
+<ol type="1">
+<li>Each mesh shader reads its respective entry from the task payload
+using its workgroup ID (e.g.,
+<code>payload.clusterIndices[gl_WorkGroupID.x]</code>).</li>
+<li>The mesh shader fetches vertex and index buffers only for the
+validated cluster.</li>
+<li>Vertices are transformed, primitives are assembled, and visible
+geometry is sent to the rasterizer.</li>
+</ol>
+<h2 id="performance-advantages">Performance Advantages</h2>
+<p>Using task shader payload sharing for dynamic culling provides three
+primary architectural benefits:</p>
+<ul>
+<li><strong>Zero Wasted Mesh Workgroups:</strong> Mesh shaders are never
+launched for culled clusters, preventing the allocation of execution
+slots and vector registers for non-visible primitives.</li>
+<li><strong>Reduced Memory Bandwidth:</strong> Index and vertex buffers
+are only fetched from VRAM for visible clusters, bypassing memory
+lookups for occluded geometry.</li>
+<li><strong>Subgroup-Level Efficiency:</strong> By compacting payloads
+dynamically, mesh shaders maintain full workgroup occupancy without
+encountering diverging execution paths caused by culled geometry.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

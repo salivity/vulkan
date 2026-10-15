@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenCL and Vulkan Sync Using Timeline Semaphores - vulkan</title>
+    <meta name="description" content="Timeline semaphores provide a unified, low-overhead mechanism for coordinating workloads between OpenCL and Vulkan without requiring expensive CPU-side synchronization. By utilizing a shared, monotonically increasing 64-bit integer counter exported across">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/open-cl-and-vulkan-sync-using-timeline-semaphores">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenCL and Vulkan Sync Using Timeline Semaphores - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/open-cl-and-vulkan-sync-using-timeline-semaphores" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Timeline semaphores provide a unified, low-overhead mechanism for coordinating workloads between OpenCL and Vulkan without requiring expensive CPU-side synchronization. By utilizing a shared, monotonically increasing 64-bit integer counter exported across" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opencl-and-vulkan-sync-using-timeline-semaphores">OpenCL and
+Vulkan Sync Using Timeline Semaphores</h1>
+<p>Timeline semaphores provide a unified, low-overhead mechanism for
+coordinating workloads between OpenCL and Vulkan without requiring
+expensive CPU-side synchronization. By utilizing a shared, monotonically
+increasing 64-bit integer counter exported across native platform
+handles, both APIs can signal and wait on fine-grained execution
+milestones entirely on the GPU. This eliminates the coarse-grained,
+single-use restrictions of legacy binary semaphores and enables complex,
+lock-free heterogeneous compute and graphics pipelines.</p>
+<h3 id="the-interoperability-challenge">The Interoperability
+Challenge</h3>
+<p>Modern heterogeneous applications often combine OpenCL for
+specialized scientific computing, machine learning, or legacy compute
+kernels with Vulkan for real-time graphics rendering and display output.
+Historically, synchronizing data between these two APIs was
+inefficient:</p>
+<ol type="1">
+<li><strong>CPU Fences and Pipeline Stalls:</strong> Applications were
+forced to wait on host-side fences (<code>vkWaitForFences</code> and
+<code>clFinish</code>), stalling the CPU to ensure one API completed
+execution before the other began.</li>
+<li><strong>Binary Semaphore Limitations:</strong> Traditional binary
+semaphores (<code>VkSemaphore</code> and standard <code>cl_event</code>
+objects) maintain only a binary signaled/unsignaled state. They are
+single-use per submission, require strict 1:1 signal-wait pairing, and
+must be submitted in execution order, making non-linear dependency
+graphs difficult to manage.</li>
+</ol>
+<h3 id="the-timeline-semaphore-model">The Timeline Semaphore Model</h3>
+<p>Timeline semaphores replace the simple binary flag with a 64-bit
+unsigned integer payload. Instead of toggling between unsignaled and
+signaled:</p>
+<ul>
+<li>A <strong>signal operation</strong> sets the timeline counter to a
+strictly higher value upon completion of a batch of GPU commands.</li>
+<li>A <strong>wait operation</strong> blocks GPU execution of dependent
+work until the timeline counter reaches or exceeds a specified target
+value.</li>
+</ul>
+<p>Because the counter is monotonically increasing, multiple submissions
+across different queues or APIs can wait on or signal the same primitive
+without resetting it. Furthermore, operations can be scheduled
+out-of-order on the host, as the GPU will naturally serialize execution
+based on the expected numeric milestones.</p>
+<h3 id="bridging-the-apis-via-external-handles">Bridging the APIs via
+External Handles</h3>
+<p>Inter-API synchronization is made possible by aligning extension
+ecosystems in both Khronos APIs:</p>
+<ul>
+<li><strong>Vulkan Support:</strong> Provided natively in Vulkan 1.2 (or
+via <code>VK_KHR_timeline_semaphore</code>) along with external memory
+and semaphore extensions (<code>VK_KHR_external_semaphore</code>,
+<code>VK_KHR_external_semaphore_fd</code>, or
+<code>VK_KHR_external_semaphore_win32</code>).</li>
+<li><strong>OpenCL Support:</strong> Provided via the
+<code>cl_khr_semaphore</code> extension family, specifically
+<code>cl_khr_semaphore_timeline</code> and external handle extensions
+like <code>cl_khr_external_semaphore_opaque_fd</code> or
+<code>cl_khr_external_semaphore_win32</code>.</li>
+</ul>
+<p>Both APIs define their synchronization objects over shared native
+operating system abstractions—typically file descriptors
+(<code>opaque_fd</code>) on Linux/Android or shared NT handles
+(<code>HANDLE</code>) on Windows.</p>
+<h3 id="implementation-workflow">Implementation Workflow</h3>
+<p>Bridging OpenCL and Vulkan involves four discrete stages:</p>
+<h4 id="1-semaphore-creation-and-export">1. Semaphore Creation and
+Export</h4>
+<p>The application creates a timeline semaphore in one API, explicitly
+marking it as exportable. For example, in Vulkan, a
+<code>VkSemaphore</code> is created with
+<code>VkSemaphoreTypeCreateInfo</code> set to
+<code>VK_SEMAPHORE_TYPE_TIMELINE</code> and an initial value (often
+<code>0</code>). An <code>ExportSemaphoreCreateInfo</code> structure is
+chained to allow exporting via the platform's handle type.</p>
+<h4 id="2-handle-sharing-and-import">2. Handle Sharing and Import</h4>
+<p>The underlying native primitive is exported:</p>
+<ul>
+<li>In Vulkan via <code>vkGetSemaphoreFdKHR</code> (Linux) or
+<code>vkGetSemaphoreWin32HandleKHR</code> (Windows).</li>
+<li>In OpenCL, this native handle is passed into
+<code>clCreateSemaphoreWithPropertiesKHR</code> using property
+attributes such as
+<code>CL_SEMAPHORE_TYPE_KHR = CL_SEMAPHORE_TYPE_TIMELINE_KHR</code> and
+<code>CL_SEMAPHORE_HANDLE_OPAQUE_FD_KHR</code>.</li>
+</ul>
+<p>Both APIs now point to the exact same underlying GPU driver sync
+primitive.</p>
+<h4 id="3-execution-and-cross-signaling">3. Execution and
+Cross-Signaling</h4>
+<p>Commands can now be dispatched concurrently:</p>
+<ul>
+<li><strong>OpenCL Compute Phase:</strong> OpenCL enqueues a kernel and
+registers a signal operation via
+<code>clEnqueueSignalSemaphoresKHR</code>, targeting a value of
+<code>1</code>.</li>
+<li><strong>Vulkan Render Phase:</strong> Vulkan submits draw calls via
+<code>vkQueueSubmit</code> configured with a
+<code>VkTimelineSemaphoreSubmitInfo</code> structure that pauses the
+graphics queue until the semaphore counter reaches <code>1</code>.
+Vulkan can simultaneously register a subsequent signal to advance the
+semaphore to value <code>2</code> when rendering completes.</li>
+<li><strong>Return Loop:</strong> OpenCL enqueues the next iteration of
+compute work with <code>clEnqueueWaitSemaphoresKHR</code> configured to
+unblock only when the semaphore hits value <code>2</code>.</li>
+</ul>
+<h4 id="4-shared-memory-access-coordination">4. Shared Memory Access
+Coordination</h4>
+<p>When combined with external memory sharing
+(<code>cl_khr_external_memory</code> and
+<code>VK_KHR_external_memory</code>), memory ownership transitions are
+paired directly with semaphore counter milestones. The application does
+not need to recreate buffers, copy memory across the PCI bus, or perform
+explicit driver cache flushing on the host.</p>
+<h3 id="technical-advantages">Technical Advantages</h3>
+<p>Timeline semaphores provide several critical performance advantages
+for heterogeneous graphics and compute pipelines:</p>
+<ul>
+<li><strong>Zero CPU-Side Stalling:</strong> Host threads enqueue all
+work ahead of time. Work scheduling between OpenCL and Vulkan is
+resolved entirely in the GPU hardware schedulers and firmware.</li>
+<li><strong>Granular Multi-Stage Pipelining:</strong> An OpenCL
+processing pipeline can signal milestone <code>1</code> after writing to
+Buffer A, and milestone <code>2</code> after writing to Buffer B. Vulkan
+can consume Buffer A immediately upon milestone <code>1</code> without
+waiting for the entire OpenCL command queue to finish.</li>
+<li><strong>Simplified Resource Lifecycles:</strong> Unlike binary
+semaphores, timeline semaphores do not need constant allocation,
+destruction, or re-exporting per frame, dramatically reducing runtime
+driver overhead.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How Vulkan Manages Shared Memory in Compute Workgroups - vulkan</title>
+    <meta name="description" content="In the Vulkan graphics and compute API, shared memory—often termed workgroup local memory—provides high-speed, on-chip storage accessible by all invocations (threads) within a single compute workgroup. This article covers how Vulkan handles shared memory">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/how-vulkan-manages-shared-memory-in-compute-workgroups">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How Vulkan Manages Shared Memory in Compute Workgroups - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/how-vulkan-manages-shared-memory-in-compute-workgroups" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In the Vulkan graphics and compute API, shared memory—often termed workgroup local memory—provides high-speed, on-chip storage accessible by all invocations (threads) within a single compute workgroup. This article covers how Vulkan handles shared memory" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-vulkan-manages-shared-memory-in-compute-workgroups">How
+Vulkan Manages Shared Memory in Compute Workgroups</h1>
+<p>In the Vulkan graphics and compute API, shared memory—often termed
+workgroup local memory—provides high-speed, on-chip storage accessible
+by all invocations (threads) within a single compute workgroup. This
+article covers how Vulkan handles shared memory allocation during
+compute dispatches, including static definition in SPIR-V shaders,
+hardware resource limits, occupancy constraints on compute hardware, and
+synchronization requirements during execution.</p>
+<h2 id="shared-memory-declaration-and-compile-time-sizing">Shared Memory
+Declaration and Compile-Time Sizing</h2>
+<p>Unlike APIs such as CUDA or Metal, core Vulkan does not permit
+dynamically sized shared memory allocations passed directly via the API
+command buffer (such as parameters in <code>vkCmdDispatch</code>).
+Instead, shared memory is statically sized within the shader source.</p>
+<p>In GLSL, shared variables are declared using the <code>shared</code>
+storage qualifier, which compiles to the <code>Workgroup</code> storage
+class in SPIR-V:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">shared</span> <span class="dt">float</span> localTile<span class="op">[</span><span class="dv">16</span><span class="op">][</span><span class="dv">16</span><span class="op">];</span></span></code></pre></div>
+<p>Because the memory requirements are defined in the shader, the Vulkan
+driver determines the exact byte footprint required per workgroup during
+the creation of the compute pipeline
+(<code>VkComputePipelineCreateInfo</code>). If an application requires
+variable allocation sizes without recompiling full shaders, it must use
+<strong>Specialization Constants</strong> to adjust array dimensions at
+pipeline creation time.</p>
+<h2 id="device-limits-and-pipeline-creation">Device Limits and Pipeline
+Creation</h2>
+<p>Vulkan enforces strict hardware bounds on the shared memory an
+individual workgroup can claim. During pipeline creation, the driver
+validates the pipeline's memory footprint against the device's
+limits:</p>
+<ul>
+<li><strong><code>maxComputeSharedMemorySize</code></strong>: Queried
+via <code>VkPhysicalDeviceLimits</code>, this property defines the
+maximum total bytes of workgroup memory available to a single compute
+workgroup. On modern desktop GPUs, this typically ranges between 32 KB
+and 64 KB.</li>
+<li><strong>Failures at Creation</strong>: If the total size of all
+variables marked with the <code>Workgroup</code> storage class exceeds
+<code>maxComputeSharedMemorySize</code>,
+<code>vkCreateComputePipelines</code> will fail and return an error
+(such as <code>VK_ERROR_INITIALIZATION_FAILED</code>).</li>
+</ul>
+<h2 id="workgroup-scheduling-and-hardware-occupancy">Workgroup
+Scheduling and Hardware Occupancy</h2>
+<p>When <code>vkCmdDispatch</code> or <code>vkCmdDispatchIndirect</code>
+is submitted, the command processor distributes the requested 3D grid of
+workgroups across the physical execution engines (such as Streaming
+Multiprocessors on NVIDIA or Compute Units on AMD/Intel).</p>
+<p>Allocation happens dynamically at the hardware level per
+workgroup:</p>
+<ol type="1">
+<li><strong>Hardware Reservation</strong>: Before a compute unit
+launches a workgroup, it reserves the required shared memory footprint
+from its on-chip SRAM cache.</li>
+<li><strong>Occupancy Impact</strong>: Because physical shared memory
+per compute unit is finite, a high shared memory allocation per
+workgroup restricts the number of active workgroups that can reside on
+that unit simultaneously. This directly limits warp/wavefront occupancy,
+potentially reducing the GPU's ability to hide memory latency.</li>
+<li><strong>Deallocation</strong>: When all invocations in a workgroup
+complete execution, the hardware immediately releases the workgroup’s
+shared memory allocation, freeing on-chip capacity for pending
+workgroups in the dispatch queue.</li>
+</ol>
+<h2 id="lifetime-and-scope-isolation">Lifetime and Scope Isolation</h2>
+<p>Memory allocated for a workgroup exists strictly within the execution
+lifetime of that specific workgroup. There is no persistence across
+workgroups or dispatches:</p>
+<ul>
+<li><strong>Isolation</strong>: Workgroups cannot access the shared
+memory of another workgroup, even if both reside concurrently on the
+same physical compute unit.</li>
+<li><strong>Undefined Initial State</strong>: Shared memory is
+uninitialized upon workgroup launch. Reading from it before writing
+yields undefined behavior.</li>
+</ul>
+<h2 id="synchronization-and-coherency">Synchronization and
+Coherency</h2>
+<p>Because invocations within a workgroup execute in lockstep warps or
+wavefronts asynchronously relative to one another, reads and writes to
+shared memory require explicit synchronization to avoid race
+conditions.</p>
+<p>SPIR-V and GLSL provide execution and memory barriers to manage
+consistency:</p>
+<ul>
+<li><strong><code>barrier()</code></strong>: Enforces execution
+synchronization, ensuring all invocations in the workgroup reach the
+same point in execution.</li>
+<li><strong><code>memoryBarrierShared()</code></strong>: Enforces memory
+ordering, guaranteeing that all prior writes to <code>shared</code>
+memory by any invocation in the workgroup become visible to subsequent
+reads.</li>
+</ul>
+<p>Without these barriers, the driver and GPU hardware are free to
+reorder reads and writes, leading to data hazards in shared memory
+buffers.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How to Handle Window Resizing in Vulkan - vulkan</title>
+    <meta name="description" content="Handling window resizing in Vulkan requires detecting the resize event, properly synchronizing running GPU operations, and rebuilding the swapchain alongside its dependent resources. When a window changes dimensions, the existing swapchain becomes invalid">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/how-to-handle-window-resizing-in-vulkan">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How to Handle Window Resizing in Vulkan - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/how-to-handle-window-resizing-in-vulkan" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Handling window resizing in Vulkan requires detecting the resize event, properly synchronizing running GPU operations, and rebuilding the swapchain alongside its dependent resources. When a window changes dimensions, the existing swapchain becomes invalid" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-to-handle-window-resizing-in-vulkan">How to Handle Window
+Resizing in Vulkan</h1>
+<p>Handling window resizing in Vulkan requires detecting the resize
+event, properly synchronizing running GPU operations, and rebuilding the
+swapchain alongside its dependent resources. When a window changes
+dimensions, the existing swapchain becomes invalid or suboptimal,
+requiring the engine to safely clean up old handles, query updated
+surface dimensions, and allocate new framebuffers. This guide walks
+through the exact step-by-step process needed to manage window resize
+events smoothly without stalling, freezing, or crashing your
+application.</p>
+<h3 id="1-detect-the-resize-event">1. Detect the Resize Event</h3>
+<p>Window resizing can be detected in two primary ways: through your
+windowing library (such as GLFW or SDL) via a framebuffer size callback,
+or directly through Vulkan's presentation queue return codes.</p>
+<p>During presentation or swapchain acquisition, functions like
+<code>vkAcquireNextImageKHR</code> or <code>vkQueuePresentKHR</code>
+will return <code>VK_ERROR_OUT_OF_DATE_KHR</code> or
+<code>VK_SUBOPTIMAL_KHR</code> when the surface is no longer compatible
+with the swapchain. When using a windowing callback, set a boolean flag
+(e.g., <code>framebufferResized = true</code>) and trigger the
+recreation process on the next frame.</p>
+<h3 id="2-handle-window-minimization">2. Handle Window Minimization</h3>
+<p>When a window is minimized, its width and height typically drop to
+zero. Attempting to create a swapchain with zero width or zero height
+will cause Vulkan to return an error. Check the surface extent before
+proceeding:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> width <span class="op">=</span> <span class="dv">0</span><span class="op">,</span> height <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>glfwGetFramebufferSize<span class="op">(</span>window<span class="op">,</span> <span class="op">&amp;</span>width<span class="op">,</span> <span class="op">&amp;</span>height<span class="op">);</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="cf">while</span> <span class="op">(</span>width <span class="op">==</span> <span class="dv">0</span> <span class="op">||</span> height <span class="op">==</span> <span class="dv">0</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    glfwGetFramebufferSize<span class="op">(</span>window<span class="op">,</span> <span class="op">&amp;</span>width<span class="op">,</span> <span class="op">&amp;</span>height<span class="op">);</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    glfwWaitEvents<span class="op">();</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>Pause rendering and wait until the window dimensions are positive
+before continuing with swapchain recreation.</p>
+<h3 id="3-wait-for-the-device-to-idle">3. Wait for the Device to
+Idle</h3>
+<p>Before destroying any swapchain components or framebuffers, ensure
+that the GPU is not currently reading from or writing to them. Call
+<code>vkDeviceWaitIdle</code> to flush the command queues and wait for
+all in-flight rendering operations to complete:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>vkDeviceWaitIdle<span class="op">(</span>device<span class="op">);</span></span></code></pre></div>
+<p>While finer-grained synchronization with fences is possible,
+<code>vkDeviceWaitIdle</code> is the safest and most common approach
+during a resize event.</p>
+<h3 id="4-clean-up-dependent-resources">4. Clean Up Dependent
+Resources</h3>
+<p>Destroy all objects that directly depend on the swapchain images and
+their dimensions. This includes:</p>
+<ul>
+<li>Framebuffers (<code>vkDestroyFramebuffer</code>)</li>
+<li>Image views associated with swapchain images
+(<code>vkDestroyImageView</code>)</li>
+<li>Depth and stencil buffers, along with their image views, if their
+resolution matches the swapchain extent</li>
+</ul>
+<p>Do not destroy the render pass unless its format changes, and do not
+destroy the old swapchain itself yet if you plan to use it for
+retirement during recreation.</p>
+<h3 id="5-recreate-the-swapchain">5. Recreate the Swapchain</h3>
+<p>Query the physical device surface capabilities using
+<code>vkGetPhysicalDeviceSurfaceCapabilitiesKHR</code> to determine the
+new surface dimensions and supported transform flags.</p>
+<p>Set up the <code>VkSwapchainCreateInfoKHR</code> structure with the
+updated extent. Assign the existing swapchain handle to the
+<code>oldSwapchain</code> field. Passing the old swapchain allows the
+driver to recycle resources and maintain a seamless transition. Once
+<code>vkCreateSwapchainKHR</code> succeeds, destroy the previous
+swapchain using <code>vkDestroySwapchainKHR</code>.</p>
+<h3 id="6-recreate-image-views-and-framebuffers">6. Recreate Image Views
+and Framebuffers</h3>
+<p>After creating the new swapchain:</p>
+<ol type="1">
+<li>Retrieve the new swapchain image handles using
+<code>vkGetSwapchainImagesKHR</code>.</li>
+<li>Create corresponding <code>VkImageView</code> objects for each new
+image.</li>
+<li>Reallocate and recreate any resolution-dependent buffers (like
+depth/stencil attachments).</li>
+<li>Recreate the <code>VkFramebuffer</code> instances, linking them to
+your existing render pass and the new image views.</li>
+</ol>
+<h3 id="7-update-dynamic-state-and-command-buffers">7. Update Dynamic
+State and Command Buffers</h3>
+<p>If your graphics pipeline uses dynamic states
+(<code>VK_DYNAMIC_STATE_VIEWPORT</code> and
+<code>VK_DYNAMIC_STATE_SCISSOR</code>), you do not need to recreate the
+pipeline. Simply update the viewport and scissor values in your command
+buffer during frame recording:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>VkViewport viewport<span class="op">{};</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>viewport<span class="op">.</span>width <span class="op">=</span> <span class="op">(</span><span class="dt">float</span><span class="op">)</span>newWidth<span class="op">;</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>viewport<span class="op">.</span>height <span class="op">=</span> <span class="op">(</span><span class="dt">float</span><span class="op">)</span>newHeight<span class="op">;</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>viewport<span class="op">.</span>minDepth <span class="op">=</span> <span class="fl">0.0</span><span class="bu">f</span><span class="op">;</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>viewport<span class="op">.</span>maxDepth <span class="op">=</span> <span class="fl">1.0</span><span class="bu">f</span><span class="op">;</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>vkCmdSetViewport<span class="op">(</span>commandBuffer<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">1</span><span class="op">,</span> <span class="op">&amp;</span>viewport<span class="op">);</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>VkRect2D scissor<span class="op">{};</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>scissor<span class="op">.</span>extent <span class="op">=</span> newExtent<span class="op">;</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>vkCmdSetScissor<span class="op">(</span>commandBuffer<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">1</span><span class="op">,</span> <span class="op">&amp;</span>scissor<span class="op">);</span></span></code></pre></div>
+<p>If you do not use dynamic states, you must recreate the entire
+graphics pipeline with the new fixed dimensions. Finally, reset your
+resize flag to resume standard frame rendering.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

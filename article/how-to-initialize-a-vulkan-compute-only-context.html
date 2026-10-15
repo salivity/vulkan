@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How to Initialize a Vulkan Compute-Only Context - vulkan</title>
+    <meta name="description" content="Initializing a compute-only context in Vulkan allows developers to harness GPU acceleration for non-graphical workloads such as machine learning, physics simulations, and scientific processing without the overhead of the Window System Integration (WSI). T">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/how-to-initialize-a-vulkan-compute-only-context">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How to Initialize a Vulkan Compute-Only Context - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/how-to-initialize-a-vulkan-compute-only-context" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Initializing a compute-only context in Vulkan allows developers to harness GPU acceleration for non-graphical workloads such as machine learning, physics simulations, and scientific processing without the overhead of the Window System Integration (WSI). T" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-to-initialize-a-vulkan-compute-only-context">How to
+Initialize a Vulkan Compute-Only Context</h1>
+<p>Initializing a compute-only context in Vulkan allows developers to
+harness GPU acceleration for non-graphical workloads such as machine
+learning, physics simulations, and scientific processing without the
+overhead of the Window System Integration (WSI). This guide outlines the
+essential steps to set up a headless, compute-focused Vulkan
+environment, spanning instance creation without presentation extensions,
+physical device selection, compute queue discovery, and logical device
+setup.</p>
+<h3 id="1-create-a-headless-vulkan-instance">1. Create a Headless Vulkan
+Instance</h3>
+<p>To create an instance dedicated solely to compute, omit all
+presentation and window-surface extensions (such as
+<code>VK_KHR_surface</code>, <code>VK_KHR_win32_surface</code>, or
+<code>VK_KHR_xcb_surface</code>).</p>
+<ol type="1">
+<li>Fill out a <code>VkApplicationInfo</code> structure specifying the
+required Vulkan API version (Vulkan 1.1 or higher is recommended for
+modern compute features).</li>
+<li>Populate <code>VkInstanceCreateInfo</code> with
+<code>ppEnabledExtensionNames</code> set to <code>nullptr</code> and
+<code>enabledExtensionCount</code> set to <code>0</code>, unless
+debugging layers or specific non-windowing instance extensions are
+required.</li>
+<li>Call <code>vkCreateInstance</code> to generate the
+<code>VkInstance</code>.</li>
+</ol>
+<h3 id="2-enumerate-and-select-a-physical-device">2. Enumerate and
+Select a Physical Device</h3>
+<p>After creating the instance, select a GPU that meets your
+computational requirements:</p>
+<ol type="1">
+<li>Call <code>vkEnumeratePhysicalDevices</code> to retrieve the list of
+available GPUs.</li>
+<li>Query each candidate's properties and features using
+<code>vkGetPhysicalDeviceProperties</code> and
+<code>vkGetPhysicalDeviceFeatures</code>.</li>
+<li>Choose the device that provides the desired hardware capabilities,
+memory limits, and compute throughput.</li>
+</ol>
+<h3 id="3-identify-a-compute-queue-family">3. Identify a Compute Queue
+Family</h3>
+<p>Vulkan exposes work execution mechanisms through queue families. A
+compute-only context requires a queue family that supports compute
+operations:</p>
+<ol type="1">
+<li>Query available queue families on the selected physical device using
+<code>vkGetPhysicalDeviceQueueFamilyProperties</code>.</li>
+<li>Iterate through the array of <code>VkQueueFamilyProperties</code>
+structures and locate an entry where the <code>queueFlags</code> field
+contains the <code>VK_QUEUE_COMPUTE_BIT</code> flag.</li>
+<li><em>(Optional)</em> For optimal performance, look for a dedicated
+compute queue family—one that includes <code>VK_QUEUE_COMPUTE_BIT</code>
+but excludes <code>VK_QUEUE_GRAPHICS_BIT</code>. Dedicated queues often
+map to independent hardware schedulers capable of asynchronous
+compute.</li>
+</ol>
+<h3 id="4-create-the-logical-device-and-retrieve-the-queue">4. Create
+the Logical Device and Retrieve the Queue</h3>
+<p>Once the appropriate queue family index is identified, instantiate
+the logical device:</p>
+<ol type="1">
+<li>Set up a <code>VkDeviceQueueCreateInfo</code> structure:
+<ul>
+<li>Set <code>queueFamilyIndex</code> to the identified compute queue
+family index.</li>
+<li>Provide a priority float array via <code>pQueuePriorities</code>
+(typically set to <code>1.0f</code>).</li>
+</ul></li>
+<li>Populate <code>VkDeviceCreateInfo</code>:
+<ul>
+<li>Point <code>pQueueCreateInfos</code> to your
+<code>VkDeviceQueueCreateInfo</code>.</li>
+<li>Ensure that presentation device extensions, notably
+<code>VK_KHR_swapchain</code>, are <strong>not</strong> included in
+<code>ppEnabledExtensionNames</code>.</li>
+<li>Specify any compute-relevant device features (such as
+<code>shaderInt64</code> or <code>shaderFloat64</code>) in
+<code>pEnabledFeatures</code>.</li>
+</ul></li>
+<li>Call <code>vkCreateDevice</code> to create the
+<code>VkDevice</code>.</li>
+<li>Call <code>vkGetDeviceQueue</code> with the logical device, queue
+family index, and queue index <code>0</code> to retrieve the
+<code>VkQueue</code> handle used to submit compute workloads.</li>
+</ol>
+<h3 id="5-set-up-the-command-infrastructure">5. Set Up the Command
+Infrastructure</h3>
+<p>To dispatch compute shaders, configure the basic submission
+architecture:</p>
+<ol type="1">
+<li>Create a <code>VkCommandPool</code> via
+<code>vkCreateCommandPool</code>, configuring the
+<code>queueFamilyIndex</code> member to match the compute queue
+family.</li>
+<li>Allocate one or more <code>VkCommandBuffer</code> handles using
+<code>vkAllocateCommandBuffers</code>.</li>
+<li>Allocate GPU-accessible storage buffers (<code>VkBuffer</code>)
+using memory flags such as
+<code>VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT</code> and
+<code>VK_MEMORY_PROPERTY_HOST_COHERENT_BIT</code> for data transfer, or
+<code>VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT</code> for maximum compute
+efficiency.</li>
+</ol>
+<p>At this point, the headless compute context is fully initialized and
+ready to compile compute pipelines
+(<code>VkComputePipelineCreateInfo</code>), bind descriptor sets, and
+dispatch work using <code>vkCmdDispatch</code>.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

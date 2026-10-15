@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How vkd3d Implements Direct3D 12 to Vulkan Translation - vulkan</title>
+    <meta name="description" content="vkd3d is an open-source translation layer that implements the Microsoft Direct3D 12 graphics API on top of the Khronos Vulkan API. Primarily developed for use with compatibility layers like Wine and Valve&#39;s Proton, it allows Windows games designed for Dir">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/how-vkd-3-d-implements-direct-3-d-12-to-vulkan-translation">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How vkd3d Implements Direct3D 12 to Vulkan Translation - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/how-vkd-3-d-implements-direct-3-d-12-to-vulkan-translation" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="vkd3d is an open-source translation layer that implements the Microsoft Direct3D 12 graphics API on top of the Khronos Vulkan API. Primarily developed for use with compatibility layers like Wine and Valve&#39;s Proton, it allows Windows games designed for Dir" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-vkd3d-implements-direct3d-12-to-vulkan-translation">How
+vkd3d Implements Direct3D 12 to Vulkan Translation</h1>
+<p>vkd3d is an open-source translation layer that implements the
+Microsoft Direct3D 12 graphics API on top of the Khronos Vulkan API.
+Primarily developed for use with compatibility layers like Wine and
+Valve's Proton, it allows Windows games designed for DirectX 12 to run
+on Linux and other non-Windows platforms with near-native performance.
+This article explains how vkd3d translates core Direct3D 12
+concepts—including API constructs, shader bytecode, memory management,
+and synchronization primitives—directly into Vulkan equivalents.</p>
+<h3 id="architectural-alignment">Architectural Alignment</h3>
+<p>Direct3D 12 and Vulkan share a fundamental modern graphics design
+philosophy: both are explicit, low-overhead APIs designed to give
+developers direct control over GPU hardware, memory allocation, and
+multithreading. Because of this common design lineage, vkd3d does not
+need to emulate high-level abstractions like older translation layers
+(such as Direct3D 9 or 11 to OpenGL). Instead, vkd3d acts largely as a
+structural translator, mapping direct counterparts between the two
+APIs.</p>
+<p>At the device level:</p>
+<ul>
+<li>An <code>ID3D12Device</code> maps directly to a Vulkan
+<code>VkDevice</code> and <code>VkPhysicalDevice</code>.</li>
+<li>An <code>ID3D12CommandQueue</code> maps to a Vulkan
+<code>VkQueue</code>.</li>
+<li>An <code>ID3D12CommandList</code> (and its allocator) records
+operations into a <code>VkCommandBuffer</code> allocated from a
+<code>VkCommandPool</code>.</li>
+</ul>
+<h3 id="shader-translation-via-vkd3d-shader">Shader Translation via
+vkd3d-shader</h3>
+<p>Direct3D 12 shaders are authored in HLSL and compiled into either
+DirectX Bytecode (DXBC) or the newer LLVM-based DirectX Intermediate
+Language (DXIL). Vulkan GPUs do not consume DXBC or DXIL; they consume
+SPIR-V (Standard Portable Intermediate Representation).</p>
+<p>To bridge this gap, vkd3d includes a dedicated sub-library named
+<code>vkd3d-shader</code>. It operates in stages:</p>
+<ol type="1">
+<li><strong>Parsing:</strong> It parses incoming DXBC or DXIL binary
+tokens into an internal abstract syntax tree (AST) or intermediate
+representation.</li>
+<li><strong>Transformations:</strong> It normalizes differences between
+HLSL and GLSL/Vulkan semantics, such as resource binding models, control
+flow differences, and intrinsic functions.</li>
+<li><strong>Emission:</strong> It generates valid SPIR-V binary code
+compatible with the host Vulkan driver.</li>
+</ol>
+<p><code>vkd3d-shader</code> also handles differences in coordinate
+spaces. While Direct3D 12 uses a clip-space depth range of <span
+class="math inline">\([0, 1]\)</span>, Vulkan historically used <span
+class="math inline">\([-1, 1]\)</span> before adopting <span
+class="math inline">\([0, 1]\)</span> as standard. However, Direct3D 12
+and Vulkan differ in vertical viewport orientation (the Y-axis
+direction), which vkd3d normalizes within the generated SPIR-V or via
+modern Vulkan viewport extensions
+(<code>VK_KHR_maintenance1</code>).</p>
+<h3 id="resource-binding-and-root-signatures">Resource Binding and Root
+Signatures</h3>
+<p>Direct3D 12 organizes shader resources using "Root Signatures," which
+define constants, root descriptors, and descriptor tables pointing into
+descriptor heaps. Vulkan structures resources via
+<code>VkPipelineLayout</code> and
+<code>VkDescriptorSetLayout</code>.</p>
+<p>vkd3d translates a D3D12 root signature into a corresponding Vulkan
+pipeline layout:</p>
+<ul>
+<li>Root constants are mapped directly to Vulkan push constants.</li>
+<li>Descriptor tables (CBVs, SRVs, UAVs, and Samplers) are mapped to
+Vulkan descriptor sets.</li>
+<li>D3D12 allows unbounded and dynamically indexed descriptor arrays.
+vkd3d relies heavily on Vulkan’s Descriptor Indexing
+(<code>VK_EXT_descriptor_indexing</code>) features to map D3D12
+descriptor heaps directly onto large, partially bound, and
+update-after-bind descriptor sets in Vulkan.</li>
+</ul>
+<h3 id="memory-and-resource-allocation">Memory and Resource
+Allocation</h3>
+<p>Direct3D 12 applications explicitly manage video memory through
+resources (<code>ID3D12Resource</code>) placed on heaps
+(<code>ID3D12Heap</code>). Vulkan exposes an identical model:</p>
+<ul>
+<li><code>ID3D12Heap</code> maps to <code>VkDeviceMemory</code>
+allocated using <code>vkAllocateMemory</code>.</li>
+<li>Placed or committed buffers and textures map to
+<code>VkBuffer</code> or <code>VkImage</code> objects bound to device
+memory with <code>vkBindBufferMemory</code> or
+<code>vkBindImageMemory</code>.</li>
+</ul>
+<p>vkd3d queries host memory properties via
+<code>vkGetPhysicalDeviceMemoryProperties</code> to match Direct3D 12
+memory flags (such as <code>D3D12_HEAP_TYPE_DEFAULT</code> for GPU-local
+memory and <code>D3D12_HEAP_TYPE_UPLOAD</code> for CPU-accessible host
+memory) to the appropriate Vulkan memory type indices.</p>
+<h3 id="synchronization-and-state-tracking">Synchronization and State
+Tracking</h3>
+<p>Synchronization in Direct3D 12 relies heavily on monotonic fences
+(<code>ID3D12Fence</code>) and resource barriers
+(<code>D3D12_RESOURCE_BARRIER</code>):</p>
+<ul>
+<li><strong>Fences:</strong> D3D12 fences allow the CPU and GPU to
+synchronize on a monotonically increasing 64-bit integer. vkd3d maps
+these directly to Vulkan Timeline Semaphores
+(<code>VK_KHR_timeline_semaphore</code>), providing a 1:1 behavioral
+match without performance penalties.</li>
+<li><strong>Barriers:</strong> D3D12 resource barriers dictate
+subresource state transitions (such as transitioning a texture from a
+render target to a shader resource view). vkd3d translates these
+barriers into <code>vkCmdPipelineBarrier</code> calls, mapping D3D12
+resource states to Vulkan <code>VkAccessFlags</code>,
+<code>VkPipelineStageFlags</code>, and <code>VkImageLayout</code>
+parameters to ensure proper execution dependencies and memory caches are
+flushed.</li>
+</ul>
+<h3 id="pipeline-state-management">Pipeline State Management</h3>
+<p>D3D12 compiles graphics and compute state into monolithic Pipeline
+State Objects (<code>ID3D12PipelineState</code>). Vulkan behaves
+similarly using <code>VkPipeline</code> objects. Because both APIs
+discourage runtime pipeline compilation on the main rendering thread due
+to stutter, vkd3d creates <code>VkPipeline</code> objects concurrently
+during D3D12 PSO creation. It translates vertex input layouts,
+rasterizer configurations, blend states, and depth-stencil states
+directly into their corresponding Vulkan pipeline creation
+structures.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

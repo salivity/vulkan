@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Missing Vulkan Acquisition Barriers: The Consequences - vulkan</title>
+    <meta name="description" content="In the Vulkan graphics and compute API, transferring resource ownership between distinct queue families requires a synchronized pair of operations: a release barrier on the source queue and an acquisition barrier on the destination queue. Omitting the des">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/missing-vulkan-acquisition-barriers-the-consequences">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Missing Vulkan Acquisition Barriers: The Consequences - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/missing-vulkan-acquisition-barriers-the-consequences" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In the Vulkan graphics and compute API, transferring resource ownership between distinct queue families requires a synchronized pair of operations: a release barrier on the source queue and an acquisition barrier on the destination queue. Omitting the des" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="missing-vulkan-acquisition-barriers-the-consequences">Missing
+Vulkan Acquisition Barriers: The Consequences</h1>
+<p>In the Vulkan graphics and compute API, transferring resource
+ownership between distinct queue families requires a synchronized pair
+of operations: a release barrier on the source queue and an acquisition
+barrier on the destination queue. Omitting the destination acquisition
+barrier is a direct specification violation that leads to undefined
+behavior. This article examines the immediate and downstream technical
+consequences of skipping an acquisition barrier, including memory
+hazards, cache incoherence, silent data corruption, and catastrophic GPU
+timeouts.</p>
+<h3 id="memory-hazards-and-race-conditions">Memory Hazards and Race
+Conditions</h3>
+<p>Queue family ownership transfer is an asynchronous protocol. When a
+release barrier is executed on the source queue, it only defines when
+the source operations finish and makes the associated memory available.
+It does not establish a dependency on the destination queue.</p>
+<p>If you omit the acquisition barrier on the destination queue, there
+is no execution or memory dependency linking the two queues. The
+destination queue may begin reading or writing to the resource before
+the source queue has finished writing to it, resulting in:</p>
+<ul>
+<li><strong>Read-After-Write (RAW) Hazards:</strong> The destination
+queue reads stale or partially written data.</li>
+<li><strong>Write-After-Write (WAW) Hazards:</strong> Destination writes
+overwrite the memory concurrently while the source is still finalizing
+its write pipeline stages.</li>
+</ul>
+<h3 id="cache-incoherence-and-stale-data">Cache Incoherence and Stale
+Data</h3>
+<p>Even if CPU-side fences or GPU timeline semaphores are used to
+synchronize execution order between queues, semaphores alone do not
+perform memory domain operations.</p>
+<p>Memory domain transfers require an acquisition barrier to:</p>
+<ol type="1">
+<li>Make memory available to the destination queue's memory domain.</li>
+<li>Invalidate the destination queue’s local hardware caches (such as
+texture L1/L2 caches or compute L1 caches).</li>
+</ol>
+<p>Without the acquisition barrier, the hardware will not invalidate its
+local caches. Subsequent operations on the destination queue will read
+outdated data retained in cache lines from prior operations rather than
+fetching the newly modified data from main memory.</p>
+<h3 id="visual-artifacts-and-silent-corruption">Visual Artifacts and
+Silent Corruption</h3>
+<p>Because Vulkan drivers do not automatically insert safety barriers,
+omitting the acquisition barrier often results in non-deterministic
+bugs:</p>
+<ul>
+<li><strong>Flickering and Tearing:</strong> Textures transferred from a
+transfer queue to a graphics queue for sampling may flicker, display
+tearing, or alternate between the previous and current frame
+contents.</li>
+<li><strong>Incorrect Compute Outputs:</strong> Buffers passed from
+graphics to compute pipelines may contain uninitialized values or
+partially completed compute inputs, leading to math errors in physics,
+AI, or ray tracing passes.</li>
+</ul>
+<p>Because these errors depend on memory timing and cache line
+evictions, they may work seemingly fine on one vendor's GPU architecture
+(e.g., unified memory architectures) while failing consistently on
+others (e.g., discrete GPUs with partitioned caches).</p>
+<h3 id="device-lost-errors-and-gpu-hangs">Device Lost Errors and GPU
+Hangs</h3>
+<p>Under specific conditions—particularly with compressed image
+layouts—omitting the acquisition barrier can trigger a GPU crash. If the
+image layout transition metadata is expected to be applied or finalized
+via the acquisition barrier, operating on the memory without that
+transition can cause hardware decoders to access invalid image block
+metadata. When hardware decoders attempt to interpret corrupted memory
+structures, the graphics driver typically detects a hardware hang and
+returns a fatal <code>VK_ERROR_DEVICE_LOST</code> error.</p>
+<h3 id="validation-layer-reporting">Validation Layer Reporting</h3>
+<p>The Vulkan Validation Layers strictly track queue family ownership
+transfers. Omitting an acquisition barrier will cause the validation
+layers to trigger a message indicating an unmatched release barrier. The
+layers report that an ownership transfer was initiated on one queue
+family but never completed on the target queue family, warning
+developers that the resource remains in an invalid state for destination
+queue access.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

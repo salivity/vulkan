@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Push Constants: Low-Latency Uniform Updates - vulkan</title>
+    <meta name="description" content="This article explores how push constants provide a high-performance path for passing uniform data to shaders in the Vulkan API. It details the structural differences between push constants and standard uniform buffer objects (UBOs), the architectural mech">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-push-constants-low-latency-uniform-updates">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Push Constants: Low-Latency Uniform Updates - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-push-constants-low-latency-uniform-updates" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explores how push constants provide a high-performance path for passing uniform data to shaders in the Vulkan API. It details the structural differences between push constants and standard uniform buffer objects (UBOs), the architectural mech" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-push-constants-low-latency-uniform-updates">Vulkan Push
+Constants: Low-Latency Uniform Updates</h1>
+<p>This article explores how push constants provide a high-performance
+path for passing uniform data to shaders in the Vulkan API. It details
+the structural differences between push constants and standard uniform
+buffer objects (UBOs), the architectural mechanisms that enable minimal
+latency, and the hardware-level integration that bypasses traditional
+descriptor set overhead.</p>
+<h2 id="the-bottleneck-of-standard-uniform-buffers">The Bottleneck of
+Standard Uniform Buffers</h2>
+<p>In modern graphics and compute pipelines, shaders frequently need
+small chunks of dynamic data—such as model transformation matrices,
+material IDs, or frame-specific timestamps. Using traditional Uniform
+Buffer Objects (UBOs) for rapidly changing data introduces significant
+CPU and GPU overhead:</p>
+<ul>
+<li><strong>Descriptor Management:</strong> Uniform buffers require
+allocation, updating descriptor sets via
+<code>vkUpdateDescriptorSets</code>, and binding descriptor sets with
+<code>vkCmdBindDescriptorSets</code>.</li>
+<li><strong>Memory Allocation and Synchronization:</strong> UBOs reside
+in device or host-visible memory, necessitating pipeline barriers,
+staging buffers, or dynamic offsets
+(<code>VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC</code>) to prevent
+write-after-read hazards across frames.</li>
+<li><strong>Indirection Latency:</strong> During shader execution,
+accessing a UBO requires dereferencing a descriptor pointer to retrieve
+data from memory caches (L1/L2 or VRAM).</li>
+</ul>
+<p>When rendering thousands of objects per frame, updating descriptors
+and coordinating buffer memory for minor data changes causes
+driver-level CPU stalls and memory latency.</p>
+<h2 id="how-push-constants-eliminate-overhead">How Push Constants
+Eliminate Overhead</h2>
+<p>Push constants circumvent the descriptor system entirely. Instead of
+referencing external memory allocations through a descriptor table, push
+constants embed uniform data directly into Vulkan's command stream.</p>
+<h3 id="command-buffer-embedding">Command Buffer Embedding</h3>
+<p>Push constants are updated using the command:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>vkCmdPushConstants<span class="op">(</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    commandBuffer<span class="op">,</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    pipelineLayout<span class="op">,</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    stageFlags<span class="op">,</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    offset<span class="op">,</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    size<span class="op">,</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    pValues</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="op">);</span></span></code></pre></div>
+<p>When this command is recorded, the driver writes the values directly
+into the Vulkan command buffer alongside draw or dispatch calls. There
+are no allocations, no descriptor pool allocations, and no descriptor
+set bindings required.</p>
+<h3 id="hardware-register-storage">Hardware Register Storage</h3>
+<p>At the GPU architecture level, push constants are typically mapped
+directly to on-chip user registers or dedicated fast constant caches
+rather than general device memory.</p>
+<ul>
+<li><strong>Zero Dereference Overhead:</strong> Because the values are
+loaded directly into hardware registers before shader execution begins,
+the shader execution units (EUs/ALUs) access these variables with
+single-cycle or near-instant register read latency, completely bypassing
+memory buses and L1/L2 cache hierarchies.</li>
+<li><strong>In-Band State Delivery:</strong> The graphics hardware
+processes push constants as pipeline state changes within its front-end
+command processor. The constant data travels with the draw packet,
+ensuring synchronization is implicitly managed by the hardware command
+processor without requiring explicit pipeline barriers.</li>
+</ul>
+<h2 id="operational-constraints-and-ideal-use-cases">Operational
+Constraints and Ideal Use Cases</h2>
+<p>To maintain register-level performance, Vulkan imposes physical
+constraints on push constants:</p>
+<ul>
+<li><strong>Size Limits:</strong> The Vulkan specification only
+guarantees a minimum push constant storage size of <strong>128
+bytes</strong> (<code>maxPushConstantsSize</code>). While modern desktop
+hardware often supports 256 bytes or more, relying on more than 128
+bytes requires explicitly checking device limits.</li>
+<li><strong>Pipeline Layout Dependency:</strong> Push constant ranges
+must be defined upfront in the <code>VkPipelineLayoutCreateInfo</code>.
+Stages that access specific offsets must match the stages declared
+during pipeline creation.</li>
+</ul>
+<p>Because of the 128-byte guarantee, push constants are not suitable
+for large arrays, skinning matrices, or extensive material properties.
+Instead, they are best suited for:</p>
+<ul>
+<li>Dynamic model matrices (a 4x4 32-bit floating-point matrix consumes
+64 bytes).</li>
+<li>Array indices used in bindless resource architectures (allowing
+shaders to dynamically index into unbounded descriptor arrays).</li>
+<li>Per-draw constants such as object IDs, single colors, and time
+deltas.</li>
+</ul>
+<p>By eliminating descriptor allocations, cache misses, and
+synchronization barriers, push constants represent the most direct,
+low-latency method to feed volatile uniform parameters to the GPU in
+Vulkan.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

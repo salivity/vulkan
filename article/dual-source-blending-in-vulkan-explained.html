@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dual-Source Blending in Vulkan Explained - vulkan</title>
+    <meta name="description" content="Dual-source blending is a graphics pipeline technique that allows a single fragment shader to output two distinct color values to a single render target attachment, enabling advanced blending mathematics in a single hardware pass. This article covers the">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/dual-source-blending-in-vulkan-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Dual-Source Blending in Vulkan Explained - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/dual-source-blending-in-vulkan-explained" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Dual-source blending is a graphics pipeline technique that allows a single fragment shader to output two distinct color values to a single render target attachment, enabling advanced blending mathematics in a single hardware pass. This article covers the" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dual-source-blending-in-vulkan-explained">Dual-Source Blending
+in Vulkan Explained</h1>
+<p>Dual-source blending is a graphics pipeline technique that allows a
+single fragment shader to output two distinct color values to a single
+render target attachment, enabling advanced blending mathematics in a
+single hardware pass. This article covers the fundamental mechanics of
+dual-source blending, how it is implemented and configured in Vulkan,
+and the specific graphics rendering scenarios—such as subpixel text
+anti-aliasing—where this capability is essential.</p>
+<h3 id="what-is-dual-source-blending">What is Dual-Source Blending?</h3>
+<p>In standard rasterization blending, a fragment shader outputs a
+single color value (Source) that the Fixed-Function Color Blending stage
+combines with the existing pixel value in the render target
+(Destination). The blend factors are typically derived from constants,
+the destination pixel, or the single source pixel's components (such as
+its alpha channel).</p>
+<p>Dual-source blending extends this mechanism by allowing the fragment
+shader to emit two separate outputs—designated as <code>Src0</code>
+(Source 0) and <code>Src1</code> (Source 1)—aimed at the exact same
+framebuffer attachment. Rather than writing to multiple render targets,
+<code>Src0</code> typically supplies the primary color data, while
+<code>Src1</code> serves as an additional, arbitrary blending factor
+directly accessible by the hardware blend unit.</p>
+<h3 id="enabling-dual-source-blending-in-vulkan">Enabling Dual-Source
+Blending in Vulkan</h3>
+<p>Utilizing dual-source blending in Vulkan requires specific device
+capabilities, shader configurations, and pipeline state adjustments:</p>
+<ol type="1">
+<li><p><strong>Feature Query and Device Creation</strong>: The target
+GPU must support the feature. Applications must query
+<code>VkPhysicalDeviceFeatures</code> and verify that
+<code>dualSrcBlend</code> is set to <code>VK_TRUE</code>. When creating
+the <code>VkDevice</code>, this feature must be explicitly
+enabled.</p></li>
+<li><p><strong>Render Target Limitation</strong>: The Vulkan
+specification limits dual-source blending: when dual-source blend
+factors are used, the pipeline can generally only bind a single color
+attachment (index 0). The maximum number of dual-source color
+attachments supported by the device is exposed by the
+<code>maxFragmentDualSrcAttachments</code> limit in
+<code>VkPhysicalDeviceLimits</code>. On most desktop hardware, this
+limit is 1.</p></li>
+<li><p><strong>Shader Outputs</strong>: In the fragment shader
+(GLSL/SPIR-V), outputs targeting the same render attachment are
+distinguished using the <code>index</code> layout qualifier alongside
+the standard <code>location</code> qualifier:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">0</span><span class="op">,</span> <span class="dt">index</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">out</span> <span class="dt">vec4</span> outPrimaryColor<span class="op">;</span>  <span class="co">// Src0</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">0</span><span class="op">,</span> <span class="dt">index</span> <span class="op">=</span> <span class="dv">1</span><span class="op">)</span> <span class="dt">out</span> <span class="dt">vec4</span> outBlendFactor<span class="op">;</span>   <span class="co">// Src1</span></span></code></pre></div></li>
+<li><p><strong>Pipeline Blend State Configuration</strong>: Inside
+<code>VkPipelineColorBlendAttachmentState</code>, blend factors can
+explicitly reference the secondary source via Vulkan enums:</p>
+<ul>
+<li><code>VK_BLEND_FACTOR_SRC1_COLOR</code></li>
+<li><code>VK_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR</code></li>
+<li><code>VK_BLEND_FACTOR_SRC1_ALPHA</code></li>
+<li><code>VK_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA</code></li>
+</ul></li>
+</ol>
+<h3 id="when-is-dual-source-blending-used">When is Dual-Source Blending
+Used?</h3>
+<p>Dual-source blending is employed whenever a blending equation
+requires per-component, dynamically computed weighting factors that
+standard single-source blending cannot provide without multi-pass
+rendering or programmable blending extensions.</p>
+<h4 id="subpixel-font-rendering">Subpixel Font Rendering</h4>
+<p>The primary use case for dual-source blending is subpixel text
+rasterization (such as Microsoft ClearType or FreeType LCD filtering).
+Displays use separate red, green, and blue physical subpixels. Smoothing
+text on an LCD involves treating each color component as an individual
+coverage channel.</p>
+<p>Standard blending only provides a single scalar alpha for all three
+color channels
+(<code>SrcColor * SrcAlpha + DstColor * (1 - SrcAlpha)</code>). Subpixel
+rendering instead requires component-wise blending:</p>
+<pre><code>FinalColor.rgb = Src0.rgb * Src1.rgb + DstColor.rgb * (1.0 - Src1.rgb)</code></pre>
+<p>In this scenario, <code>Src0</code> outputs the uniform text color,
+and <code>Src1</code> outputs the per-component RGB coverage mask
+sampled from the glyph cache. Dual-source blending allows this
+calculation to execute in a single draw call without needing to read
+back or fetch the destination pixel inside the shader.</p>
+<h4 id="order-independent-transparency-approximations">Order-Independent
+Transparency Approximations</h4>
+<p>Certain real-time transparency techniques (such as weighted blended
+order-independent transparency) require accumulating multiple
+intermediate terms simultaneously. Dual-source blending allows an
+application to compute and route separate weights and color values into
+destination targets without splitting the work across distinct draw
+passes.</p>
+<h4 id="custom-single-pass-compositing">Custom Single-Pass
+Compositing</h4>
+<p>When implementing non-standard digital image compositing modes that
+involve dynamic attenuation factors independent of the output alpha,
+dual-source blending avoids the performance overhead of input
+attachments, rasterization order attachment access, or compute-based
+resolve passes.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Large BLAS Memory Footprint Explained - vulkan</title>
+    <meta name="description" content="Building large Bottom-Level Acceleration Structures (BLAS) in the Vulkan API introduces significant GPU memory implications that can quickly exhaust VRAM if not properly managed. This article breaks down the primary drivers of this memory footprint—includ">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-large-blas-memory-footprint-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Large BLAS Memory Footprint Explained - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-large-blas-memory-footprint-explained" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Building large Bottom-Level Acceleration Structures (BLAS) in the Vulkan API introduces significant GPU memory implications that can quickly exhaust VRAM if not properly managed. This article breaks down the primary drivers of this memory footprint—includ" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-large-blas-memory-footprint-explained">Vulkan Large BLAS
+Memory Footprint Explained</h1>
+<p>Building large Bottom-Level Acceleration Structures (BLAS) in the
+Vulkan API introduces significant GPU memory implications that can
+quickly exhaust VRAM if not properly managed. This article breaks down
+the primary drivers of this memory footprint—including peak scratch
+buffer demands, pre-compaction storage padding, and memory
+fragmentation—while detailing the architectural strategies required to
+optimize memory consumption during the acceleration structure build
+process.</p>
+<h3 id="dual-memory-requirements-result-vs-scratch-buffers">Dual Memory
+Requirements: Result vs. Scratch Buffers</h3>
+<p>When constructing a BLAS, Vulkan requires two distinct memory
+allocations determined by querying
+<code>vkGetAccelerationStructureBuildSizesKHR</code>:</p>
+<ol type="1">
+<li><strong>Result Acceleration Structure Memory:</strong> The physical
+buffer space where the final spatial hierarchy (often a Bounding Volume
+Hierarchy, or BVH) resides.</li>
+<li><strong>Scratch Buffer Memory:</strong> A temporary workspace
+(<code>buildScratchSize</code>) used by the GPU to sort primitives,
+compute bounding boxes, and construct node trees.</li>
+</ol>
+<p>For massive geometry sets, the scratch buffer requirement can equal
+or exceed the size of the final acceleration structure. Because scratch
+memory must be device-local and strictly aligned, concurrently building
+multiple large BLAS instances can cause extreme, transient memory spikes
+that lead to out-of-memory (OOM) errors.</p>
+<h3 id="build-flags-and-initial-over-allocation">Build Flags and Initial
+Over-Allocation</h3>
+<p>The memory size reported for the final BLAS depends heavily on the
+build flags specified in
+<code>VkAccelerationStructureBuildGeometryInfoKHR</code>:</p>
+<ul>
+<li><strong><code>VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR</code>:</strong>
+Directs the driver to generate higher-quality BVH trees (e.g., deeper
+trees with primitive splitting), increasing both build scratch usage and
+the final structure's memory footprint to maximize run-time ray
+intersection performance.</li>
+<li><strong><code>VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR</code>:</strong>
+Minimizes tree depth and construction time, resulting in a lighter
+initial footprint at the expense of runtime traversal performance.</li>
+</ul>
+<p>Regardless of the chosen strategy, the driver calculates worst-case
+buffer requirements before construction begins. Consequently, the
+initial memory footprint represents an upper bound rather than the
+actual amount of data the hierarchy requires.</p>
+<h3 id="the-impact-of-acceleration-structure-compaction">The Impact of
+Acceleration Structure Compaction</h3>
+<p>To reclaim the unused space allocated by worst-case estimates, Vulkan
+provides a compaction mechanism via
+<code>VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR</code>.</p>
+<p>Without compaction, large BLAS instances retain significant internal
+padding. With compaction enabled, developers must:</p>
+<ol type="1">
+<li>Build the BLAS into an initial, conservatively sized buffer.</li>
+<li>Query the actual compacted size using
+<code>vkCmdWriteAccelerationStructuresPropertiesKHR</code>.</li>
+<li>Allocate a new, smaller buffer based on that query.</li>
+<li>Execute <code>vkCmdCopyAccelerationStructureKHR</code> with
+<code>VK_COPY_ACCELERATION_STRUCTURE_MODE_COMPACT_KHR</code>.</li>
+<li>Free the original buffer and scratch memory.</li>
+</ol>
+<p>Compaction typically reduces the permanent memory footprint of a
+large BLAS by 25% to 55%. However, this optimization temporarily
+increases peak memory usage because both the original uncompacted
+structure and the new compacted structure must briefly coexist in
+VRAM.</p>
+<h3 id="memory-fragmentation-and-sub-allocation">Memory Fragmentation
+and Sub-Allocation</h3>
+<p>Creating individual <code>VkBuffer</code> and
+<code>VkDeviceMemory</code> allocations for each large BLAS exacerbates
+memory fragmentation, leading to premature allocation failures under
+tight memory budgets. High-performance Vulkan implementations avoid this
+by sub-allocating both scratch and result buffers from dedicated memory
+pools managed by custom allocators.</p>
+<p>Sub-allocation also simplifies the reuse of scratch space: rather
+than allocating separate scratch buffers for every mesh, applications
+can allocate a single global scratch buffer sized to the largest
+individual BLAS build in the scene, sequentially reusing it across
+builds to drastically curb memory bloat.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

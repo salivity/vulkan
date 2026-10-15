@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Float16 Arithmetic Throughput on Mobile GPUs - vulkan</title>
+    <meta name="description" content="Using half-precision (float16) arithmetic in mobile applications using the Vulkan graphics and compute API significantly enhances performance by maximizing hardware efficiency. By reducing data width from standard 32-bit floats to 16-bit representations,">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-float-16-arithmetic-throughput-on-mobile-gp-us">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Float16 Arithmetic Throughput on Mobile GPUs - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-float-16-arithmetic-throughput-on-mobile-gp-us" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Using half-precision (float16) arithmetic in mobile applications using the Vulkan graphics and compute API significantly enhances performance by maximizing hardware efficiency. By reducing data width from standard 32-bit floats to 16-bit representations," />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-float16-arithmetic-throughput-on-mobile-gpus">Vulkan
+Float16 Arithmetic Throughput on Mobile GPUs</h1>
+<p>Using half-precision (float16) arithmetic in mobile applications
+using the Vulkan graphics and compute API significantly enhances
+performance by maximizing hardware efficiency. By reducing data width
+from standard 32-bit floats to 16-bit representations, mobile GPUs can
+double their theoretical compute throughput, lower memory bandwidth
+consumption, alleviate register pressure, and reduce thermal overhead.
+This article explains the architectural mechanisms behind float16
+execution in Vulkan and how developers leverage it to extract peak
+arithmetic throughput on resource-constrained mobile chipsets.</p>
+<h3 id="native-2x-alu-packing-double-rate-execution">Native 2x ALU
+Packing (Double-Rate Execution)</h3>
+<p>Modern mobile GPU architectures—such as ARM Mali, Qualcomm Adreno,
+and Imagination PowerVR—design their Arithmetic Logic Units (ALUs) to
+support sub-word parallelism. When executing standard 32-bit
+floating-point (FP32) instructions, an ALU datapath processes one
+operation per cycle per lane.</p>
+<p>When float16 (FP16) instructions are issued, the same 32-bit datapath
+is split into two independent 16-bit execution units. This
+SIMD-within-a-register approach allows the hardware to execute two FP16
+fused multiply-add (FMA) or basic arithmetic operations in the time and
+space previously required for a single FP32 operation. Consequently,
+utilizing FP16 effectively doubles the peak theoretical floating-point
+operations per second (FLOPS) on the GPU.</p>
+<h3 id="reduced-register-pressure-and-higher-occupancy">Reduced Register
+Pressure and Higher Occupancy</h3>
+<p>A primary bottleneck in mobile shader execution is register spilling
+and low occupancy. Mobile GPUs have a fixed-size vector register file
+shared across active threads (waves or warps).</p>
+<p>FP32 variables occupy 4 bytes per component, quickly exhausting the
+register file when complex shaders run. Once registers are depleted, the
+GPU must reduce the number of concurrently active threads, lowering
+occupancy and diminishing its ability to hide memory latency. FP16
+variables require only 2 bytes per component. Halving the register
+storage footprint per variable allows the GPU scheduler to keep
+substantially more threads active simultaneously. Higher occupancy
+ensures execution units remain fed with work, leading directly to higher
+sustained arithmetic throughput.</p>
+<h3 id="bandwidth-savings-and-cache-hit-rates">Bandwidth Savings and
+Cache Hit Rates</h3>
+<p>Arithmetic throughput is often bound by memory latency rather than
+pure compute capability. When shaders sample textures, fetch uniform
+data, or perform storage buffer operations, transferring 16-bit values
+halves the data payload traveling across the bus compared to 32-bit
+types.</p>
+<p>This halving of data size doubles the effective capacity of L1 and L2
+caches, drastically reducing cache misses and memory stalls. By spending
+fewer execution cycles waiting for data to arrive from system memory,
+the ALUs achieve higher sustained instruction issue rates.</p>
+<h3 id="vulkan-extensions-for-float16-execution">Vulkan Extensions for
+Float16 Execution</h3>
+<p>To utilize hardware-level float16 arithmetic in Vulkan, developers
+bypass legacy software emulation through explicit extensions and SPIR-V
+capabilities:</p>
+<ol type="1">
+<li><strong><code>VK_KHR_shader_float16_int8</code></strong>: Enables
+true 16-bit types (<code>float16_t</code>) directly inside shaders. This
+guarantees native 16-bit operations in SPIR-V via the
+<code>Float16</code> capability, ensuring arithmetic runs on the 16-bit
+execution units rather than being up-converted to FP32.</li>
+<li><strong><code>VK_KHR_16bit_storage</code></strong>: Allows
+structures, storage buffers, and push constants to store and load 16-bit
+types directly, minimizing memory overhead across compute
+pipelines.</li>
+<li><strong><code>RelaxedPrecision</code> Decoration</strong>: In GLSL
+(via <code>precision mediump</code>), variables are decorated with
+<code>RelaxedPrecision</code> in SPIR-V. Supported mobile drivers treat
+this as permission to route operations to FP16 ALUs whenever precision
+loss will not breach specification limits.</li>
+</ol>
+<p>By targeting these extensions, compute workloads—including mobile
+neural network inference, particle physics, image processing, and
+post-processing tone mapping—achieve near-linear scaling in performance
+while maintaining the thermal envelope required by mobile hardware.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Exceeding Physical Memory Heaps in Vulkan - vulkan</title>
+    <meta name="description" content="When a Vulkan application attempts to allocate more memory than is physically available in a device&#39;s memory heaps, the outcome ranges from defined API error codes to severe performance degradation or immediate application termination. Because Vulkan prov">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/exceeding-physical-memory-heaps-in-vulkan">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Exceeding Physical Memory Heaps in Vulkan - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/exceeding-physical-memory-heaps-in-vulkan" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="When a Vulkan application attempts to allocate more memory than is physically available in a device&#39;s memory heaps, the outcome ranges from defined API error codes to severe performance degradation or immediate application termination. Because Vulkan prov" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="exceeding-physical-memory-heaps-in-vulkan">Exceeding Physical
+Memory Heaps in Vulkan</h1>
+<p>When a Vulkan application attempts to allocate more memory than is
+physically available in a device's memory heaps, the outcome ranges from
+defined API error codes to severe performance degradation or immediate
+application termination. Because Vulkan provides low-level, explicit
+control over resource management, the driver does not magically resolve
+over-allocation without trade-offs. This article covers the exact
+mechanisms triggered when physical memory limits are breached, including
+allocation errors, OS-level paging, device loss, and operating system
+termination.</p>
+<h3 id="explicit-allocation-failures">Explicit Allocation Failures</h3>
+<p>At the API level, memory allocations occur via the
+<code>vkAllocateMemory</code> function. Every device exposes one or more
+memory heaps via <code>VkPhysicalDeviceMemoryProperties</code>, each
+representing physical pools such as dedicated VRAM or system RAM.</p>
+<p>If an application requests an allocation that exceeds the remaining
+capacity of a target heap, the Vulkan specification dictates that
+<code>vkAllocateMemory</code> must fail and return an error code:</p>
+<ul>
+<li><strong><code>VK_ERROR_OUT_OF_DEVICE_MEMORY</code></strong>:
+Returned when the device (GPU) memory pool cannot satisfy the
+allocation.</li>
+<li><strong><code>VK_ERROR_OUT_OF_HOST_MEMORY</code></strong>: Returned
+if the host (CPU-side) system memory runs out while managing the
+allocation structures.</li>
+</ul>
+<p>If the application does not explicitly check the
+<code>VkResult</code> return value of <code>vkAllocateMemory</code> and
+attempts to bind invalid or null memory handles to resources via
+<code>vkBindBufferMemory</code> or <code>vkBindImageMemory</code>,
+undefined behavior occurs, almost always resulting in an immediate
+crash.</p>
+<h3 id="operating-system-memory-paging-and-thrashing">Operating System
+Memory Paging and Thrashing</h3>
+<p>On modern desktop platforms (such as Windows with WDDM or desktop
+Linux), GPU drivers and OS display subsystems support memory
+overcommitment through virtual memory management.</p>
+<p>When device-local memory
+(<code>VK_MEMORY_HEAP_DEVICE_LOCAL_BIT</code>) is full, the operating
+system may not immediately fail the allocation. Instead, it may evict
+existing allocations from VRAM to system RAM (host memory) or page
+files. While this prevents a hard crash, it introduces severe
+performance penalties:</p>
+<ul>
+<li><strong>Bus Bandwidth Saturation</strong>: Transferring textures and
+buffers across the PCIe bus in real time causes extreme frame drops and
+micro-stuttering.</li>
+<li><strong>Pipeline Stalls</strong>: The GPU sits idle waiting for
+memory transfers, leading to severe resource thrashing.</li>
+</ul>
+<p>Once system RAM and the operating system's virtual swap space are
+also exhausted, the OS will reject further overcommitment, forcing
+<code>VK_ERROR_OUT_OF_DEVICE_MEMORY</code>.</p>
+<h3 id="device-lost-states">Device Lost States</h3>
+<p>Exceeding memory limits does not only affect explicit memory
+allocations. Certain operations, such as creating pipelines, compiling
+shaders internally, or allocating descriptor pools, require auxiliary
+memory managed implicitly by the driver.</p>
+<p>If the driver runs out of memory during command buffer execution or
+internal maintenance:</p>
+<ul>
+<li>The driver may encounter an unrecoverable failure and enter a
+<strong><code>VK_ERROR_DEVICE_LOST</code></strong> state.</li>
+<li>Once a device is lost, all existing Vulkan objects become invalid
+for execution, and the logical device must be completely destroyed and
+recreated.</li>
+</ul>
+<h3 id="os-level-process-termination-oom-killer">OS-Level Process
+Termination (OOM Killer)</h3>
+<p>Mobile platforms (such as Android) and integrated/embedded systems
+usually share physical memory dynamically between the CPU and GPU
+(Unified Memory Architecture) without secondary swap space.</p>
+<p>When a Vulkan application consumes too much memory on these
+systems:</p>
+<ul>
+<li>The operating system’s low-memory killer (or Linux OOM killer) will
+intervene to preserve overall device stability.</li>
+<li>The application process is typically terminated abruptly with a
+signal (like <code>SIGKILL</code>), bypassing application-level error
+handling entirely.</li>
+</ul>
+<h3 id="preventing-heap-exhaustion">Preventing Heap Exhaustion</h3>
+<p>To avoid these failures, robust Vulkan applications do not allocate
+blindly. They employ explicit management strategies:</p>
+<ul>
+<li><strong>Budget Querying</strong>: Using the
+<code>VK_EXT_memory_budget</code> extension to query real-time heap
+usage and available budget rather than relying solely on static heap
+sizes.</li>
+<li><strong>Sub-allocation</strong>: Using dedicated allocators like the
+Vulkan Memory Allocator (VMA) to pool allocations into large blocks,
+minimizing fragmentation and overhead.</li>
+<li><strong>Resource Streaming</strong>: Dynamically loading and
+unloading assets (such as mipmaps and geometry) based on proximity and
+necessity, ensuring active resources fit comfortably within available
+heap limits.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

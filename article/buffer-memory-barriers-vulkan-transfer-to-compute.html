@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Buffer Memory Barriers: Vulkan Transfer to Compute - vulkan</title>
+    <meta name="description" content="Buffer memory barriers in the Vulkan API serve as the foundational synchronization mechanism to ensure that data written during transfer operations is fully completed, made memory-visible, and safely accessible before compute shader stages attempt to read">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/buffer-memory-barriers-vulkan-transfer-to-compute">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Buffer Memory Barriers: Vulkan Transfer to Compute - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/buffer-memory-barriers-vulkan-transfer-to-compute" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Buffer memory barriers in the Vulkan API serve as the foundational synchronization mechanism to ensure that data written during transfer operations is fully completed, made memory-visible, and safely accessible before compute shader stages attempt to read" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="buffer-memory-barriers-vulkan-transfer-to-compute">Buffer Memory
+Barriers: Vulkan Transfer to Compute</h1>
+<p>Buffer memory barriers in the Vulkan API serve as the foundational
+synchronization mechanism to ensure that data written during transfer
+operations is fully completed, made memory-visible, and safely
+accessible before compute shader stages attempt to read it. Without
+explicitly defining these barriers, the asynchronous nature of GPU
+queues and Vulkan’s weakly-ordered memory model will result in race
+conditions, where a compute shader reads stale, partially written, or
+corrupt buffer contents.</p>
+<h3 id="execution-dependencies">Execution Dependencies</h3>
+<p>In Vulkan, operations recorded into command buffers do not
+automatically execute in sequential order unless explicitly
+synchronized. When a buffer copy command (such as
+<code>vkCmdCopyBuffer</code>) is recorded on a transfer queue, it
+operates within the <code>VK_PIPELINE_STAGE_TRANSFER_BIT</code> stage. A
+buffer memory barrier establishes an execution dependency by
+defining:</p>
+<ul>
+<li><strong>Source Stage (<code>srcStageMask</code>):</strong> Set to
+<code>VK_PIPELINE_STAGE_TRANSFER_BIT</code>, instructing the GPU to wait
+until all pending transfer operations have finished execution.</li>
+<li><strong>Destination Stage (<code>dstStageMask</code>):</strong> Set
+to <code>VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT</code>, preventing compute
+shaders from beginning execution until the transfer stage requirements
+are satisfied.</li>
+</ul>
+<h3 id="memory-availability-and-visibility">Memory Availability and
+Visibility</h3>
+<p>GPU architectures utilize distinct internal caches across different
+hardware blocks. Completing an operation does not automatically
+guarantee that modified data has been flushed to a location where
+another unit can read it. Buffer memory barriers manage memory domain
+operations via access masks:</p>
+<ol type="1">
+<li><strong>Availability Operation
+(<code>srcAccessMask</code>):</strong> Configuring this to
+<code>VK_ACCESS_TRANSFER_WRITE_BIT</code> forces the GPU to flush any
+internal caches modified by the transfer copy into a globally available
+memory domain.</li>
+<li><strong>Visibility Operation (<code>dstAccessMask</code>):</strong>
+Configuring this to <code>VK_ACCESS_SHADER_READ_BIT</code> (or
+<code>VK_ACCESS_UNIFORM_READ_BIT</code> depending on the buffer
+descriptor type) invalidates the compute unit's local caches, forcing it
+to fetch the updated data from the available memory domain.</li>
+</ol>
+<h3 id="queue-family-ownership-transfers">Queue Family Ownership
+Transfers</h3>
+<p>If the transfer copy and the compute read are executed on different
+queue families (for instance, a dedicated transfer queue and a
+general-purpose compute queue), buffer memory barriers must facilitate a
+Queue Family Ownership Transfer (QFOT). A buffer cannot be
+simultaneously accessed by two distinct queue families unless it was
+created with <code>VK_SHARING_MODE_CONCURRENT</code>, which can degrade
+performance.</p>
+<p>For <code>VK_SHARING_MODE_EXCLUSIVE</code> resources, the ownership
+transfer requires two matched barriers:</p>
+<ol type="1">
+<li><strong>Release Barrier (Transfer Queue):</strong> Recorded on the
+transfer command buffer after the copy operation. It specifies
+<code>srcQueueFamilyIndex</code> as the transfer queue family and
+<code>dstQueueFamilyIndex</code> as the compute queue family. The
+<code>srcAccessMask</code> is set to
+<code>VK_ACCESS_TRANSFER_WRITE_BIT</code>, with
+<code>dstAccessMask</code> set to <code>0</code>.</li>
+<li><strong>Acquire Barrier (Compute Queue):</strong> Recorded on the
+compute command buffer prior to dispatching compute work. It uses the
+same queue family indices, but defines <code>srcAccessMask</code> as
+<code>0</code> and <code>dstAccessMask</code> as
+<code>VK_ACCESS_SHADER_READ_BIT</code>.</li>
+</ol>
+<p>These two barriers must be chained across queue boundaries using a
+Vulkan semaphore (such as a binary or timeline semaphore) to ensure the
+release operation completely executes before the acquire operation
+begins.</p>
+<h3 id="preventing-read-after-write-raw-hazards">Preventing
+Read-After-Write (RAW) Hazards</h3>
+<p>The primary role of these combined operations is the elimination of
+Read-After-Write (RAW) data hazards. By using
+<code>VkBufferMemoryBarrier</code> within
+<code>vkCmdPipelineBarrier</code>, developers ensure that the transfer
+pipeline stage fully finishes, the modified memory ranges are flushed,
+the destination caches are invalidated, and proper ownership is handed
+over, guaranteeing strictly ordered and coherent data access for compute
+workloads.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

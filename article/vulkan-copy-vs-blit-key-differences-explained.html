@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Copy vs Blit: Key Differences Explained - vulkan</title>
+    <meta name="description" content="In the Vulkan graphics API, transferring image data is primarily achieved using either a copy operation (vkCmdCopyImage) or a blit operation (vkCmdBlitImage). While both commands transfer texel data from one resource to another, they serve distinct archit">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-copy-vs-blit-key-differences-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Copy vs Blit: Key Differences Explained - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-copy-vs-blit-key-differences-explained" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In the Vulkan graphics API, transferring image data is primarily achieved using either a copy operation (vkCmdCopyImage) or a blit operation (vkCmdBlitImage). While both commands transfer texel data from one resource to another, they serve distinct archit" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-copy-vs-blit-key-differences-explained">Vulkan Copy vs
+Blit: Key Differences Explained</h1>
+<p>In the Vulkan graphics API, transferring image data is primarily
+achieved using either a copy operation (<code>vkCmdCopyImage</code>) or
+a blit operation (<code>vkCmdBlitImage</code>). While both commands
+transfer texel data from one resource to another, they serve distinct
+architectural purposes. A copy operation performs a raw, bitwise data
+transfer between identically sized regions, whereas a blit operation
+utilizes graphics hardware to perform scaling, format conversion, and
+filtering during the transfer. This article explains the technical
+differences between these two commands, covering capabilities, hardware
+requirements, and appropriate use cases.</p>
+<h3 id="data-manipulation-and-scaling">Data Manipulation and
+Scaling</h3>
+<p>The most prominent difference lies in whether the pixel data can be
+altered during the transfer:</p>
+<ul>
+<li><strong>Copy Operations (<code>vkCmdCopyImage</code>):</strong>
+Perform an exact 1:1 bitwise copy. The source region and destination
+region must have the exact same pixel dimensions (width, height, and
+depth). No scaling, shearing, stretching, or pixel filtering can
+occur.</li>
+<li><strong>Blit Operations (<code>vkCmdBlitImage</code>):</strong>
+Support dynamic scaling and stretching. You can define source and
+destination regions with different dimensions. Vulkan allows you to
+specify a filter—either <code>VK_FILTER_NEAREST</code> or
+<code>VK_FILTER_LINEAR</code>—to interpolate pixel values when
+magnifying or minifying the image.</li>
+</ul>
+<h3 id="format-compatibility-and-conversion">Format Compatibility and
+Conversion</h3>
+<p>Image formats impose strict rules on which transfer command can be
+executed:</p>
+<ul>
+<li><strong>Copy Operations:</strong> Require format compatibility, but
+not necessarily identical formats. The source and destination formats
+must belong to the same format compatibility class (meaning texels must
+have identical byte sizes and layout structures). However, no color
+space transformation or conversion takes place.</li>
+<li><strong>Blit Operations:</strong> Support automatic format
+conversion between entirely different formats (for example, blitting an
+<code>R8G8B8A8_UNORM</code> image into an
+<code>R16G16B16A16_SFLOAT</code> image). The hardware automatically
+unpacks, converts, and repacks texel data into the target format.</li>
+</ul>
+<h3 id="hardware-execution-and-queue-families">Hardware Execution and
+Queue Families</h3>
+<p>Vulkan exposes different hardware queues for different types of work,
+which dictates where these operations can execute:</p>
+<ul>
+<li><strong>Copy Operations:</strong> Can be executed on dedicated
+transfer queues (<code>VK_QUEUE_TRANSFER_BIT</code>), compute queues,
+and graphics queues. Because copies bypass the rasterizer and filtering
+pipeline, they can run on asynchronous transfer hardware (DMA engines)
+without interrupting rendering workloads.</li>
+<li><strong>Blit Operations:</strong> Generally require a
+graphics-capable queue (<code>VK_QUEUE_GRAPHICS_BIT</code>). Blitting
+relies on rasterization, texture sampling, and filtering pipelines to
+process and transform the image data. Images must also support the
+<code>VK_FORMAT_FEATURE_BLIT_SRC_BIT</code> and
+<code>VK_FORMAT_FEATURE_BLIT_DST_BIT</code> flags in their respective
+format properties.</li>
+</ul>
+<h3 id="performance">Performance</h3>
+<ul>
+<li><strong>Copy Operations:</strong> Typically offer the highest
+possible throughput and lowest execution overhead. Because they avoid
+the graphics pipeline and do not sample or filter data, copies are ideal
+for raw memory bandwidth efficiency.</li>
+<li><strong>Blit Operations:</strong> Incur more overhead than a pure
+copy due to the invocation of fixed-function sampling and conversion
+units. While highly optimized on modern GPUs, blitting should not be
+used when a direct copy is sufficient.</li>
+</ul>
+<h3 id="typical-use-cases">Typical Use Cases</h3>
+<ul>
+<li><strong>Use <code>vkCmdCopyImage</code> when:</strong>
+<ul>
+<li>Copying data between staging resources and final textures.</li>
+<li>Moving data between render targets of identical size and
+format.</li>
+<li>Preserving exact bit-level image data where filtering or
+modification would corrupt information (e.g., depth-stencil textures,
+packed integer data, or G-buffer layouts).</li>
+<li>Submitting operations to a dedicated transfer queue
+asynchronously.</li>
+</ul></li>
+<li><strong>Use <code>vkCmdBlitImage</code> when:</strong>
+<ul>
+<li>Generating mipmaps programmatically (progressively downscaling an
+image by a factor of two using linear filtering).</li>
+<li>Rescaling a rendered frame buffer to match a display swapchain
+surface of a different resolution.</li>
+<li>Converting between color spaces or mismatched pixel formats during a
+transfer.</li>
+</ul></li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coarse Pixel Shading Depth and Stencil in Vulkan - vulkan</title>
+    <meta name="description" content="Coarse pixel shading in Vulkan, implemented primarily through the VKKHRfragmentshadingrate extension, decouples the frequency of fragment shader execution from the resolution of the framebuffer. While fragment shaders execute across blocks of pixels (such">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/coarse-pixel-shading-depth-and-stencil-in-vulkan">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Coarse Pixel Shading Depth and Stencil in Vulkan - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/coarse-pixel-shading-depth-and-stencil-in-vulkan" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Coarse pixel shading in Vulkan, implemented primarily through the VKKHRfragmentshadingrate extension, decouples the frequency of fragment shader execution from the resolution of the framebuffer. While fragment shaders execute across blocks of pixels (such" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="coarse-pixel-shading-depth-and-stencil-in-vulkan">Coarse Pixel
+Shading Depth and Stencil in Vulkan</h1>
+<p>Coarse pixel shading in Vulkan, implemented primarily through the
+<code>VK_KHR_fragment_shading_rate</code> extension, decouples the
+frequency of fragment shader execution from the resolution of the
+framebuffer. While fragment shaders execute across blocks of pixels
+(such as 2x2 or 4x4) to conserve computing power, depth and stencil
+operations remain decoupled and evaluate at full native pixel or sample
+resolution. This architecture ensures that rendering pipelines preserve
+crisp geometric silhouettes and accurate occlusion testing while
+benefiting from reduced shading overhead.</p>
+<h3 id="decoupled-processing-frequencies">Decoupled Processing
+Frequencies</h3>
+<p>When coarse shading is enabled, the rasterizer still determines
+primitive coverage at normal pixel or multisample anti-aliasing (MSAA)
+frequencies. A coarse fragment represents an aggregation of adjacent
+pixels defined by a shading rate (e.g., <span class="math inline">\(D_w
+\times D_h\)</span>).</p>
+<p>Depth and stencil attachments operate strictly at the native
+attachment resolution. The rasterizer produces a coverage mask
+identifying which native samples or pixels within the coarse fragment
+are covered by the primitive. Even though the fragment shader generates
+a single color output for the entire coarse block, depth and stencil
+tests evaluate each covered sample individually against the attachment
+values.</p>
+<h3 id="early-depth-and-stencil-testing">Early Depth and Stencil
+Testing</h3>
+<p>Modern Vulkan pipelines favor early depth and stencil testing,
+occurring before fragment shader invocation. With coarse pixel
+shading:</p>
+<ol type="1">
+<li><strong>Per-Sample Testing:</strong> The GPU performs depth and
+stencil tests at full target resolution for every pixel or sample inside
+the coarse fragment bounding box.</li>
+<li><strong>Dynamic Coverage Updates:</strong> If some pixels within the
+coarse fragment fail the depth or stencil test, their corresponding bits
+are cleared from the fragment’s coverage mask.</li>
+<li><strong>Execution Culling:</strong> If all pixels or samples within
+a coarse fragment fail the depth and stencil tests, the fragment shader
+invocation is completely culled.</li>
+<li><strong>Early Writes:</strong> If depth/stencil writes are enabled
+and early tests are active, the attachment updates immediately for all
+passing samples, ensuring subsequent primitives test against accurate
+per-pixel boundaries.</li>
+</ol>
+<h3 id="coverage-mask-application">Coverage Mask Application</h3>
+<p>When the fragment shader executes, it processes the coarse fragment
+as a unified entity. Once the shader completes:</p>
+<ul>
+<li><strong>Color Broadcasting:</strong> The single calculated color
+value is broadcast across all pixels or samples within the coarse
+fragment that survived the coverage and depth/stencil tests.</li>
+<li><strong>Per-Sample Masking:</strong> Depth and stencil values are
+only updated for the specific locations where the coverage mask remains
+active. Uncovered pixels or samples that failed initial tests remain
+untouched, preventing blocky artifacts along polygon edges.</li>
+</ul>
+<h3 id="late-depth-and-stencil-testing">Late Depth and Stencil
+Testing</h3>
+<p>If a fragment shader writes to depth explicitly (e.g., using
+<code>gl_FragDepth</code>) or executes operations that disable early-z
+(such as modifying stencil values dynamically or using discard
+operations), depth and stencil testing must occur late:</p>
+<ul>
+<li><strong>Exported Depth Broadcasting:</strong> When a coarse fragment
+shader exports a single depth value, that scalar value is broadcast
+across all covered pixels/samples within the coarse fragment. This can
+lead to planar, stair-stepped depth approximations across the
+block.</li>
+<li><strong>Primitive Discard:</strong> If the fragment shader invokes
+<code>demote</code> or <code>discard</code>, the entire coarse
+fragment—or dynamically masked pixels—will not update the depth or
+stencil attachments.</li>
+<li><strong>Performance Penalty:</strong> Late depth testing with coarse
+shading increases memory bandwidth contention and limits the GPU's
+ability to skip shader invocations across large coarse pixel
+footprints.</li>
+</ul>
+<h3 id="multisampling-and-sample-shading-interactions">Multisampling and
+Sample Shading Interactions</h3>
+<p>When combining coarse shading with multisample anti-aliasing
+(MSAA):</p>
+<ul>
+<li>Rasterization and depth/stencil testing occur at the sample
+frequency (<span class="math inline">\(N\)</span> samples per
+pixel).</li>
+<li>The fragment shader executes once per coarse block (<span
+class="math inline">\(M\)</span> pixels per fragment).</li>
+<li>Depth and stencil attachments store distinct per-sample data,
+ensuring that edge anti-aliasing remains intact despite the reduced
+shading rate.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

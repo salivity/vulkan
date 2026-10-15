@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Logic Op Blending for Framebuffer Writes - vulkan</title>
+    <meta name="description" content="In the Vulkan graphics API, logic op blending enables applications to execute hardware-accelerated bitwise boolean operations between incoming fragment shader outputs and existing framebuffer pixels instead of standard arithmetic blending. This article ex">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-logic-op-blending-for-framebuffer-writes">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Logic Op Blending for Framebuffer Writes - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-logic-op-blending-for-framebuffer-writes" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In the Vulkan graphics API, logic op blending enables applications to execute hardware-accelerated bitwise boolean operations between incoming fragment shader outputs and existing framebuffer pixels instead of standard arithmetic blending. This article ex" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-logic-op-blending-for-framebuffer-writes">Vulkan Logic Op
+Blending for Framebuffer Writes</h1>
+<p>In the Vulkan graphics API, logic op blending enables applications to
+execute hardware-accelerated bitwise boolean operations between incoming
+fragment shader outputs and existing framebuffer pixels instead of
+standard arithmetic blending. This article explores how logic op
+blending functions within the Vulkan graphics pipeline, how to configure
+and enable it via pipeline state structures, the mechanical differences
+between logic ops and conventional color blending, and practical
+scenarios where bitwise framebuffer manipulation is essential.</p>
+<h3
+id="understanding-logic-operations-in-the-color-blend-stage">Understanding
+Logic Operations in the Color Blend Stage</h3>
+<p>Standard color blending in Vulkan computes a final pixel value by
+using arithmetic operations—such as addition, subtraction, and
+multiplication—weighted by factors like alpha or color constants. In
+contrast, logic op blending treats both the source value (the fragment
+shader output) and the destination value (the current data in the
+framebuffer attachment) as raw bit patterns.</p>
+<p>When a logic operation is active, the GPU’s color attachment output
+stage bypasses conventional blend arithmetic and feeds the bit
+representations directly into an Arithmetic Logic Unit (ALU) configured
+for bitwise operations. These operations include bitwise
+<code>AND</code>, <code>OR</code>, <code>XOR</code>, <code>NAND</code>,
+<code>NOR</code>, <code>INVERT</code>, and several others defined in the
+<code>VkLogicOp</code> enumeration.</p>
+<h3 id="enabling-logic-ops-in-vulkan">Enabling Logic Ops in Vulkan</h3>
+<p>Using logic operations requires explicit activation at both the
+device level and the pipeline state level:</p>
+<ol type="1">
+<li><strong>Device Feature Verification</strong>: Logic operations are
+not guaranteed to be universally supported on all hardware. The
+application must query <code>VkPhysicalDeviceFeatures</code> to ensure
+<code>logicOp</code> is supported and set <code>logicOp = VK_TRUE</code>
+inside <code>VkDeviceCreateInfo</code> when creating the logical device
+(<code>vkCreateDevice</code>).</li>
+<li><strong>Pipeline Configuration</strong>: Logic operations are
+controlled via the <code>VkPipelineColorBlendStateCreateInfo</code>
+structure during graphics pipeline creation:
+<ul>
+<li>Set <code>logicOpEnable</code> to <code>VK_TRUE</code>.</li>
+<li>Set <code>logicOp</code> to one of the valid <code>VkLogicOp</code>
+enum values, such as <code>VK_LOGIC_OP_XOR</code> or
+<code>VK_LOGIC_OP_AND</code>.</li>
+</ul></li>
+</ol>
+<h3 id="interaction-with-standard-blending-and-write-masks">Interaction
+with Standard Blending and Write Masks</h3>
+<p>When <code>logicOpEnable</code> is set to <code>VK_TRUE</code>, it
+overrides standard per-attachment color blending equations. While
+individual attachments in
+<code>VkPipelineColorBlendAttachmentState</code> may have their own
+<code>blendEnable</code> members, the global <code>logicOpEnable</code>
+forces the entire pipeline to use the specified bitwise logic operation
+for all compatible color attachments.</p>
+<p>However, channel write masks (<code>colorWriteMask</code> in
+<code>VkPipelineColorBlendAttachmentState</code>) remain functional. If
+a write mask excludes a specific channel (such as the alpha channel),
+the bitwise operation will compute results for that channel, but the
+final output will not overwrite the destination memory for the masked
+components.</p>
+<h3 id="formats-and-bitwise-behavior">Formats and Bitwise Behavior</h3>
+<p>Logic operations work deterministically on signed and unsigned
+integer formats (<code>R8G8B8A8_UINT</code>, <code>R16G16_SINT</code>,
+etc.) and normalized formats (<code>R8G8B8A8_UNORM</code>), as these map
+predictably to fixed-width integer bit representations in memory. While
+some hardware implementations permit logic ops on floating-point
+formats, the operation is performed directly on the IEEE 754 bit layout
+rather than the numerical values, which can lead to invalid
+floating-point representations (such as NaNs) if not managed
+carefully.</p>
+<h3 id="common-use-cases">Common Use Cases</h3>
+<ul>
+<li><strong>Reversible Rendering</strong>: The
+<code>VK_LOGIC_OP_XOR</code> operation allows drawing primitives (such
+as selection boxes or UI crosshairs) that invert underlying pixels.
+Drawing the exact same primitive a second time restores the original
+framebuffer content without requiring an offscreen backup buffer.</li>
+<li><strong>Legacy API Emulation</strong>: Older APIs like OpenGL and
+Direct3D 9 relied heavily on logic ops for UI rendering and specific 2D
+graphics effects. Vulkan provides logic ops to maintain feature parity
+when porting or translating legacy graphics code.</li>
+<li><strong>Bitmask Storing and Masking</strong>: Specialized rendering
+techniques can pack multiple binary flags or bitmasks across framebuffer
+channels. Logic ops like <code>VK_LOGIC_OP_OR</code> or
+<code>VK_LOGIC_OP_AND</code> permit updating specific flags across
+overlapping geometry in a single render pass without CPU
+roundtrips.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Pipeline Barrier Strategies for TBDR GPUs - vulkan</title>
+    <meta name="description" content="This article explores the fundamentals of Tile-Based Deferred Rendering (TBDR) architectures and how their unique hardware design dictates synchronization choices in the Vulkan API. You will learn how TBDR differs from traditional immediate-mode rendering">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-pipeline-barrier-strategies-for-tbdr-gp-us">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Pipeline Barrier Strategies for TBDR GPUs - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-pipeline-barrier-strategies-for-tbdr-gp-us" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explores the fundamentals of Tile-Based Deferred Rendering (TBDR) architectures and how their unique hardware design dictates synchronization choices in the Vulkan API. You will learn how TBDR differs from traditional immediate-mode rendering" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-pipeline-barrier-strategies-for-tbdr-gpus">Vulkan
+Pipeline Barrier Strategies for TBDR GPUs</h1>
+<p>This article explores the fundamentals of Tile-Based Deferred
+Rendering (TBDR) architectures and how their unique hardware design
+dictates synchronization choices in the Vulkan API. You will learn how
+TBDR differs from traditional immediate-mode rendering, why naive
+execution barriers can devastate mobile GPU performance, and how to
+effectively structure render passes, subpass dependencies, and pipeline
+barriers to maximize on-chip cache utilization.</p>
+<h3 id="what-is-tile-based-deferred-rendering-tbdr">What is Tile-Based
+Deferred Rendering (TBDR)?</h3>
+<p>Tile-Based Deferred Rendering is a GPU architecture primarily found
+in mobile and low-power devices, such as those powered by ARM Mali,
+Qualcomm Adreno, Imagination PowerVR, and Apple Silicon. Unlike
+Immediate Mode Rendering (IMR) common on desktop GPUs—which processes
+geometry and shades pixels directly to external VRAM—TBDR breaks the
+screen into small, discrete grids called tiles (typically 16x16 or 32x32
+pixels).</p>
+<p>TBDR operates in two distinct phases:</p>
+<ol type="1">
+<li><strong>The Binning (Geometry) Phase:</strong> The GPU processes all
+vertex shaders for a scene, determines which primitives intersect which
+tiles, and builds a per-tile list of primitives in memory.</li>
+<li><strong>The Tiling (Rasterization and Shading) Phase:</strong> The
+GPU processes the frame tile by tile. The entire color, depth, and
+stencil data for a single tile resides in ultra-fast, on-chip SRAM
+cache. The GPU performs Hidden Surface Removal (HSR) upfront, discarding
+occluded fragments before fragment shaders ever run, and only writes the
+final resolved pixels back to main system memory (DRAM) once the entire
+tile is complete.</li>
+</ol>
+<p>Because off-chip memory access is the single largest consumer of
+energy and bandwidth on mobile hardware, TBDR dramatically reduces power
+consumption by keeping intermediate pixel operations inside local tile
+memory.</p>
+<h3 id="how-tbdr-influences-vulkan-pipeline-barrier-strategies">How TBDR
+Influences Vulkan Pipeline Barrier Strategies</h3>
+<p>In Vulkan, pipeline barriers (<code>vkCmdPipelineBarrier</code> or
+<code>vkCmdPipelineBarrier2</code>) synchronize execution and memory
+access between commands. While IMR architectures generally handle
+execution barriers with minimal overhead—often just flushing L1/L2
+caches or waiting for a pipeline stage to idle—TBDR hardware is highly
+sensitive to barrier placement.</p>
+<h4 id="1-preventing-mid-pass-flushes">1. Preventing Mid-Pass
+Flushes</h4>
+<p>The most critical rule of TBDR synchronization is avoiding explicit
+pipeline barriers inside an active render pass. If an application
+inserts an execution barrier between draw calls that changes resource
+states or forces memory visibility within a render pass, the hardware
+may be forced to flush its local tile memory back to main system DRAM
+and reload it afterward. This stall eliminates the primary bandwidth
+advantage of TBDR.</p>
+<h4 id="2-utilizing-subpasses-instead-of-in-pass-barriers">2. Utilizing
+Subpasses Instead of In-Pass Barriers</h4>
+<p>To perform multipass rendering (such as deferred shading, tone
+mapping, or ambient occlusion) without leaving tile memory, developers
+must use Vulkan subpasses (<code>VkSubpassDependency</code>) or dynamic
+rendering local reads.</p>
+<p>Subpass self-dependencies and inter-subpass dependencies allow you to
+declare read-after-write hazards to the driver. When attachments are
+consumed in a subsequent subpass via
+<code>VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL</code> or
+<code>VK_IMAGE_LAYOUT_GENERAL</code> as an input attachment, TBDR
+hardware keeps the data in the tile's local SRAM cache. The driver
+translates these dependencies into internal tile-level synchronization
+rather than issuing full pipeline flushes to system memory.</p>
+<h4 id="3-optimizing-attachment-load-and-store-operations">3. Optimizing
+Attachment Load and Store Operations</h4>
+<p>TBDR architectures rely heavily on <code>VkAttachmentLoadOp</code>
+and <code>VkAttachmentStoreOp</code> to manage tile cache
+lifecycles:</p>
+<ul>
+<li>Use <code>VK_ATTACHMENT_LOAD_OP_CLEAR</code> or
+<code>VK_ATTACHMENT_LOAD_OP_DONT_CARE</code> whenever you do not need
+the previous contents of a tile.</li>
+<li>Use <code>VK_ATTACHMENT_STORE_OP_DONT_CARE</code> for transient
+data, such as intermediate G-buffer depth, normals, or specular targets
+that are only consumed during that specific render pass.</li>
+</ul>
+<p>Placing a global memory barrier or improper layout transition on a
+transient image forces it to be written out to DRAM, negating
+<code>VK_ATTACHMENT_STORE_OP_DONT_CARE</code> and wasting memory
+bandwidth.</p>
+<h4 id="4-batching-barriers-outside-render-passes">4. Batching Barriers
+Outside Render Passes</h4>
+<p>Synchronization between compute dispatches, transfer operations, and
+graphics passes should always take place outside the bounds of
+<code>vkCmdBeginRenderPass</code> and
+<code>vkCmdEndRenderPass</code>.</p>
+<p>When transitioning resources:</p>
+<ul>
+<li><strong>Batch transitions:</strong> Consolidate multiple image and
+buffer memory barriers into a single <code>vkCmdPipelineBarrier2</code>
+call before beginning a render pass to allow the hardware to schedule
+work efficiently.</li>
+<li><strong>Keep masks precise:</strong> Avoid coarse masks like
+<code>VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT</code> or broad
+<code>VK_ACCESS_2_MEMORY_READ_BIT</code> /
+<code>VK_ACCESS_2_MEMORY_WRITE_BIT</code> combinations. Specifying exact
+source and destination stages (e.g.,
+<code>VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT</code> to
+<code>VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT</code>) allows TBDR
+drivers to overlap the binning phase of the next frame with the shading
+phase of the current frame.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

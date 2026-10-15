@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Viewports and Scissors for Split-Screen - vulkan</title>
+    <meta name="description" content="This article provides an overview of how the Vulkan graphics API manages multiple viewports and scissor rectangles to render local split-screen multiplayer games efficiently. It covers the core mechanics of Vulkan’s multi-viewport pipeline configuration,">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-viewports-and-scissors-for-split-screen">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Viewports and Scissors for Split-Screen - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-viewports-and-scissors-for-split-screen" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article provides an overview of how the Vulkan graphics API manages multiple viewports and scissor rectangles to render local split-screen multiplayer games efficiently. It covers the core mechanics of Vulkan’s multi-viewport pipeline configuration," />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-viewports-and-scissors-for-split-screen">Vulkan Viewports
+and Scissors for Split-Screen</h1>
+<p>This article provides an overview of how the Vulkan graphics API
+manages multiple viewports and scissor rectangles to render local
+split-screen multiplayer games efficiently. It covers the core mechanics
+of Vulkan’s multi-viewport pipeline configuration, hardware
+capabilities, scissor clipping, dynamic state management, and the
+architectural approaches used to draw multiple player perspectives
+within a single frame buffer.</p>
+<h3 id="understanding-viewports-and-scissors-in-vulkan">Understanding
+Viewports and Scissors in Vulkan</h3>
+<p>In Vulkan, rendering requires defining both a viewport and a scissor
+rectangle:</p>
+<ul>
+<li><strong>Viewport (<code>VkViewport</code>):</strong> Transforms
+incoming normalized device coordinates (NDC) ranging from [-1, 1] to the
+designated 2D pixel space of the render target (X, Y, Width, Height,
+MinDepth, MaxDepth).</li>
+<li><strong>Scissor (<code>VkRect2D</code>):</strong> Discards
+rasterized fragments that fall outside of a specified rectangular region
+on the render target. Unlike the viewport, it does not transform
+geometry; it clips pixels.</li>
+</ul>
+<p>For split-screen setups, viewports scale each player's camera view to
+fit their designated slice of the screen, while scissors strictly
+confine rendering to those boundaries to prevent overlapping fragments,
+artifact bleeding, or unintended clears.</p>
+<h3 id="hardware-capability-and-feature-support">Hardware Capability and
+Feature Support</h3>
+<p>To leverage hardware-level multiple viewports, a Vulkan application
+must query and enable the <code>multiViewport</code> feature during
+device creation:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>VkPhysicalDeviceFeatures deviceFeatures<span class="op">{};</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>deviceFeatures<span class="op">.</span>multiViewport <span class="op">=</span> VK_TRUE<span class="op">;</span></span></code></pre></div>
+<p>Developers must also inspect
+<code>VkPhysicalDeviceLimits::maxViewports</code> and
+<code>maxViewportDimensions</code> to determine the maximum number of
+simultaneous viewports the GPU supports (typically up to 16 on modern
+desktop hardware, comfortably exceeding typical 2-player or 4-player
+splits).</p>
+<h3 id="pipeline-setup">Pipeline Setup</h3>
+<p>When constructing a <code>VkGraphicsPipeline</code>, the viewport
+state is configured via
+<code>VkPipelineViewportStateCreateInfo</code>:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>VkPipelineViewportStateCreateInfo viewportState<span class="op">{};</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>viewportState<span class="op">.</span>sType <span class="op">=</span> VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO<span class="op">;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>viewportState<span class="op">.</span>viewportCount <span class="op">=</span> <span class="dv">4</span><span class="op">;</span> <span class="co">// E.g., for a 4-player split-screen</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>viewportState<span class="op">.</span>scissorCount <span class="op">=</span> <span class="dv">4</span><span class="op">;</span></span></code></pre></div>
+<p>Most split-screen engines mark both viewports and scissors as dynamic
+states (<code>VK_DYNAMIC_STATE_VIEWPORT</code> and
+<code>VK_DYNAMIC_STATE_SCISSOR</code>). This allows dynamic adjustment
+of player screen configurations (such as transitioning from 2-player to
+3-player, or handling asymmetrical splits) via command buffers without
+reconstructing graphics pipelines.</p>
+<h3 id="execution-approaches-for-split-screen">Execution Approaches for
+Split-Screen</h3>
+<p>Vulkan allows two primary strategies to direct geometry to specific
+split-screen partitions:</p>
+<h4 id="1-sequential-command-based-binding-draw-loop">1. Sequential
+Command-Based Binding (Draw Loop)</h4>
+<p>The most common and flexible pattern involves looping through each
+active player, dynamically updating the viewport and scissor index 0,
+and dispatching draw calls:</p>
+<ol type="1">
+<li>Bind the shared render pass and pipeline.</li>
+<li>For each player:
+<ul>
+<li>Define the player's viewport bounds and matching scissor
+bounds.</li>
+<li>Call
+<code>vkCmdSetViewport(commandBuffer, 0, 1, &amp;playerViewport);</code></li>
+<li>Call
+<code>vkCmdSetScissor(commandBuffer, 0, 1, &amp;playerScissor);</code></li>
+<li>Bind camera descriptor sets for that player.</li>
+<li>Submit draw calls for visible scene objects.</li>
+</ul></li>
+</ol>
+<p>This approach requires no specialized shader code and allows
+customized frustum culling per player on the CPU side, ensuring optimal
+draw call efficiency.</p>
+<h4 id="2-array-indexed-viewports-hardware-multiview">2. Array-Indexed
+Viewports (Hardware Multiview)</h4>
+<p>For high-throughput rendering, Vulkan allows defining an array of
+viewports bound simultaneously:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>vkCmdSetViewport<span class="op">(</span>commandBuffer<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">4</span><span class="op">,</span> viewportsArray<span class="op">);</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>vkCmdSetScissor<span class="op">(</span>commandBuffer<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">4</span><span class="op">,</span> scissorsArray<span class="op">);</span></span></code></pre></div>
+<p>Using the extension <code>VK_EXT_shader_viewport_index_layer</code>
+(or standard geometry shaders), shaders can set the built-in variable
+<code>gl_ViewportIndex</code> directly. The rasterizer will then route
+the primitive to the target viewport and scissor array index
+automatically. While this enables single-pass instancing where multiple
+players share identical scene geometry, it increases shader complexity
+and can be less optimal if each player views entirely different portions
+of the game world.</p>
+<h3 id="preventing-artifacts-with-scissor-rectangles">Preventing
+Artifacts with Scissor Rectangles</h3>
+<p>In split-screen scenarios, viewports alone do not guarantee strict
+isolation:</p>
+<ul>
+<li><strong>Clearing Screen Regions:</strong> Calling
+<code>vkCmdClearAttachments</code> applies only to the defined scissor
+rectangle. Defining isolated scissor regions ensures that clearing
+player two’s depth buffer does not inadvertently overwrite player one’s
+data.</li>
+<li><strong>Post-Processing and UI:</strong> Post-processing passes
+(such as motion blur or bloom) and orthographic UI layers must be
+constrained using scissor rects to prevent blur filters from sampling
+across screen splits or HUD elements from drawing onto an adjacent
+player's display area.</li>
+</ul>
+<h3 id="performance-advantages">Performance Advantages</h3>
+<p>Using Vulkan's viewport and scissor architecture for split-screen
+games provides several efficiency gains:</p>
+<ul>
+<li><strong>Single Render Pass Execution:</strong> All player quadrants
+can share a single framebuffer, render pass, and depth-stencil
+attachment, eliminating costly framebuffer switching and tile-loading
+overhead on tile-based GPUs.</li>
+<li><strong>Reduced State Changes:</strong> Pipelines remain bound while
+only dynamic viewport and scissor bounds mutate, minimizing CPU-GPU
+synchronization bottlenecks.</li>
+<li><strong>Optimized Resource Allocation:</strong> Eliminates the need
+to allocate separate off-screen render targets for each player before
+blitting them together, conserving VRAM and bandwidth.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

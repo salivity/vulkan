@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Read and Write Same Image Attachment Guide - vulkan</title>
+    <meta name="description" content="In Vulkan, reading from and writing to the same image attachment within a single render pass introduces potential data hazards, cache incoherency, and compression incompatibilities. Because modern GPUs employ physically distinct hardware caches and propri">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-read-and-write-same-image-attachment-guide">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Read and Write Same Image Attachment Guide - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-read-and-write-same-image-attachment-guide" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Vulkan, reading from and writing to the same image attachment within a single render pass introduces potential data hazards, cache incoherency, and compression incompatibilities. Because modern GPUs employ physically distinct hardware caches and propri" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-read-and-write-same-image-attachment-guide">Vulkan Read
+and Write Same Image Attachment Guide</h1>
+<p>In Vulkan, reading from and writing to the same image attachment
+within a single render pass introduces potential data hazards, cache
+incoherency, and compression incompatibilities. Because modern GPUs
+employ physically distinct hardware caches and proprietary compression
+algorithms for texture sampling versus render target writing,
+simultaneous access violates standard rendering assumptions. To resolve
+this, Vulkan requires explicit image layout flags—such as
+<code>VK_IMAGE_LAYOUT_GENERAL</code> or feedback loop layouts—alongside
+precise synchronization to instruct the GPU how to route data without
+causing rendering artifacts, race conditions, or device crashes.</p>
+<h3 id="hardware-cache-separation">Hardware Cache Separation</h3>
+<p>Modern graphics architectures do not treat memory uniformly.
+Rasterization and fragment output write through dedicated Color/Render
+Output Units (ROPs) connected to write-combining output caches.
+Conversely, shader reads (sampling) pass through read-only texture
+caches optimized for filtering and spatial locality. When an image
+attachment is read and written simultaneously, the texture units cannot
+automatically observe the dirty writes sitting in the ROP caches without
+an explicit flush and invalidate cycle. Using optimal single-purpose
+layouts assumes strict unidirectional traffic to maximize cache
+throughput.</p>
+<h3 id="memory-and-bandwidth-compression">Memory and Bandwidth
+Compression</h3>
+<p>GPUs rely heavily on lossless framebuffer compression (such as AMD's
+DCC or NVIDIA's color compression) to minimize memory bandwidth. These
+compression formats are asymmetric:</p>
+<ul>
+<li><strong>Write layouts</strong> (like
+<code>VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL</code>) configure the
+compression metadata so that ROPs can rapidly write block-based
+data.</li>
+<li><strong>Read layouts</strong> (like
+<code>VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL</code>) configure data
+for fast decompression across shader texture units.</li>
+</ul>
+<p>If a shader attempts to sample from an image that is simultaneously
+being written as a color attachment, the hardware decompression engine
+on the read side may misinterpret data still being written or not yet
+updated in metadata blocks. Specific layout flags disable incompatible
+compression modes or switch the memory controller into a unified,
+coherently accessible state.</p>
+<h3 id="the-role-of-specific-layout-flags">The Role of Specific Layout
+Flags</h3>
+<p>To safely perform read-write operations on an attachment, Vulkan
+defines explicit layouts that inform the driver to modify its access
+patterns:</p>
+<ol type="1">
+<li><strong><code>VK_IMAGE_LAYOUT_GENERAL</code></strong>: This is an
+unoptimized fallback layout that supports all types of device access
+(storage images, color attachments, sampled images). It forces the GPU
+to use standard, coherent access pathways and typically disables
+aggressive, read-incompatible compression schemes.</li>
+<li><strong><code>VK_IMAGE_LAYOUT_ATTACHMENT_FEEDBACK_LOOP_OPTIMAL_EXT</code></strong>:
+Introduced with the feedback loop extension (and integrated into modern
+Vulkan versions), this layout explicitly signals a feedback loop where
+an attachment is both sampled and written within the same pass. It keeps
+compression enabled where hardware supports concurrent access while
+ensuring the cache stays valid.</li>
+</ol>
+<h3 id="preventing-read-after-write-raw-hazards">Preventing
+Read-After-Write (RAW) Hazards</h3>
+<p>Declaring the appropriate layout flag tells the memory subsystem
+<em>how</em> the memory must be represented, but it does not dictate
+<em>when</em> memory transfers occur. To read and write safely to the
+same image, developers must pair layout flags with subpass
+self-dependencies or pipeline barriers containing correct access masks
+(such as <code>VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT</code> to
+<code>VK_ACCESS_SHADER_READ_BIT</code>). This combination ensures that
+the GPU finishes write operations, flushes ROP caches, invalidates
+texture caches, and prevents undefined read-after-write hazards.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

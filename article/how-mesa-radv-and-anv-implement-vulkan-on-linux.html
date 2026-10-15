@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How Mesa RADV and ANV Implement Vulkan on Linux - vulkan</title>
+    <meta name="description" content="This article explores the internal architecture and operational mechanisms of Mesa&#39;s open-source Vulkan drivers on Linux, specifically AMD&#39;s RADV and Intel&#39;s ANV. It breaks down the entire execution pipeline, detailing how the user-space Vulkan API calls">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/how-mesa-radv-and-anv-implement-vulkan-on-linux">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How Mesa RADV and ANV Implement Vulkan on Linux - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/how-mesa-radv-and-anv-implement-vulkan-on-linux" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explores the internal architecture and operational mechanisms of Mesa&#39;s open-source Vulkan drivers on Linux, specifically AMD&#39;s RADV and Intel&#39;s ANV. It breaks down the entire execution pipeline, detailing how the user-space Vulkan API calls" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-mesa-radv-and-anv-implement-vulkan-on-linux">How Mesa RADV
+and ANV Implement Vulkan on Linux</h1>
+<p>This article explores the internal architecture and operational
+mechanisms of Mesa's open-source Vulkan drivers on Linux, specifically
+AMD's RADV and Intel's ANV. It breaks down the entire execution
+pipeline, detailing how the user-space Vulkan API calls traverse the
+Vulkan loader, undergo intermediate representation and shader
+compilation via NIR, interact with Linux kernel DRM modules, and
+ultimately execute on the physical GPU hardware.</p>
+<h3 id="the-userspace-and-kernelspace-split">The Userspace and
+Kernelspace Split</h3>
+<p>Implementing Vulkan on Linux requires dividing responsibilities
+between user-space libraries and kernel-space drivers through the Direct
+Rendering Manager (DRM) subsystem. Vulkan is not implemented directly
+within the Linux kernel; instead, the open-source drivers in the Mesa 3D
+Graphics Library—ANV for Intel hardware and RADV for AMD hardware—exist
+purely in user space as Installable Client Drivers (ICDs).</p>
+<p>When an application invokes Vulkan functions, it links against the
+Vulkan Loader (<code>libvulkan.so</code>). The loader reads JSON
+manifest files located in system directories (such as
+<code>/usr/share/vulkan/icd.d/</code>) to identify available ICDs. It
+then loads the corresponding shared library (e.g.,
+<code>libvulkan_radeon.so</code> or <code>libvulkan_intel.so</code>) and
+builds dispatch tables to route API calls directly to the driver
+implementation, bypassing loader overhead during performance-critical
+paths.</p>
+<p>The user-space driver handles API validation, state tracking,
+pipeline compilation, and command buffer generation. Once commands and
+memory allocations are prepared, the driver communicates with the Linux
+kernel via <code>ioctl</code> system calls to DRM kernel modules:</p>
+<ul>
+<li><strong>RADV</strong> interfaces with the <code>amdgpu</code> kernel
+driver.</li>
+<li><strong>ANV</strong> interfaces with the legacy <code>i915</code> or
+the modern <code>xe</code> kernel driver.</li>
+</ul>
+<p>The kernel drivers are responsible for memory management, hardware
+scheduling, power management, display output (Kernel Mode Setting or
+KMS), and enforcing security boundaries between processes.</p>
+<h3 id="shader-translation-pipeline-from-spir-v-to-machine-code">Shader
+Translation Pipeline: From SPIR-V to Machine Code</h3>
+<p>Vulkan applications submit programmable GPU code pre-compiled into
+standard SPIR-V bytecode. Because modern GPUs do not execute SPIR-V
+directly, both ANV and RADV rely on Mesa’s shared compiler
+infrastructure to lower this bytecode into hardware-specific binary
+machine code.</p>
+<ol type="1">
+<li><strong>SPIR-V to NIR:</strong> The driver ingests the SPIR-V module
+and translates it into NIR (New Intermediate Representation), an
+optimizing, Static Single Assignment (SSA)-based internal representation
+shared across Mesa.</li>
+<li><strong>Core Optimizations:</strong> NIR executes
+architecture-independent optimizations, such as dead-code elimination,
+algebraic simplifications, constant folding, and loop unrolling.</li>
+<li><strong>Hardware-Specific Lowering:</strong> NIR lowers generic
+instructions to conform to the memory layouts, input/output structures,
+and instruction limits of the specific GPU target.</li>
+<li><strong>Backend Compilation:</strong>
+<ul>
+<li><strong>RADV:</strong> Primarily uses <strong>ACO</strong> (AMD
+Compiler), an optimized, in-tree compiler backend designed specifically
+for gaming workloads to minimize shader compilation stutter. It
+translates NIR directly to AMD GCN/RDNA assembly. Alternatively, RADV
+can route NIR through an LLVM-based backend.</li>
+<li><strong>ANV:</strong> Translates NIR into Intel’s custom
+intermediate representations (e.g., FS/VS IRs) before processing through
+Intel’s Gen/Xe backend assembly generators to emit Intel machine
+instructions.</li>
+</ul></li>
+</ol>
+<h3 id="memory-management-and-buffer-allocation">Memory Management and
+Buffer Allocation</h3>
+<p>Vulkan gives applications explicit control over GPU memory through
+memory types and heaps. When an application queries memory properties
+via <code>vkGetPhysicalDeviceMemoryProperties</code>, ANV and RADV
+inspect the hardware capabilities and map them to kernel-managed memory
+buffers.</p>
+<p>Mesa drivers interact with the DRM memory managers—the Translation
+Table Manager (TTM) in <code>amdgpu</code> and the Graphics Execution
+Manager (GEM) in <code>i915</code>/<code>xe</code>.</p>
+<ul>
+<li>When <code>vkAllocateMemory</code> is called, the driver requests a
+GEM buffer object (BO) from the kernel via an <code>ioctl</code>.</li>
+<li>For host-visible memory, the driver maps the GEM object into the
+process’s virtual address space using <code>mmap</code>.</li>
+<li>For device-local memory (VRAM), the allocation remains accessible
+exclusively to the GPU, minimizing bus traffic over PCI Express.</li>
+</ul>
+<p>The drivers also implement sub-allocators to prevent excessive
+<code>ioctl</code> calls. Instead of requesting a new kernel buffer for
+every <code>vkAllocateMemory</code> request, they allocate larger memory
+blocks from the kernel and parcel them out to the application
+internally.</p>
+<h3 id="command-buffer-construction-and-submission">Command Buffer
+Construction and Submission</h3>
+<p>Vulkan relies on pre-recorded command buffers to achieve low CPU
+overhead. When an application records drawing or compute operations via
+<code>vkCmdDraw</code> or <code>vkCmdDispatch</code>, ANV and RADV do
+not communicate with the GPU immediately. Instead, they write low-level
+hardware packets directly into ring buffers allocated in user-space
+memory:</p>
+<ul>
+<li><strong>RADV</strong> writes Command Processor (CP) packets (such as
+PM4 packets for RDNA/GCN) containing GPU registers, configuration state,
+and memory pointers.</li>
+<li><strong>ANV</strong> constructs hardware command packets formatted
+specifically for Intel’s Command Streamer (CS).</li>
+</ul>
+<p>Upon <code>vkQueueSubmit</code>, the driver finalizes the command
+stream and prepares synchronization primitives. Synchronization in
+modern Linux Vulkan drivers relies heavily on DRM sync objects
+(<code>drm_syncobj</code>), which abstract kernel DMA fences and
+timeline semaphores. The driver issues an execution <code>ioctl</code>
+(such as <code>DRM_IOCTL_AMDGPU_CS</code> for AMD or
+<code>DRM_IOCTL_I915_GEM_EXECBUFFER2</code> /
+<code>DRM_IOCTL_XE_EXEC</code> for Intel), passing the arrays of buffer
+objects, command offsets, and in/out syncobj handles to the kernel
+scheduler for asynchronous GPU processing.</p>
+<h3 id="window-system-integration-wsi">Window System Integration
+(WSI)</h3>
+<p>To present rendered frames to displays, Vulkan drivers implement
+Window System Integration extensions (<code>VK_KHR_surface</code>,
+<code>VK_KHR_swapchain</code>). Mesa provides a centralized WSI layer
+that RADV and ANV consume.</p>
+<p>On Linux, the WSI interacts with display servers via:</p>
+<ul>
+<li><strong>Wayland:</strong> Allocates buffers using DRM FourCC formats
+through <code>dmabuf</code>, passing buffer file descriptors to the
+Wayland compositor via the <code>linux-dmabuf</code> protocol.</li>
+<li><strong>X11 / XCB:</strong> Communicates with the X server through
+the Direct Rendering Infrastructure 3 (DRI3) and Present
+extensions.</li>
+<li><strong>Direct-to-Display:</strong> Allows the driver to bypass
+display compositors entirely for VR headsets or embedded displays via
+DRM/KMS lease protocols.</li>
+</ul>
+<p>By decoupling hardware-specific ISA generation from the generic API
+layer, Mesa's ANV and RADV architectures provide conformant,
+high-performance Vulkan implementations that maximize hardware
+utilization while integrating seamlessly with the Linux graphics
+stack.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

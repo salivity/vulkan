@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Host-Visible Memory Mapping Explained - vulkan</title>
+    <meta name="description" content="In the Vulkan API, memory mapping for host-visible memory is the mechanism that bridges the CPU and GPU memory spaces. It allows the CPU (the host) to obtain a valid virtual address pointer to a block of GPU-accessible memory (VkDeviceMemory). This articl">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-host-visible-memory-mapping-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Host-Visible Memory Mapping Explained - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-host-visible-memory-mapping-explained" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In the Vulkan API, memory mapping for host-visible memory is the mechanism that bridges the CPU and GPU memory spaces. It allows the CPU (the host) to obtain a valid virtual address pointer to a block of GPU-accessible memory (VkDeviceMemory). This articl" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-host-visible-memory-mapping-explained">Vulkan
+Host-Visible Memory Mapping Explained</h1>
+<p>In the Vulkan API, memory mapping for host-visible memory is the
+mechanism that bridges the CPU and GPU memory spaces. It allows the CPU
+(the host) to obtain a valid virtual address pointer to a block of
+GPU-accessible memory (<code>VkDeviceMemory</code>). This article
+explains what host-visible memory is, how mapping transforms device
+allocations into standard host pointers, the role of cache coherency,
+and best practices for moving data efficiently between the CPU and
+GPU.</p>
+<h3 id="what-is-host-visible-memory">What Is Host-Visible Memory?</h3>
+<p>When allocating memory in Vulkan via <code>vkAllocateMemory</code>,
+you must select a memory type supported by the physical device that
+matches your resource requirements. If an allocation includes the
+<code>VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT</code> flag, the driver
+guarantees that the host (CPU) can access this memory directly over the
+system bus (such as PCIe) or via shared unified memory in integrated
+architectures.</p>
+<p>Host-visible memory is typically used for staging buffers, frequently
+updated uniform buffers, or dynamic vertex data that the CPU needs to
+write to before rendering.</p>
+<h3 id="the-role-of-memory-mapping">The Role of Memory Mapping</h3>
+<p>By default, an allocated <code>VkDeviceMemory</code> handle
+represents an opaque GPU resource; the CPU cannot dereference or write
+to it directly. Memory mapping translates this device handle into a
+standard CPU virtual memory address.</p>
+<p>This is accomplished using the <code>vkMapMemory</code> function:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span><span class="op">*</span> pData<span class="op">;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>vkMapMemory<span class="op">(</span>device<span class="op">,</span> memory<span class="op">,</span> offset<span class="op">,</span> size<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="op">&amp;</span>pData<span class="op">);</span></span></code></pre></div>
+<p>Once mapped, <code>pData</code> becomes a raw host pointer (e.g.,
+<code>void*</code>). The CPU can now read from or write to this memory
+region using standard operations such as <code>memcpy</code>, SIMD
+vector instructions, or direct assignment. When CPU access is complete,
+the application can call <code>vkUnmapMemory</code>, though unmapping is
+not strictly required after every write.</p>
+<h3 id="memory-coherency-and-flushing">Memory Coherency and
+Flushing</h3>
+<p>Mapped memory behavior depends on whether the memory type also
+features the <code>VK_MEMORY_PROPERTY_HOST_COHERENT_BIT</code>
+property:</p>
+<ul>
+<li><strong>Host-Coherent Memory:</strong> If the allocation has the
+<code>HOST_COHERENT_BIT</code>, the host cache and device memory are
+automatically kept in sync by hardware. Any write by the CPU becomes
+visible to the GPU without extra API calls, though proper Vulkan
+synchronization (such as pipeline barriers) is still required to order
+GPU operations.</li>
+<li><strong>Non-Coherent Memory:</strong> If the memory is host-visible
+but lacks the host-coherent flag, CPU writes may remain trapped in the
+CPU’s L1/L2 cache lines. To ensure the GPU sees the written data, the
+application must explicitly flush the modified address ranges using
+<code>vkFlushMappedMemoryRanges</code>. Conversely, if the GPU writes to
+this memory and the CPU needs to read it, the CPU must call
+<code>vkInvalidateMappedMemoryRanges</code> to invalidate its local
+caches before reading.</li>
+</ul>
+<h3 id="persistent-mapping">Persistent Mapping</h3>
+<p>In modern Vulkan architectures, frequent mapping and unmapping incurs
+unnecessary overhead. Vulkan explicitly supports persistent mapping,
+where an application calls <code>vkMapMemory</code> once during
+initialization and keeps the pointer valid for the entire lifetime of
+the allocation. The application then uses synchronization primitives
+(such as fences and semaphores) along with offsets or ring buffers to
+safely update data without redundant mapping calls.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

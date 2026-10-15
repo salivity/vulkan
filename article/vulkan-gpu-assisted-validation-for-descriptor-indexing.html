@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan GPU-Assisted Validation for Descriptor Indexing - vulkan</title>
+    <meta name="description" content="Vulkan GPU-assisted validation (GAV) detects runtime out-of-bounds descriptor indexing by modifying application shaders with injected instrumentation code, supplying internal GPU buffers containing descriptor array limits, and evaluating indices directly">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-gpu-assisted-validation-for-descriptor-indexing">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan GPU-Assisted Validation for Descriptor Indexing - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-gpu-assisted-validation-for-descriptor-indexing" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Vulkan GPU-assisted validation (GAV) detects runtime out-of-bounds descriptor indexing by modifying application shaders with injected instrumentation code, supplying internal GPU buffers containing descriptor array limits, and evaluating indices directly" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-gpu-assisted-validation-for-descriptor-indexing">Vulkan
+GPU-Assisted Validation for Descriptor Indexing</h1>
+<p>Vulkan GPU-assisted validation (GAV) detects runtime out-of-bounds
+descriptor indexing by modifying application shaders with injected
+instrumentation code, supplying internal GPU buffers containing
+descriptor array limits, and evaluating indices directly on the device
+at execution time. This process enables developers to pinpoint illegal
+accesses within dynamically indexed or "bindless" resource setups that
+CPU-based validation layers cannot track ahead of time.</p>
+<h3 id="the-challenge-of-dynamic-descriptor-indexing">The Challenge of
+Dynamic Descriptor Indexing</h3>
+<p>Standard CPU-side Vulkan validation layers intercept API calls on the
+host. While they can verify static bindings, pipeline layouts, and state
+transitions, they cannot inspect values computed entirely within shader
+execution on the GPU. When using descriptor indexing—often enabled via
+modern bindless rendering pipelines—shaders access large descriptor
+arrays using runtime-calculated values, such as instance IDs, material
+IDs, or uniform buffer offsets. If a dynamic calculation results in an
+index exceeding the array size allocated in the descriptor pool or set,
+the result is undefined behavior, device loss, or visual corruption.</p>
+<h3 id="spir-v-bytecode-instrumentation">SPIR-V Bytecode
+Instrumentation</h3>
+<p>GPU-assisted validation solves this visibility problem by
+transforming the shader code before pipeline creation. When GAV is
+enabled within the Vulkan Validation Layers, the layer intercepts the
+compiled SPIR-V bytecode during <code>vkCreateGraphicsPipelines</code>
+or <code>vkCreateComputePipelines</code>.</p>
+<p>The instrumentation engine scans the SPIR-V modules for instructions
+that load or sample from descriptor-backed variables, such as
+<code>OpImageSample*</code>, <code>OpLoad</code>, or
+<code>OpAccessChain</code>. Before these memory operations execute, the
+layer injects conditional SPIR-V instructions that evaluate the
+calculated array index.</p>
+<h3 id="internal-limit-buffers-and-bindings">Internal Limit Buffers and
+Bindings</h3>
+<p>To validate an index on the GPU, the shader must know the legal
+boundaries of each descriptor array. The validation layer automatically
+manages this state:</p>
+<ol type="1">
+<li><strong>Descriptor Size Tables:</strong> The layer creates internal
+storage buffers containing the allocated size and descriptor count for
+every active descriptor set binding.</li>
+<li><strong>Resource Re-mapping:</strong> The layer augments the
+application's pipeline layouts to bind these validation-owned storage
+buffers at designated binding points reserved for debug tracking.</li>
+<li><strong>Index Comparison:</strong> The injected shader instructions
+read the valid array upper bound from the internal limit buffer and
+compare it against the dynamically computed index.</li>
+</ol>
+<h3 id="error-recording-and-safe-fallback">Error Recording and Safe
+Fallback</h3>
+<p>If an injected check discovers an out-of-bounds index:</p>
+<ul>
+<li><strong>Error Logging:</strong> The shader writes a structured error
+record to a dedicated GPU-side output buffer (implemented as an atomic
+ring buffer). This record contains metadata about the fault, including
+the descriptor set index, binding number, illegal array index, shader
+stage, and the unique ID of the offending SPIR-V instruction.</li>
+<li><strong>Execution Clamping:</strong> To prevent a hardware crash,
+hard page fault, or system TDR (Timeout Detection and Recovery), the
+instrumentation replaces the out-of-bounds index with a safe, valid
+default index (typically <code>0</code>). This allows execution to
+proceed to a point where the host can safely read the error output.</li>
+</ul>
+<h3 id="host-readback-and-reporting">Host Readback and Reporting</h3>
+<p>After the command buffer executes, or during synchronization events
+such as <code>vkQueueWaitIdle</code>, <code>vkWaitForFences</code>, or
+command buffer completion, the CPU-side validation layer maps and parses
+the GPU-side error buffer.</p>
+<p>The layer cross-references the instruction ID and metadata with the
+original SPIR-V debug information (such as <code>OpLine</code>
+directives). It then routes a formatted error message through the
+<code>VK_EXT_debug_utils</code> callback, delivering a precise report
+containing the exact pipeline, draw call, shader stage, file name, line
+number, and invalid index that triggered the fault.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

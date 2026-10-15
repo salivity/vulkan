@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Clip Volume Depth: [0, 1] vs [-1, 1] Explained - vulkan</title>
+    <meta name="description" content="In real-time computer graphics, the clip volume defines the visible boundaries of a 3D scene before primitives are rasterized into pixels. While legacy APIs like OpenGL traditionally mapped depth to a $[-1, 1]$ range in Normalized Device Coordinates (NDC)">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-clip-volume-depth-0-1-vs-1-1-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Clip Volume Depth: [0, 1] vs [-1, 1] Explained - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-clip-volume-depth-0-1-vs-1-1-explained" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In real-time computer graphics, the clip volume defines the visible boundaries of a 3D scene before primitives are rasterized into pixels. While legacy APIs like OpenGL traditionally mapped depth to a $[-1, 1]$ range in Normalized Device Coordinates (NDC)" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-clip-volume-depth-0-1-vs--1-1-explained">Vulkan Clip
+Volume Depth: [0, 1] vs [-1, 1] Explained</h1>
+<p>In real-time computer graphics, the clip volume defines the visible
+boundaries of a 3D scene before primitives are rasterized into pixels.
+While legacy APIs like OpenGL traditionally mapped depth to a <span
+class="math inline">\([-1, 1]\)</span> range in Normalized Device
+Coordinates (NDC), modern APIs like Vulkan default to a <span
+class="math inline">\([0, 1]\)</span> depth range. Understanding the
+difference between zero-to-one and negative-one-to-one clip volume depth
+is critical for properly constructing projection matrices, maximizing
+depth buffer precision, and successfully porting rendering pipelines
+between graphics APIs.</p>
+<h3 id="clip-space-and-normalized-device-coordinates-ndc">Clip Space and
+Normalized Device Coordinates (NDC)</h3>
+<p>In a typical vertex processing pipeline, vertices are transformed
+from model space into world space, view space, and finally clip space
+via a projection matrix. Following the vertex shader, perspective
+division occurs: the <span class="math inline">\(x\)</span>, <span
+class="math inline">\(y\)</span>, and <span
+class="math inline">\(z\)</span> coordinates are divided by the
+homogeneous coordinate <span class="math inline">\(w\)</span>.</p>
+<p>This division produces Normalized Device Coordinates (NDC). Any
+primitive outside the designated NDC volume is clipped:</p>
+<ul>
+<li><strong>Negative-One-to-One (<span class="math inline">\([-1,
+1]\)</span>):</strong> Primitives are retained if <span
+class="math inline">\(-w \le z \le w\)</span>, resulting in an NDC range
+of <span class="math inline">\(-1.0 \le z_{ndc} \le 1.0\)</span>. This
+is the standard traditionally used by OpenGL.</li>
+<li><strong>Zero-to-One (<span class="math inline">\([0,
+1]\)</span>):</strong> Primitives are retained if <span
+class="math inline">\(0 \le z \le w\)</span>, resulting in an NDC range
+of <span class="math inline">\(0.0 \le z_{ndc} \le 1.0\)</span>. This is
+the default standard in Vulkan, Direct3D, and Metal.</li>
+</ul>
+<h3 id="advantages-of-the-0-1-depth-range">Advantages of the <span
+class="math inline">\([0, 1]\)</span> Depth Range</h3>
+<p>Vulkan uses the <span class="math inline">\([0, 1]\)</span> depth
+range primarily due to hardware architecture and numerical
+precision:</p>
+<ol type="1">
+<li><strong>Direct Mapping to the Depth Buffer:</strong> Framebuffer
+depth attachments are stored as normalized values between <span
+class="math inline">\(0.0\)</span> and <span
+class="math inline">\(1.0\)</span>. In a <span
+class="math inline">\([-1, 1]\)</span> system, the hardware must perform
+an additional scale-and-bias transformation (<span
+class="math inline">\(z_{window} = 0.5 \cdot z_{ndc} + 0.5\)</span>) to
+map the coordinate to memory. A <span class="math inline">\([0,
+1]\)</span> NDC depth maps directly to viewport coordinates without
+extra conversion.</li>
+<li><strong>Superior Floating-Point Precision:</strong> Floating-point
+representations (such as IEEE 754 used in <code>D32_SFLOAT</code>) have
+high precision close to <span class="math inline">\(0.0\)</span> and
+lose precision as values increase. By using <span
+class="math inline">\([0, 1]\)</span>, games can utilize techniques like
+"Reverse-Z" (mapping the near plane to <span
+class="math inline">\(1.0\)</span> and the far plane to <span
+class="math inline">\(0.0\)</span>). Reverse-Z distributes precision
+evenly across logarithmic distance, virtually eliminating Z-fighting
+across massive view distances. A <span class="math inline">\([-1,
+1]\)</span> range complicates this optimization because precision is
+clustered around the middle of the frustum rather than the near or far
+planes.</li>
+</ol>
+<h3 id="projection-matrix-differences">Projection Matrix
+Differences</h3>
+<p>Because the clipping boundaries differ, a perspective projection
+matrix built for OpenGL will not work correctly in standard Vulkan.</p>
+<p>An OpenGL perspective matrix transforms the near plane to <span
+class="math inline">\(-1\)</span> and the far plane to <span
+class="math inline">\(+1\)</span>:</p>
+<p><span class="math display">\[
+P_{\text{OpenGL}} = \begin{bmatrix}
+\frac{2n}{r-l} &amp; 0 &amp; \frac{r+l}{r-l} &amp; 0 \\
+0 &amp; \frac{2n}{t-b} &amp; \frac{t+b}{t-b} &amp; 0 \\
+0 &amp; 0 &amp; -\frac{f+n}{f-n} &amp; -\frac{2fn}{f-n} \\
+0 &amp; 0 &amp; -1 &amp; 0
+\end{bmatrix}
+\]</span></p>
+<p>A standard Vulkan perspective matrix transforms the near plane to
+<span class="math inline">\(0\)</span> and the far plane to <span
+class="math inline">\(+1\)</span>:</p>
+<p><span class="math display">\[
+P_{\text{Vulkan}} = \begin{bmatrix}
+\frac{2n}{r-l} &amp; 0 &amp; \frac{r+l}{r-l} &amp; 0 \\
+0 &amp; \frac{2n}{t-b} &amp; \frac{t+b}{t-b} &amp; 0 \\
+0 &amp; 0 &amp; -\frac{f}{f-n} &amp; -\frac{fn}{f-n} \\
+0 &amp; 0 &amp; -1 &amp; 0
+\end{bmatrix}
+\]</span></p>
+<p><em>(Note: Vulkan also inverts the Y-axis relative to OpenGL, which
+is often accounted for by negating the <span
+class="math inline">\((1,1)\)</span> entry in the matrix or using a
+negative viewport height).</em></p>
+<h3 id="supporting--1-1-in-vulkan-vk_ext_depth_clip_control">Supporting
+<span class="math inline">\([-1, 1]\)</span> in Vulkan:
+<code>VK_EXT_depth_clip_control</code></h3>
+<p>While <span class="math inline">\([0, 1]\)</span> is the native
+standard, porting existing OpenGL rendering engines to Vulkan often
+introduced visual artifacts or required rebuilding all projection
+math.</p>
+<p>To solve this, the Khronos Group introduced the extension
+<code>VK_EXT_depth_clip_control</code>. When enabled, developers can
+configure the pipeline's viewport state using
+<code>VkPipelineViewportDepthClipControlCreateInfoEXT</code>:</p>
+<ul>
+<li>Setting <code>negativeOneToOne</code> to <code>VK_TRUE</code> forces
+the clip volume to treat depth as <span class="math inline">\([-1,
+1]\)</span>.</li>
+<li>Setting <code>negativeOneToOne</code> to <code>VK_FALSE</code>
+retains Vulkan's default <span class="math inline">\([0, 1]\)</span>
+behavior.</li>
+</ul>
+<p>This extension enables seamless reuse of legacy projection matrices
+and depth calculations without modifying shader code or injecting
+runtime transformation adjustments.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

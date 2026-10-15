@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Major Core Capabilities Promoted in Vulkan 1.1 - vulkan</title>
+    <meta name="description" content="The release of the Vulkan 1.1 graphics and compute API marked a significant milestone by integrating numerous proven extensions directly into the core specification. This update eliminated the fragmentation of relying on optional KHR extensions, providing">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/major-core-capabilities-promoted-in-vulkan-1-1">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Major Core Capabilities Promoted in Vulkan 1.1 - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/major-core-capabilities-promoted-in-vulkan-1-1" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The release of the Vulkan 1.1 graphics and compute API marked a significant milestone by integrating numerous proven extensions directly into the core specification. This update eliminated the fragmentation of relying on optional KHR extensions, providing" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="major-core-capabilities-promoted-in-vulkan-11">Major Core
+Capabilities Promoted in Vulkan 1.1</h1>
+<p>The release of the Vulkan 1.1 graphics and compute API marked a
+significant milestone by integrating numerous proven extensions directly
+into the core specification. This update eliminated the fragmentation of
+relying on optional KHR extensions, providing developers with guaranteed
+access to advanced rendering techniques, modern GPU hardware
+capabilities, streamlined memory management, and cross-API
+interoperability.</p>
+<h3 id="subgroup-operations">Subgroup Operations</h3>
+<p>One of the most impactful additions to core Vulkan 1.1 was subgroup
+operations. Modern GPUs execute shader invocations in parallel lockstep
+groups known as warps or wavefronts. Core subgroup operations allow
+these parallel invocations to communicate, share data, and perform
+arithmetic operations directly without writing to or reading from shared
+workgroup memory. This drastically reduces memory bandwidth demands and
+significantly accelerates compute-heavy workloads.</p>
+<h3 id="multiview-rendering">Multiview Rendering</h3>
+<p>Originally designed for virtual reality, the multiview feature was
+promoted to core to allow a single draw call to be rendered to multiple
+render targets simultaneously. Instead of issuing distinct draw passes
+for each viewpoint (such as the left and right eyes in a VR headset),
+the GPU executes the geometry once and dynamically routes instances to
+multiple array layers with custom viewport transforms, substantially
+cutting CPU overhead.</p>
+<h3 id="multi-gpu-support-device-groups">Multi-GPU Support (Device
+Groups)</h3>
+<p>Vulkan 1.1 brought native multi-GPU functionality directly into the
+core API via device groups. This allows multiple physical GPUs to be
+managed as a single logical device. Developers can coordinate workloads
+across multiple adapters, enabling split-frame rendering,
+alternate-frame rendering, or dedicated compute/display GPU splits
+without relying on proprietary vendor drivers.</p>
+<h3 id="cross-process-and-cross-api-interoperability">Cross-Process and
+Cross-API Interoperability</h3>
+<p>External memory, fences, and semaphores were promoted to core status
+to facilitate communication between Vulkan and external systems. These
+features allow Vulkan to directly import and export memory buffers and
+synchronization primitives to and from other APIs (such as Direct3D,
+OpenGL, or CUDA) and host operating system surfaces, making hybrid
+rendering pipelines and media sharing significantly more efficient.</p>
+<h3 id="ycbcr-yuv-image-format-conversion">YCbCr (YUV) Image Format
+Conversion</h3>
+<p>To enhance video decoding, camera input processing, and multimedia
+rendering, Vulkan 1.1 integrated direct support for YCbCr image formats.
+Instead of requiring developers to manually convert non-RGB color spaces
+using custom fragment shaders, Vulkan samplers can now automatically
+handle the color-space conversion, chroma downsampling, and
+de-interlacing directly during texture sampling operations.</p>
+<h3 id="16-bit-storage">16-Bit Storage</h3>
+<p>The core specification added support for 16-bit storage, permitting
+shaders to load and store half-precision floating-point (FP16) and
+16-bit integer values in uniform buffers, storage buffers, and push
+constants. This optimization cuts memory bandwidth consumption in half
+for supported data types and improves cache utilization across mobile
+and desktop architectures alike.</p>
+<h3 id="dedicated-allocations-and-descriptor-update-templates">Dedicated
+Allocations and Descriptor Update Templates</h3>
+<p>Vulkan 1.1 addressed common developer friction points by integrating
+two performance-oriented allocation and descriptor mechanisms:</p>
+<ul>
+<li><strong>Dedicated Allocations:</strong> Informs the driver that a
+specific buffer or image resource should have its own dedicated memory
+allocation rather than sub-allocating from a larger block, which
+improves performance on specific GPU architectures.</li>
+<li><strong>Descriptor Update Templates:</strong> Provides a structured
+way to bulk-update descriptor sets using predefined memory layouts,
+drastically lowering the CPU driver overhead typically associated with
+frequent resource binding.</li>
+</ul>
+<h3 id="protected-content">Protected Content</h3>
+<p>Vulkan 1.1 added core support for protected memory and command
+buffers. This feature ensures that decrypted multimedia assets (such as
+DRM-protected video streams) can be rendered and composed securely
+within hardware-protected memory spaces where the host application or
+operating system cannot inspect the raw pixel data.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

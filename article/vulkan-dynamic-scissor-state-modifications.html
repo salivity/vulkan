@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Dynamic Scissor State Modifications - vulkan</title>
+    <meta name="description" content="In the Vulkan graphics API, dynamic scissor state modifications allow developers to define and update the scissor rectangle—the area of the framebuffer where rendering occurs—during active command buffer recording without rebuilding the graphics pipeline.">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-dynamic-scissor-state-modifications">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Dynamic Scissor State Modifications - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-dynamic-scissor-state-modifications" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In the Vulkan graphics API, dynamic scissor state modifications allow developers to define and update the scissor rectangle—the area of the framebuffer where rendering occurs—during active command buffer recording without rebuilding the graphics pipeline." />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-dynamic-scissor-state-modifications">Vulkan Dynamic
+Scissor State Modifications</h1>
+<p>In the Vulkan graphics API, dynamic scissor state modifications allow
+developers to define and update the scissor rectangle—the area of the
+framebuffer where rendering occurs—during active command buffer
+recording without rebuilding the graphics pipeline. Permissible
+modifications depend on how the pipeline was created, whether extended
+dynamic state features are enabled, and adherence to specific command
+ordering rules. This guide outlines the exact dynamic scissor
+modifications permitted during command buffer recording, the required
+pipeline states, and the commands used to apply them.</p>
+<h3 id="pipeline-requirements-for-dynamic-scissor-state">Pipeline
+Requirements for Dynamic Scissor State</h3>
+<p>To modify scissor rectangles dynamically, the active pipeline must be
+configured to treat scissor states as dynamic during pipeline
+creation:</p>
+<ul>
+<li><strong><code>VK_DYNAMIC_STATE_SCISSOR</code></strong>: Must be
+included in the <code>pDynamicStates</code> array of
+<code>VkPipelineDynamicStateCreateInfo</code>. This enables updating the
+scissor rectangle dimensions and offsets dynamically, while the total
+number of scissors remains fixed to the pipeline's viewport count.</li>
+<li><strong><code>VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT</code></strong>:
+Available in Vulkan 1.3 or via the
+<code>VK_EXT_extended_dynamic_state</code> extension. This dynamic state
+allows you to modify both the scissor rectangles and the dynamic count
+of active scissors simultaneously.</li>
+</ul>
+<p>If a pipeline does not declare scissor state as dynamic, any calls
+modifying the scissor state will have no effect on rendering commands
+executed with that pipeline.</p>
+<h3 id="permissible-scissor-commands-and-placement">Permissible Scissor
+Commands and Placement</h3>
+<p>During command buffer recording (in the recording state after
+<code>vkBeginCommandBuffer</code>), the following commands are
+permissible:</p>
+<ul>
+<li><strong><code>vkCmdSetScissor</code></strong>: Modifies the scissor
+rectangles. It can be invoked both inside and outside of active render
+pass instances.</li>
+<li><strong><code>vkCmdSetScissorWithCount</code></strong>: Modifies
+both the total number of scissor rectangles and their corresponding
+properties. Can also be invoked inside or outside render pass
+instances.</li>
+</ul>
+<p>Dynamic scissor state changes are permissible at any point prior to a
+draw call (such as <code>vkCmdDraw</code> or
+<code>vkCmdDrawIndexed</code>). A valid scissor state must be bound
+before any draw command executes with a pipeline utilizing dynamic
+scissors.</p>
+<h3 id="permissible-parameter-modifications">Permissible Parameter
+Modifications</h3>
+<p>When invoking <code>vkCmdSetScissor</code> or
+<code>vkCmdSetScissorWithCount</code>, the following parameter
+adjustments are permitted:</p>
+<ol type="1">
+<li><strong>Rectangle Dimensions and Offsets</strong>:
+<ul>
+<li>The <code>offset</code> (<code>x</code>, <code>y</code>) can be
+modified to shift the starting position. Negative offsets are not valid
+for static coordinates, but must fall within valid framebuffer
+boundaries.</li>
+<li>The <code>extent</code> (<code>width</code>, <code>height</code>)
+can be scaled or resized. The sum of
+<code>offset.x + extent.width</code> and
+<code>offset.y + extent.height</code> should not exceed the physical
+limits of the implementation's maximum viewport dimensions
+(<code>maxViewportDimensions</code>).</li>
+</ul></li>
+<li><strong>Partial Array Updates (<code>firstScissor</code>)</strong>:
+<ul>
+<li>When using multi-viewport configurations,
+<code>vkCmdSetScissor</code> allows modifying a subset of the scissor
+array using the <code>firstScissor</code> parameter. You can update
+specific scissor indices without modifying the entire array.</li>
+</ul></li>
+<li><strong>Dynamic Scissor Count</strong>:
+<ul>
+<li>If <code>VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT</code> is used, the
+scissor count can be dynamically increased or decreased per draw
+command, provided the count does not exceed the implementation's
+<code>maxViewports</code> limit.</li>
+</ul></li>
+</ol>
+<h3 id="state-persistence-and-command-buffer-boundaries">State
+Persistence and Command Buffer Boundaries</h3>
+<p>Dynamic scissor state modifications obey specific lifetime and
+persistence rules:</p>
+<ul>
+<li><strong>Persistence Across Draw Calls</strong>: Once a dynamic
+scissor command is recorded, its state persists across subsequent
+pipeline binds and draw calls within the same command buffer, provided
+the newly bound pipelines also declare the scissor state as
+dynamic.</li>
+<li><strong>Primary and Secondary Command Buffers</strong>: Dynamic
+scissor state set in a primary command buffer does not inherit down into
+secondary command buffers by default unless dynamic state inheritance
+extensions (<code>VK_NV_inherited_viewport_scissor</code> or Vulkan 1.3
+dynamic state inheritance) are specifically configured. Conversely,
+state set inside a secondary command buffer does not propagate back to
+the calling primary command buffer.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

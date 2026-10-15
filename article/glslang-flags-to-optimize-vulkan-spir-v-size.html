@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Glslang Flags to Optimize Vulkan SPIR-V Size - vulkan</title>
+    <meta name="description" content="This article details the primary compiler flags available in the glslang reference compiler (glslangValidator) to reduce SPIR-V binary sizes for Vulkan graphics and compute pipelines. By stripping redundant metadata, eliminating dead code, and enabling in">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/glslang-flags-to-optimize-vulkan-spir-v-size">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Glslang Flags to Optimize Vulkan SPIR-V Size - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/glslang-flags-to-optimize-vulkan-spir-v-size" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article details the primary compiler flags available in the glslang reference compiler (glslangValidator) to reduce SPIR-V binary sizes for Vulkan graphics and compute pipelines. By stripping redundant metadata, eliminating dead code, and enabling in" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="glslang-flags-to-optimize-vulkan-spir-v-size">Glslang Flags to
+Optimize Vulkan SPIR-V Size</h1>
+<p>This article details the primary compiler flags available in the
+<code>glslang</code> reference compiler (<code>glslangValidator</code>)
+to reduce SPIR-V binary sizes for Vulkan graphics and compute pipelines.
+By stripping redundant metadata, eliminating dead code, and enabling
+integrated size-reduction optimization passes, developers can
+significantly decrease shader storage requirements, cut down
+distribution payloads, and improve runtime pipeline caching
+performance.</p>
+<h3 id="essential-flags-for-size-optimization">Essential Flags for Size
+Optimization</h3>
+<h4 id="1--os-optimize-for-size">1. <code>-Os</code> (Optimize for
+Size)</h4>
+<p>The <code>-Os</code> flag instructs <code>glslang</code> to run
+optimization passes specifically targeted at minimizing bytecode size.
+When built with SPIRV-Tools integration (standard in the Vulkan SDK),
+this flag invokes a sequence of size-focused transforms. It aggregates
+uniform structures, merges identical constants, folds redundant
+operations, and aggressively performs dead code elimination without
+sacrificing runtime performance.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">glslangValidator</span> <span class="at">-V</span> <span class="at">-Os</span> shader.frag <span class="at">-o</span> shader.frag.spv</span></code></pre></div>
+<h4 id="2--g0-or--s-strip-debug-information">2. <code>-g0</code> or
+<code>-s</code> (Strip Debug Information)</h4>
+<p>By default, debug symbols such as variable names
+(<code>OpName</code>), source file listings (<code>OpSource</code>), and
+line mapping statements (<code>OpLine</code>) are embedded into the
+output bytecode.</p>
+<ul>
+<li>Use <code>-g0</code> to explicitly disable the generation of any
+debug information.</li>
+<li>Use <code>-s</code> (strip) to remove symbols and structural debug
+decorations from the generated SPIR-V binary.</li>
+</ul>
+<p>Removing these non-functional instructions provides the largest
+single-step reduction in binary size, often shrinking unoptimized
+shaders by 40% to 70%.</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">glslangValidator</span> <span class="at">-V</span> <span class="at">-g0</span> <span class="at">-s</span> shader.vert <span class="at">-o</span> shader.vert.spv</span></code></pre></div>
+<h4 id="3---target-env-vulkan1x-target-explicit-environment">3.
+<code>--target-env vulkan1.x</code> (Target Explicit Environment)</h4>
+<p>Specifying the precise Vulkan target environment prevents
+<code>glslang</code> from inserting legacy compatibility workarounds or
+enabling unnecessary SPIR-V extensions and capabilities.</p>
+<p>Supported environments include:</p>
+<ul>
+<li><code>--target-env vulkan1.0</code></li>
+<li><code>--target-env vulkan1.1</code></li>
+<li><code>--target-env vulkan1.2</code></li>
+<li><code>--target-env vulkan1.3</code></li>
+</ul>
+<p>Targeting modern Vulkan versions allows the compiler to generate more
+concise instruction sets (such as native scalar block layouts or
+simplified descriptor indexing) that translate into smaller binary
+footprints.</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">glslangValidator</span> <span class="at">-V1.3</span> <span class="at">--target-env</span> vulkan1.3 <span class="at">-Os</span> <span class="at">-g0</span> shader.comp <span class="at">-o</span> shader.comp.spv</span></code></pre></div>
+<h3 id="recommended-production-command">Recommended Production
+Command</h3>
+<p>To achieve the smallest possible SPIR-V output directly from
+<code>glslang</code>, combine these flags into a single build
+command:</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ex">glslangValidator</span> <span class="at">-V</span> <span class="at">--target-env</span> vulkan1.3 <span class="at">-Os</span> <span class="at">-g0</span> <span class="at">-s</span> input.frag <span class="at">-o</span> output.frag.spv</span></code></pre></div>
+<h3 id="post-processing-consideration">Post-Processing
+Consideration</h3>
+<p>While <code>glslang</code> covers primary compilation and size
+reduction via <code>-Os</code>, further compression can be achieved in a
+build pipeline by feeding the output into <code>spirv-opt</code> with
+<code>-Os</code>, followed by <code>spirv-remap</code> to shorten
+identifier IDs across multiple shader stages.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

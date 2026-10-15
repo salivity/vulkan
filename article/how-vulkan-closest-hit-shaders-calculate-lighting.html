@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How Vulkan Closest-Hit Shaders Calculate Lighting - vulkan</title>
+    <meta name="description" content="In Vulkan ray tracing, the closest-hit shader (CHS) is the execution stage responsible for determining the final visual appearance of a surface where a ray intersects geometry. This article explains how closest-hit shaders retrieve vertex data, interpolat">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/how-vulkan-closest-hit-shaders-calculate-lighting">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How Vulkan Closest-Hit Shaders Calculate Lighting - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/how-vulkan-closest-hit-shaders-calculate-lighting" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Vulkan ray tracing, the closest-hit shader (CHS) is the execution stage responsible for determining the final visual appearance of a surface where a ray intersects geometry. This article explains how closest-hit shaders retrieve vertex data, interpolat" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-vulkan-closest-hit-shaders-calculate-lighting">How Vulkan
+Closest-Hit Shaders Calculate Lighting</h1>
+<p>In Vulkan ray tracing, the closest-hit shader (CHS) is the execution
+stage responsible for determining the final visual appearance of a
+surface where a ray intersects geometry. This article explains how
+closest-hit shaders retrieve vertex data, interpolate surface attributes
+via barycentric coordinates, sample materials, trace secondary rays for
+shadows and reflections, and package illumination results into the ray
+payload for the rendering pipeline.</p>
+<h2 id="triggering-the-closest-hit-shader">Triggering the Closest-Hit
+Shader</h2>
+<p>During acceleration structure traversal, the hardware tests ray
+intersections against bounding volume hierarchies (BVH) and primitive
+triangles. When a ray hits geometry between the minimum
+(<code>gl_RayTminEXT</code>) and maximum (<code>gl_RayTmaxEXT</code>)
+hit distances, the pipeline tracks the closest valid intersection. Once
+traversal completes, the pipeline invokes the closest-hit shader
+associated with that specific geometry's Shader Binding Table (SBT)
+entry.</p>
+<h2 id="retrieving-and-interpolating-surface-attributes">Retrieving and
+Interpolating Surface Attributes</h2>
+<p>The intersection hardware provides the barycentric coordinates of the
+hit point via the built-in hit attribute variable:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>hitAttributeEXT <span class="dt">vec2</span> hitAttribs<span class="op">;</span></span></code></pre></div>
+<p>Because modern Vulkan ray tracing pipelines predominantly use
+standard vertex buffers accessed via Buffer Device Addresses (BDA) or
+descriptor arrays rather than fixed input locations, the shader manually
+fetches and interpolates vertex data:</p>
+<ol type="1">
+<li><strong>Calculate Barycentric Weights</strong>: The third weight is
+derived mathematically: <span class="math display">\[w = 1.0 -
+hitAttribs.x - hitAttribs.y\]</span></li>
+<li><strong>Fetch Vertex Indices</strong>: Using
+<code>gl_PrimitiveID</code> and the geometry's index buffer, the shader
+fetches the three vertex indices corresponding to the intersected
+triangle.</li>
+<li><strong>Interpolate Attributes</strong>: Using the indices, the
+shader reads positions, normals, tangents, and texture coordinates from
+the vertex buffer and computes the hit point’s exact values: <span
+class="math display">\[\text{Attribute}_{\text{interpolated}} = w \cdot
+A_0 + hitAttribs.x \cdot A_1 + hitAttribs.y \cdot A_2\]</span></li>
+<li><strong>Transform to World Space</strong>: Normals and positions are
+transformed into world space using the built-in transformation matrices,
+such as <code>gl_ObjectToWorldEXT</code>.</li>
+</ol>
+<h2 id="sampling-materials-and-evaluating-brdfs">Sampling Materials and
+Evaluating BRDFs</h2>
+<p>Once the world-space normal, tangent frame, and UV coordinates are
+established, the shader evaluates the surface's material model, commonly
+a Physically Based Rendering (PBR) metallic-roughness workflow:</p>
+<ul>
+<li><strong>Texture Descriptors</strong>: Textures are indexed using
+non-uniform resource indexing or bindless arrays based on material IDs
+attached to the primitive or instance.</li>
+<li><strong>Surface Properties</strong>: The shader samples albedo,
+normal, roughness, metallic, and ambient occlusion textures.</li>
+<li><strong>Normal Mapping</strong>: The sampled tangent-space normal is
+perturbed using the interpolated geometric normal and tangent vectors to
+compute microfacet surface variation.</li>
+</ul>
+<h2 id="calculating-direct-lighting-and-shadows">Calculating Direct
+Lighting and Shadows</h2>
+<p>To determine direct illumination from analytical light sources (such
+as point, spot, or directional lights), the closest-hit shader executes
+standard lighting equations (e.g., Cook-Torrance microfacet specular and
+Lambertian diffuse).</p>
+<p>To calculate visibility and shadows, the shader casts secondary
+rays:</p>
+<ol type="1">
+<li><strong>Shadow Ray Setup</strong>: A ray is constructed starting
+from the current surface hit point (offset slightly along the geometric
+normal to avoid self-intersection artifacts known as shadow acne) toward
+the light position.</li>
+<li><strong>Ray Traversal</strong>: The shader invokes
+<code>traceRayEXT()</code>.</li>
+<li><strong>Optimized Payloads</strong>: For simple binary visibility,
+the shadow ray typically uses flags such as
+<code>gl_RayFlagsTerminateOnFirstHitEXT</code> and
+<code>gl_RayFlagsSkipClosestHitShaderEXT</code>, relying on a
+lightweight miss shader to set a visibility boolean in the secondary
+payload.</li>
+</ol>
+<h2 id="handling-indirect-lighting-and-secondary-bounces">Handling
+Indirect Lighting and Secondary Bounces</h2>
+<p>For reflections, refractions, or full global illumination path
+tracing:</p>
+<ol type="1">
+<li><strong>Ray Direction Generation</strong>: The shader samples a new
+direction according to the surface’s Bidirectional Reflectance
+Distribution Function (BRDF)—either through deterministic reflection
+formulas or importance-sampled distribution functions.</li>
+<li><strong>Recursive or Iterative Tracing</strong>: The shader
+initiates another <code>traceRayEXT()</code> call. In high-performance
+pipelines with limited recursion depth, indirect bounces are typically
+handled iteratively in the Ray Generation Shader rather than recursively
+in the CHS. When recursion is enabled, the CHS suspends execution until
+the child ray returns its payload.</li>
+</ol>
+<h2 id="writing-to-the-ray-payload">Writing to the Ray Payload</h2>
+<p>The primary communication channel between the closest-hit shader and
+the shader that spawned the ray is the incoming ray payload, declared
+with:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> rayPayloadInEXT MaterialPayload prd<span class="op">;</span></span></code></pre></div>
+<p>The shader combines the direct lighting, shadow terms, emission, and
+any accumulated indirect radiance according to the rendering equation.
+It writes this final computed color and optional path metadata (such as
+hit distance or surface normals for post-processing and denoising)
+directly into the payload structure, completing the execution of the
+closest-hit stage.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

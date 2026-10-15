@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Using VkSemaphore for Vulkan GPU Queue Coordination - vulkan</title>
+    <meta name="description" content="This article examines how VkSemaphore objects facilitate coarse-grained synchronization across distinct GPU queues in the Vulkan API. It details the necessity of cross-queue coordination, contrasts binary and timeline semaphores, breaks down the wait-sign">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/using-vk-semaphore-for-vulkan-gpu-queue-coordination">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Using VkSemaphore for Vulkan GPU Queue Coordination - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/using-vk-semaphore-for-vulkan-gpu-queue-coordination" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article examines how VkSemaphore objects facilitate coarse-grained synchronization across distinct GPU queues in the Vulkan API. It details the necessity of cross-queue coordination, contrasts binary and timeline semaphores, breaks down the wait-sign" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="using-vksemaphore-for-vulkan-gpu-queue-coordination">Using
+VkSemaphore for Vulkan GPU Queue Coordination</h1>
+<p>This article examines how <code>VkSemaphore</code> objects facilitate
+coarse-grained synchronization across distinct GPU queues in the Vulkan
+API. It details the necessity of cross-queue coordination, contrasts
+binary and timeline semaphores, breaks down the wait-signal execution
+model, and explains how semaphores manage resource ownership transfers
+between different hardware engines without stalling the host CPU.</p>
+<h2 id="the-need-for-cross-queue-synchronization">The Need for
+Cross-Queue Synchronization</h2>
+<p>Modern GPUs expose multiple independent hardware queues, typically
+categorized into graphics, compute, and transfer families. In Vulkan,
+these queues execute command buffers asynchronously and concurrently.
+While this parallelism maximizes hardware utilization, it introduces
+data hazards when operations in one queue depend on the output of
+another.</p>
+<p>Internal command-buffer primitives, such as
+<code>vkCmdPipelineBarrier</code>, are strictly intra-queue mechanisms.
+They cannot synchronize operations across different <code>VkQueue</code>
+handles. Coordinating distinct queues requires inter-queue
+synchronization primitives, a role fulfilled entirely on the GPU
+timeline by <code>VkSemaphore</code>.</p>
+<h2 id="how-vksemaphore-functions">How VkSemaphore Functions</h2>
+<p>A <code>VkSemaphore</code> is a GPU-to-GPU synchronization object.
+Unlike <code>VkFence</code>, which allows the CPU to wait for GPU tasks,
+a semaphore allows one GPU queue submission to block until another queue
+submission completes a specific execution milestone, all without host
+intervention.</p>
+<p>Semaphores are injected into queue operations during submission via
+<code>vkQueueSubmit</code> (or through the presentation engine via
+<code>vkQueuePresentKHR</code>). The core workflow operates through
+signaling and waiting:</p>
+<ol type="1">
+<li><strong>Signaling:</strong> A batch submitted to Queue A is
+designated to signal a specific semaphore once its operations
+finish.</li>
+<li><strong>Waiting:</strong> A batch submitted to Queue B is configured
+to wait on that same semaphore before beginning execution or before
+proceeding past a specified pipeline stage.</li>
+</ol>
+<p>Because the synchronization is evaluated directly by the hardware
+scheduler, the CPU simply enqueues the work and continues execution,
+avoiding expensive host stalls.</p>
+<h2 id="binary-vs-timeline-semaphores">Binary vs. Timeline
+Semaphores</h2>
+<p>Vulkan provides two distinct types of semaphores to coordinate
+cross-queue work:</p>
+<h3 id="binary-semaphores">Binary Semaphores</h3>
+<p>Binary semaphores have two states: signaled and unsignaled. When
+submitted to a queue to be signaled, the semaphore transitions from
+unsignaled to signaled upon completion of the work. The waiting queue
+consumes this signal and resets the semaphore back to an unsignaled
+state. Because binary semaphores cannot be inspected for arbitrary
+progression values and follow a strictly alternating signal-wait
+pattern, they are primarily used for straightforward handoffs, such as
+acquiring a swapchain image, rendering to it, and submitting it for
+presentation.</p>
+<h3 id="timeline-semaphores">Timeline Semaphores</h3>
+<p>Introduced in Vulkan 1.2, timeline semaphores track a monotonically
+increasing 64-bit integer value rather than a binary toggle. A queue
+submission can specify that it will signal a timeline semaphore to a
+specific value (e.g., value <code>5</code>), while another queue can be
+instructed to wait until the semaphore reaches or exceeds that target
+value.</p>
+<p>Timeline semaphores provide several critical advantages for
+multi-queue workflows:</p>
+<ul>
+<li><strong>One-to-Many Dependencies:</strong> Multiple queues can
+independently wait for the same timeline value.</li>
+<li><strong>Many-to-One Dependencies:</strong> A single queue can wait
+for the maximum value among several preceding queues.</li>
+<li><strong>Out-of-Order Submissions:</strong> Batches can be submitted
+to the driver in any order, provided the timeline counter increments
+correctly at runtime.</li>
+</ul>
+<h2 id="queue-family-ownership-transfers">Queue Family Ownership
+Transfers</h2>
+<p>When an application moves an image or buffer resource between
+distinct queue families—such as generating data on a transfer queue and
+reading it on a compute queue—it must perform a Queue Family Ownership
+Transfer. This process requires two paired pipeline barriers:</p>
+<ol type="1">
+<li>A <strong>release barrier</strong> submitted to the source
+queue.</li>
+<li>An <strong>acquire barrier</strong> submitted to the destination
+queue.</li>
+</ol>
+<p>While the barriers define the memory dependency and layout
+transition, they do not guarantee execution ordering between the two
+queues. A <code>VkSemaphore</code> is mandatory to bridge this gap: the
+source queue signals the semaphore after executing the release barrier,
+and the destination queue waits on that semaphore before executing the
+acquire barrier. This pairing ensures the destination queue never
+accesses the resource until the source queue has fully completed its
+release operations.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

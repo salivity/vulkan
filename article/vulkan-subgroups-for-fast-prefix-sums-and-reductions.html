@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Subgroups for Fast Prefix Sums and Reductions - vulkan</title>
+    <meta name="description" content="Subgroup arithmetic operations in the Vulkan API accelerate parallel prefix sums and reductions by enabling invocations within the same hardware execution unit to communicate directly at the register level. By bypassing the overhead of shared memory alloc">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-subgroups-for-fast-prefix-sums-and-reductions">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Subgroups for Fast Prefix Sums and Reductions - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-subgroups-for-fast-prefix-sums-and-reductions" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Subgroup arithmetic operations in the Vulkan API accelerate parallel prefix sums and reductions by enabling invocations within the same hardware execution unit to communicate directly at the register level. By bypassing the overhead of shared memory alloc" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-subgroups-for-fast-prefix-sums-and-reductions">Vulkan
+Subgroups for Fast Prefix Sums and Reductions</h1>
+<p>Subgroup arithmetic operations in the Vulkan API accelerate parallel
+prefix sums and reductions by enabling invocations within the same
+hardware execution unit to communicate directly at the register level.
+By bypassing the overhead of shared memory allocations and execution
+barriers, these operations transform multi-step algorithmic trees into
+single-cycle or low-latency hardware intrinsics. This article explains
+how subgroup-level parallel primitives operate, why they outperform
+traditional workgroup-shared approaches, and how they streamline
+hierarchical compute workloads in modern GPU pipelines.</p>
+<h2 id="the-architecture-of-vulkan-subgroups">The Architecture of Vulkan
+Subgroups</h2>
+<p>In Vulkan compute pipelines, a workgroup is composed of one or more
+subgroups. A subgroup represents the physical SIMD unit of the GPU,
+corresponding to an NVIDIA warp (32 threads) or an AMD wavefront (32 or
+64 threads). Invocations within a subgroup execute in lockstep on SIMD
+execution units.</p>
+<p>Prior to subgroup operations, transferring data between invocations
+within a workgroup required writing values to workgroup shared memory
+(<code>shared</code> in GLSL), synchronizing execution with explicit
+memory barriers (<code>barrier()</code>), and reading values back in
+successive steps. Subgroup operations leverage specialized cross-lane
+hardware pathways—such as shuffle networks or dedicated crossbar
+execution units—allowing invocations to share data directly without
+memory round-trips.</p>
+<h2 id="accelerating-reductions">Accelerating Reductions</h2>
+<p>A parallel reduction combines an array of values into a single scalar
+using an associative operator (such as addition, multiplication,
+minimum, or maximum).</p>
+<h3 id="traditional-shared-memory-reduction">Traditional Shared Memory
+Reduction</h3>
+<p>In a legacy approach, a reduction across 1,024 invocations requires a
+tree-based reduction:</p>
+<ol type="1">
+<li>Every invocation writes its value to shared memory.</li>
+<li>A barrier synchronizes the workgroup.</li>
+<li>Half the invocations add values from the other half, writing back
+results.</li>
+<li>Steps repeat across <span class="math inline">\(\log_2(N)\)</span>
+iterations, requiring multiple shared memory barriers.</li>
+</ol>
+<p>This method incurs significant latency due to repeated pipeline
+flushes at barriers and potential shared memory bank conflicts.</p>
+<h3 id="subgroup-arithmetic-reduction">Subgroup Arithmetic
+Reduction</h3>
+<p>With the <code>VK_KHR_shader_subgroup_arithmetic</code> extension
+(core in Vulkan 1.1), reductions within a subgroup are performed via
+built-in intrinsics such as <code>subgroupAdd(value)</code>,
+<code>subgroupMin(value)</code>, or <code>subgroupMax(value)</code>.</p>
+<p>The GPU calculates the reduction across all active invocations inside
+the subgroup using hardware-level instruction sequences or dedicated
+tree adders in a fraction of the clock cycles required for memory
+operations. For a full workgroup reduction:</p>
+<ol type="1">
+<li>Each subgroup independently computes its local reduction with a
+single <code>subgroupAdd()</code>.</li>
+<li>Only the first invocation (lane 0) of each subgroup writes the
+result to shared memory.</li>
+<li>A single final subgroup reads these partial sums and runs one more
+<code>subgroupAdd()</code>.</li>
+</ol>
+<p>This reduces the required synchronization barriers to one and shrinks
+the shared memory footprint from the entire workgroup size down to
+merely the number of subgroups (e.g., from 1,024 entries to 16 or 32
+entries).</p>
+<h2 id="accelerating-prefix-sums-scans">Accelerating Prefix Sums
+(Scans)</h2>
+<p>A parallel prefix sum (or scan) takes an array of values <span
+class="math inline">\([x_0, x_1, \dots, x_{n-1}]\)</span> and produces
+an array where each element is the accumulated sum of previous elements.
+Prefix sums are fundamental to stream compaction, radix sorting, and
+dynamic resource allocation.</p>
+<h3 id="the-problem-with-traditional-parallel-scans">The Problem with
+Traditional Parallel Scans</h3>
+<p>Traditional algorithms like Kogge-Stone or Brent-Kung require
+multiple steps of cross-thread data distribution, leading to high shared
+memory traffic, high register pressure, and multiple barriers per
+stage.</p>
+<h3 id="subgroup-scan-operations">Subgroup Scan Operations</h3>
+<p>Vulkan provides dedicated instructions for scans:</p>
+<ul>
+<li><code>subgroupInclusiveAdd(value)</code>: Returns the sum of all
+elements up to and including the current invocation's lane ID.</li>
+<li><code>subgroupExclusiveAdd(value)</code>: Returns the sum of all
+elements strictly preceding the current invocation's lane ID.</li>
+</ul>
+<p>Hardware implementations use high-speed lane shifting and arithmetic
+units to resolve the scan across 32 or 64 lanes in parallel.</p>
+<p>For large arrays processed across an entire workgroup:</p>
+<ol type="1">
+<li><strong>Subgroup-Local Scan</strong>: Invocations call
+<code>subgroupInclusiveAdd()</code>. This resolves the scan within the
+subgroup with zero barriers and zero shared memory access.</li>
+<li><strong>Aggregate Propagation</strong>: The last invocation in each
+subgroup writes the total subgroup sum into shared memory.</li>
+<li><strong>Subgroup Prefix Scan</strong>: The first subgroup scans the
+shared array of subgroup totals using another
+<code>subgroupExclusiveAdd()</code>.</li>
+<li><strong>Final Accumulation</strong>: Each invocation adds the
+scanned aggregate corresponding to its subgroup index to its local
+result.</li>
+</ol>
+<p>This hierarchical approach converts a process that traditionally
+required <span class="math inline">\(\log_2(N)\)</span> full-workgroup
+barriers into an algorithm requiring only two barriers and minimal
+memory bandwidth.</p>
+<h2 id="core-advantages">Core Advantages</h2>
+<ol type="1">
+<li><strong>Elimination of Synchronization Barriers</strong>: Subgroup
+operations execute synchronously within the SIMD unit, removing the
+pipeline stalls associated with workgroup-wide execution barriers.</li>
+<li><strong>Reduced Shared Memory Footprint</strong>: Because the
+initial reduction or scan is handled in registers, workgroups require
+only a fraction of the shared memory typically reserved for intermediate
+scratchpads, improving GPU occupancy.</li>
+<li><strong>Immunity to Shared Memory Bank Conflicts</strong>:
+Cross-lane communication occurs within registers or dedicated routing
+logic, completely circumventing shared memory addressing and bank
+collisions.</li>
+<li><strong>Higher ALU Saturation</strong>: Replacing memory load/store
+sequences with ALU-bound subgroup instructions yields higher operational
+density and lower execution latency.</li>
+</ol></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

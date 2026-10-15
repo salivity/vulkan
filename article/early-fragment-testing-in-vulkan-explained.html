@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Early Fragment Testing in Vulkan Explained - vulkan</title>
+    <meta name="description" content="Early fragment testing optimizes the Vulkan graphics pipeline by executing depth and stencil operations before fragment shader invocation rather than after it. In complex 3D scenes, occluded geometry frequently causes overdraw, consuming valuable GPU cycl">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/early-fragment-testing-in-vulkan-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Early Fragment Testing in Vulkan Explained - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/early-fragment-testing-in-vulkan-explained" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Early fragment testing optimizes the Vulkan graphics pipeline by executing depth and stencil operations before fragment shader invocation rather than after it. In complex 3D scenes, occluded geometry frequently causes overdraw, consuming valuable GPU cycl" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="early-fragment-testing-in-vulkan-explained">Early Fragment
+Testing in Vulkan Explained</h1>
+<p>Early fragment testing optimizes the Vulkan graphics pipeline by
+executing depth and stencil operations before fragment shader invocation
+rather than after it. In complex 3D scenes, occluded geometry frequently
+causes overdraw, consuming valuable GPU cycles on pixels that will never
+be visible on the final screen. By performing coverage and depth checks
+prior to shading, Vulkan allows the GPU to discard occluded fragments
+immediately, drastically reducing memory bandwidth consumption and
+bypassing unnecessary mathematical computations in the fragment
+shader.</p>
+<h3 id="the-problem-of-late-fragment-testing">The Problem of Late
+Fragment Testing</h3>
+<p>In the traditional graphics pipeline, fragment processing follows a
+standard sequence: primitive assembly, rasterization, fragment shader
+execution, and finally per-fragment operations (depth and stencil
+testing). Under this default flow, every generated fragment invokes a
+fragment shader to compute lighting, texture lookups, and material
+properties.</p>
+<p>If multiple primitives overlap in screen space, the fragment shader
+executes for each overlapping layer. When an opaque surface closer to
+the camera renders after a distant surface, the initial calculations for
+the distant surface are completely overwritten during the late depth
+test. This redundancy is known as overdraw, and in scenes with heavy
+fragment shader logic, it severely degrades frame rates.</p>
+<h3 id="how-early-fragment-testing-solves-overdraw">How Early Fragment
+Testing Solves Overdraw</h3>
+<p>Early fragment testing relocates the depth and stencil tests to occur
+immediately after rasterization and before fragment shader
+execution.</p>
+<p>When a triangle is rasterized, the GPU evaluates the fragment's
+interpolated depth against the existing value in the depth buffer:</p>
+<ol type="1">
+<li><strong>Depth Test Passes:</strong> If the fragment is closer to the
+viewer than the existing depth buffer content, it is cleared for
+shading. The GPU executes the fragment shader and updates the depth
+buffer accordingly.</li>
+<li><strong>Depth Test Fails:</strong> If the fragment is occluded by
+existing geometry, the hardware terminates the fragment immediately. The
+fragment shader never executes, preventing the GPU from running texture
+fetches, arithmetic logic, and register allocations for an invisible
+pixel.</li>
+</ol>
+<p>To maximize this optimization, applications typically render opaque
+geometry sorted in front-to-back order or utilize a depth pre-pass. When
+rendered front-to-back, the nearest surfaces write to the depth buffer
+first, allowing all subsequent occluded geometry to fail early depth
+tests quickly.</p>
+<h3 id="hardware-control-and-glsl-directives-in-vulkan">Hardware Control
+and GLSL Directives in Vulkan</h3>
+<p>Modern GPUs support early fragment tests implicitly at the driver
+level, but certain operations within the fragment shader can invalidate
+this automatic optimization. If a fragment shader writes to
+<code>gl_FragDepth</code>, uses the <code>discard</code> instruction, or
+modifies external memory through storage buffers or storage images, the
+GPU cannot safely evaluate depth beforehand without risking incorrect
+rendering or broken side effects. In such cases, the GPU defaults back
+to late fragment testing.</p>
+<p>Developers can enforce early tests explicitly in their SPIR-V shaders
+by declaring the execution mode in GLSL:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">early_fragment_tests</span><span class="op">)</span> <span class="dt">in</span><span class="op">;</span></span></code></pre></div>
+<p>When this layout qualifier is present, Vulkan guarantees that depth
+and stencil tests occur before shader execution. If the test fails, side
+effects—such as storage buffer writes—are completely skipped because the
+shader invocation is cancelled.</p>
+<p>If a shader modifies <code>gl_FragDepth</code> but still desires
+early optimization, extensions like conservative depth
+(<code>depth_greater</code>, <code>depth_less</code>) can be specified.
+This informs the hardware of the bounds of the depth modification,
+enabling the GPU to perform partial early depth rejection while still
+allowing shader-controlled depth adjustments.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

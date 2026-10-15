@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AMD Tools for Vulkan Shader Profiling - vulkan</title>
+    <meta name="description" content="Optimizing shader execution in Vulkan requires deep hardware-level visibility to eliminate stalls, balance register usage, and maximize compute unit occupancy. AMD provides a specialized suite of performance profiling and static analysis tools—most notabl">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/amd-tools-for-vulkan-shader-profiling">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="AMD Tools for Vulkan Shader Profiling - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/amd-tools-for-vulkan-shader-profiling" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Optimizing shader execution in Vulkan requires deep hardware-level visibility to eliminate stalls, balance register usage, and maximize compute unit occupancy. AMD provides a specialized suite of performance profiling and static analysis tools—most notabl" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="amd-tools-for-vulkan-shader-profiling">AMD Tools for Vulkan
+Shader Profiling</h1>
+<p>Optimizing shader execution in Vulkan requires deep hardware-level
+visibility to eliminate stalls, balance register usage, and maximize
+compute unit occupancy. AMD provides a specialized suite of performance
+profiling and static analysis tools—most notably the Radeon GPU Profiler
+(RGP) and Radeon GPU Analyzer (RGA)—that allow developers to inspect
+Vulkan graphics, compute, and ray tracing shaders down to the hardware
+instruction level on RDNA and GCN architectures.</p>
+<h2 id="radeon-gpu-profiler-rgp">Radeon GPU Profiler (RGP)</h2>
+<p>The Radeon GPU Profiler (RGP) is AMD's flagship tool for dynamic,
+runtime performance profiling. It integrates directly with Vulkan
+applications to capture detailed frame data and expose how shaders
+execute across the GPU's Compute Units (CUs) or Workgroup Processors
+(WGPs).</p>
+<ul>
+<li><strong>Instruction-Level Profiling:</strong> RGP correlates SPIR-V
+shaders with generated AMD machine code (ISA). It displays program
+counter sampling, allowing developers to see precisely which
+instructions—such as memory loads, branch divergence, or
+transcendentals—cause latency or stalls.</li>
+<li><strong>Wavefront Occupancy and State:</strong> The tool visualizes
+wave occupancy over time, detailing whether waves are actively executing
+ALU operations, waiting on scalar/vector memory (SALU/VALU), or stalled
+due to export dependencies and pipeline barriers.</li>
+<li><strong>Register Pressure Tracking:</strong> RGP visualizes Vector
+General Purpose Register (VGPR) and Scalar General Purpose Register
+(SGPR) usage per shader stage. High register allocation limits the
+number of simultaneously resident waves; RGP shows how register
+footprints impact theoretical versus achieved occupancy.</li>
+<li><strong>Cache and Memory Metrics:</strong> Developers can inspect
+hit/miss rates across the L0, L1, L2, and Infinity Cache hierarchies for
+shader storage buffers (SSBOs), uniform buffers (UBOs), and sampled
+textures.</li>
+</ul>
+<h2 id="radeon-gpu-analyzer-rga">Radeon GPU Analyzer (RGA)</h2>
+<p>The Radeon GPU Analyzer (RGA) is a static analysis compiler and
+code-generation tool designed for offline shader tuning. It allows
+developers to compile Vulkan GLSL source code or pre-compiled SPIR-V
+binaries directly target-specific AMD GPU architectures without needing
+the target hardware installed on the host machine.</p>
+<ul>
+<li><strong>Targeted ISA Disassembly:</strong> RGA compiles SPIR-V code
+for arbitrary RDNA and GCN generations, outputting human-readable
+assembly instructions alongside the intermediate language.</li>
+<li><strong>Static Resource Footprint:</strong> Upon compilation, RGA
+outputs comprehensive statistics, including exact VGPR and SGPR counts,
+scratch memory spilling, code size, and theoretical maximum wave
+occupancy per SIMD.</li>
+<li><strong>Live Register Analysis:</strong> When using the GUI version
+of RGA, lines of source code or SPIR-V are mapped directly to live
+ranges of registers, highlighting precisely where variables extend
+register lifetime and push the shader into lower occupancy
+thresholds.</li>
+</ul>
+<h2 id="radeon-developer-panel-rdp">Radeon Developer Panel (RDP)</h2>
+<p>The Radeon Developer Panel serves as the runtime host and
+communication interface between the developer workstation and the target
+Vulkan application.</p>
+<ul>
+<li>Injects the profiling hooks into the Vulkan loader without requiring
+source-code modifications.</li>
+<li>Facilitates the trigger of RGP profiling bursts precisely when
+specific frame conditions, execution times, or pipeline configurations
+occur.</li>
+</ul>
+<h2 id="radeon-raytracing-analyzer-rra">Radeon Raytracing Analyzer
+(RRA)</h2>
+<p>For applications utilizing the <code>VK_KHR_ray_tracing</code>
+extensions, the Radeon Raytracing Analyzer provides deep inspection of
+ray generation, closest hit, any hit, and intersection shaders.</p>
+<ul>
+<li><strong>Traversal Cost Visualization:</strong> RRA overlays heatmaps
+showing traversal iterations and intersection testing overhead directly
+onto scene geometry.</li>
+<li><strong>BVH Inspection:</strong> Analyzes the efficiency of
+Bottom-Level Acceleration Structures (BLAS) and Top-Level Acceleration
+Structures (TLAS) to identify poorly fitted bounding boxes that cause
+excessive shader execution time during traversal.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Pipeline Creation Feedback for Profiling - vulkan</title>
+    <meta name="description" content="This article explores the purpose and utility of the pipeline creation feedback extension in Vulkan, explaining how it enables developers to measure shader compilation duration, identify pipeline cache hits, and isolate performance bottlenecks during pipe">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-pipeline-creation-feedback-for-profiling">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Pipeline Creation Feedback for Profiling - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-pipeline-creation-feedback-for-profiling" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explores the purpose and utility of the pipeline creation feedback extension in Vulkan, explaining how it enables developers to measure shader compilation duration, identify pipeline cache hits, and isolate performance bottlenecks during pipe" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-pipeline-creation-feedback-for-profiling">Vulkan Pipeline
+Creation Feedback for Profiling</h1>
+<p>This article explores the purpose and utility of the pipeline
+creation feedback extension in Vulkan, explaining how it enables
+developers to measure shader compilation duration, identify pipeline
+cache hits, and isolate performance bottlenecks during pipeline
+creation. By providing granular driver-level metrics, this extension
+allows graphics engineers to accurately monitor pipeline construction
+costs and eliminate runtime stutter.</p>
+<h2 id="the-challenge-of-pipeline-compilation-in-vulkan">The Challenge
+of Pipeline Compilation in Vulkan</h2>
+<p>In Vulkan, <code>VkPipeline</code> objects encapsulate state
+configuration alongside compiled shader stages. When an application
+creates a pipeline, the GPU driver translates intermediate
+representation (SPIR-V) into hardware-specific machine code and links
+the stages.</p>
+<p>This process is computationally expensive. If compilation occurs on
+the main execution thread during runtime, it leads to dropped frames and
+noticeable micro-stuttering. While developers typically use CPU-side
+timers to benchmark pipeline compilation, standard operating system
+timers introduce noise from OS scheduling, driver context switches, and
+application-level bookkeeping. CPU timers also cannot differentiate
+between full compilations and internal driver cache hits.</p>
+<h2 id="the-purpose-of-pipeline-creation-feedback">The Purpose of
+Pipeline Creation Feedback</h2>
+<p>The pipeline creation feedback mechanism—introduced via
+<code>VK_EXT_pipeline_creation_feedback</code> and later integrated into
+core Vulkan 1.3—addresses these profiling limitations. Its primary
+purpose is to expose driver-level timing information and compilation
+behavior directly to the application.</p>
+<p>Rather than relying on external heuristics, the extension
+returns:</p>
+<ul>
+<li><strong>Precise Durations:</strong> Exact driver-measured time (in
+nanoseconds) spent compiling the entire pipeline and individual shader
+stages.</li>
+<li><strong>Cache Hit Status:</strong> Explicit indicators showing
+whether a pipeline or stage was compiled from scratch or retrieved from
+a cache.</li>
+</ul>
+<h2 id="key-capabilities-and-feedback-flags">Key Capabilities and
+Feedback Flags</h2>
+<p>The extension operates by passing a
+<code>VkPipelineCreationFeedbackCreateInfo</code> structure into the
+<code>pNext</code> chain of pipeline creation structures (such as
+<code>VkGraphicsPipelineCreateInfo</code> or
+<code>VkComputePipelineCreateInfo</code>). Upon completion, the driver
+populates feedback structures with duration values and flag bits:</p>
+<h3 id="1-per-stage-granularity">1. Per-Stage Granularity</h3>
+<p>Standard timers only track the cumulative duration of
+<code>vkCreateGraphicsPipelines</code> or
+<code>vkCreateComputePipelines</code>. Pipeline creation feedback
+enables profiling at both the pipeline level and the individual shader
+stage level (vertex, fragment, compute, mesh, etc.). This allows
+developers to isolate which specific shader stage within a monolithic
+pipeline is responsible for excessive compilation time.</p>
+<h3 id="2-cache-utilization-tracking">2. Cache Utilization Tracking</h3>
+<p>The extension provides specific flags via
+<code>VkPipelineCreationFeedbackFlagBits</code>:</p>
+<ul>
+<li><code>VK_PIPELINE_CREATION_FEEDBACK_VALID_BIT</code>: Confirms that
+the driver supported and provided valid feedback data.</li>
+<li><code>VK_PIPELINE_CREATION_FEEDBACK_APPLICATION_PIPELINE_CACHE_HIT_BIT</code>:
+Indicates whether the compilation was accelerated by data present in the
+application-provided <code>VkPipelineCache</code>.</li>
+<li><code>VK_PIPELINE_CREATION_FEEDBACK_BASE_PIPELINE_ACCELERATION_BIT</code>:
+Identifies whether derivative pipeline compilation was accelerated by
+utilizing a base pipeline.</li>
+</ul>
+<p>This feedback verifies whether warm-up runs and serialized cache
+implementations are functioning as intended.</p>
+<h2 id="practical-applications-in-optimization">Practical Applications
+in Optimization</h2>
+<ul>
+<li><strong>Automated CI/CD Profiling:</strong> Developers can
+incorporate feedback queries into automated testing suites to detect
+compilation regressions. If a shader optimization causes compilation
+time to spike, automated pipelines can flag the issue prior to
+production.</li>
+<li><strong>Warm-up and Pre-compilation Validation:</strong> Games
+frequently pre-compile pipelines during loading screens. The feedback
+data validates that all necessary pipelines have been pre-warmed and
+that zero un-cached pipelines are created during active gameplay.</li>
+<li><strong>Telemetry and Runtime Adaptation:</strong> Telemetry systems
+can log real-world compilation durations across varied user hardware,
+helping developers prioritize shader simplification for specific GPU
+architectures that exhibit long compile times.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

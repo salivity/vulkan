@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Shading Rate in Motion Blur: Visual Trade-Offs - vulkan</title>
+    <meta name="description" content="Variable Rate Shading (VRS) in Vulkan allows developers to decouple fragment shader execution frequency from pixel resolution to optimize rendering performance. When combined with motion blur, VRS targets fast-moving regions to aggressively lower shading">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-shading-rate-in-motion-blur-visual-trade-offs">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Shading Rate in Motion Blur: Visual Trade-Offs - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-shading-rate-in-motion-blur-visual-trade-offs" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Variable Rate Shading (VRS) in Vulkan allows developers to decouple fragment shader execution frequency from pixel resolution to optimize rendering performance. When combined with motion blur, VRS targets fast-moving regions to aggressively lower shading" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-shading-rate-in-motion-blur-visual-trade-offs">Vulkan
+Shading Rate in Motion Blur: Visual Trade-Offs</h1>
+<p>Variable Rate Shading (VRS) in Vulkan allows developers to decouple
+fragment shader execution frequency from pixel resolution to optimize
+rendering performance. When combined with motion blur, VRS targets
+fast-moving regions to aggressively lower shading rates without
+theoretically harming perceived quality, because rapid movement
+naturally softens high-frequency details. However, this optimization
+introduces distinct visual trade-offs, ranging from edge aliasing and
+banding to temporal instability, which developers must carefully manage
+to avoid breaking visual fidelity.</p>
+<h3 id="how-fragment-shading-rate-interacts-with-motion">How Fragment
+Shading Rate Interacts with Motion</h3>
+<p>Through extensions like <code>VK_KHR_fragment_shading_rate</code>,
+Vulkan permits fragment shader invocations across multi-pixel blocks
+(such as 2x1, 1x2, 2x2, or 4x4) instead of per individual pixel. The
+rasterization resolution remains native, meaning depth and stencil
+testing still happen per sample, but color and material calculations
+occur at a coarser granularity.</p>
+<p>When an object moves rapidly across the screen, post-process motion
+blur filters high-frequency spatial frequencies into smooth,
+direction-aligned streaks. Because the human eye struggles to resolve
+fine surface details on fast-moving targets, reducing the shading rate
+across these dynamic fragments saves considerable GPU cycles with
+minimal initial degradation.</p>
+<h3 id="the-primary-visual-trade-offs">The Primary Visual
+Trade-Offs</h3>
+<p>Despite the theoretical masking provided by velocity, reducing
+shading rates in motion-blurred regions introduces several visual
+compromises:</p>
+<ul>
+<li><strong>Stair-Stepping and Silhouette Blockiness:</strong> While
+native rasterization preserves the outer geometric silhouettes of
+objects, internal geometry edges, alpha-tested surfaces (such as foliage
+or chain-link fences), and normal-mapped details suffer. When a 2x2 or
+4x4 coarse shading rate is applied prior to a directional blur pass, the
+coarse fragments can cause blocky patterns to streak across the screen,
+producing jagged rather than smooth blur trails.</li>
+<li><strong>Loss of Specular Highlights and Micro-Detail:</strong>
+Specular reflections, metallic gleams, and fine normal variations
+contain extremely high-frequency data. Coarse fragment shading
+calculates lighting once across multiple pixels, which can clamp or
+dilute intense specular peaks. As a result, objects lose their perceived
+material roughness, wetness, or metallic shine, causing dynamic
+highlights to appear dull or completely disappear mid-motion.</li>
+<li><strong>Temporal Shimmering and Pulsing:</strong> If an object
+accelerates and decelerates, its shading rate may dynamically switch
+between native 1x1, 2x2, or 4x4 based on screen-space velocity
+thresholds. This shift creates temporal flickering or pulsing artifacts,
+where surfaces visibly pop between crisp, high-resolution rendering and
+blurred, low-resolution rendering.</li>
+<li><strong>Color Banding in Velocity Streaks:</strong> Motion blur
+relies on blending neighboring color values along a motion vector. If
+the base image contains coarse shading blocks, the motion blur algorithm
+samples identical color values across several adjacent pixels. This
+leads to stepped color transitions and gradient banding inside the
+motion trail, especially visible under low-light or high-contrast
+lighting conditions.</li>
+<li><strong>Haloing and Disocclusion Artifacts:</strong> Fast-moving
+objects reveal previously occluded background pixels. If shading rate
+decisions are driven by a screen-space velocity buffer, misalignments at
+the boundaries between high-velocity foreground objects and static
+backgrounds can cause coarse shading to leak onto static geometry,
+creating low-resolution "halos" trailing moving entities.</li>
+</ul>
+<h3 id="mitigating-visual-degradation">Mitigating Visual
+Degradation</h3>
+<p>To minimize these trade-offs in Vulkan pipelines, the fragment
+shading rate must be applied conservatively. Setting shading rates based
+on non-linear velocity thresholds prevents over-aggressive downsampling
+during moderate motion. Furthermore, using decoupled shading rates—such
+as 2x1 or 1x2 aligned with the primary axis of movement—can preserve
+sharpness along the perpendicular axis while saving shading cost in the
+direction of the blur.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

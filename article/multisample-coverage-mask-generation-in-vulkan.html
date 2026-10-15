@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multisample Coverage Mask Generation in Vulkan - vulkan</title>
+    <meta name="description" content="In Vulkan, multisample mask generation determines which sub-pixel sample points of a pixel are covered by a geometric primitive during rasterization. This article explores how Vulkan resolves coverage masks in complex anti-aliasing schemes, tracking the p">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/multisample-coverage-mask-generation-in-vulkan">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Multisample Coverage Mask Generation in Vulkan - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/multisample-coverage-mask-generation-in-vulkan" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Vulkan, multisample mask generation determines which sub-pixel sample points of a pixel are covered by a geometric primitive during rasterization. This article explores how Vulkan resolves coverage masks in complex anti-aliasing schemes, tracking the p" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="multisample-coverage-mask-generation-in-vulkan">Multisample
+Coverage Mask Generation in Vulkan</h1>
+<p>In Vulkan, multisample mask generation determines which sub-pixel
+sample points of a pixel are covered by a geometric primitive during
+rasterization. This article explores how Vulkan resolves coverage masks
+in complex anti-aliasing schemes, tracking the pipeline stages from
+fixed-function geometric testing and custom sub-pixel sample positions
+to programmable shader mask inputs, alpha-to-coverage conversion, and
+explicit sample mask modification in SPIR-V shaders.</p>
+<h3 id="1-geometric-primitive-rasterization">1. Geometric Primitive
+Rasterization</h3>
+<p>During the rasterization stage, the GPU tests the primitive's
+boundaries against multiple discrete sample locations inside each pixel
+footprint. The number of locations corresponds to the
+<code>rasterizationSamples</code> defined in
+<code>VkPipelineMultisampleStateCreateInfo</code>.</p>
+<p>For each sample point that falls inside the primitive boundaries:</p>
+<ul>
+<li>A corresponding bit in a temporary coverage mask is set to
+<code>1</code>.</li>
+<li>Samples falling outside are set to <code>0</code>.</li>
+</ul>
+<p>In standard MSAA, this produces an initial bitmask representing
+geometric coverage (e.g., an 8-bit integer mask for
+<code>VK_SAMPLE_COUNT_8_BIT</code>).</p>
+<h3 id="2-custom-and-rotated-sample-locations">2. Custom and Rotated
+Sample Locations</h3>
+<p>Complex anti-aliasing schemes often avoid standard uniform sub-pixel
+grids to minimize regular edge aliasing patterns. Vulkan exposes this
+via the <code>VK_EXT_sample_locations</code> extension.</p>
+<ul>
+<li>Applications define custom floating-point coordinate offsets within
+the pixel for each sample index using
+<code>VkSampleLocationsInfoEXT</code>.</li>
+<li>The rasterizer evaluates primitive containment against these rotated
+or jittered positions instead of standard hardware defaults.</li>
+<li>This changes the geometric evaluation step directly, shifting which
+bits in the initial coverage mask turn on without requiring manual
+fragment-level math.</li>
+</ul>
+<h3 id="3-pipeline-state-masking-psamplemask">3. Pipeline State Masking
+(<code>pSampleMask</code>)</h3>
+<p>After geometric testing, Vulkan applies the static or dynamic
+pipeline sample mask (<code>pSampleMask</code> inside
+<code>VkPipelineMultisampleStateCreateInfo</code> or set dynamically via
+<code>vkCmdSetSampleMaskEXT</code>).</p>
+<ul>
+<li>The pipeline performs a bitwise <strong>AND</strong> between the
+rasterization coverage mask and the bitmask array in
+<code>pSampleMask</code>.</li>
+<li>Any sample disabled by the pipeline mask is immediately dropped from
+coverage, skipping fragment shading if all bits in the mask become
+zero.</li>
+</ul>
+<h3 id="4-alpha-to-coverage-processing">4. Alpha-to-Coverage
+Processing</h3>
+<p>When <code>alphaToCoverageEnable</code> is enabled in
+<code>VkPipelineMultisampleStateCreateInfo</code>, the alpha component
+of the fragment shader's primary color output is converted into an
+additional coverage mask.</p>
+<ul>
+<li><p>Vulkan converts the normalized floating-point alpha value into a
+bit pattern where the number of set bits is proportional to the alpha
+magnitude (e.g., an alpha of 0.5 enables approximately 50% of the sample
+bits).</p></li>
+<li><p>The hardware uses a dither pattern across neighboring pixels to
+distribute enabled bits across the sample grid.</p></li>
+<li><p>The resulting alpha-derived mask is combined with the existing
+coverage mask using a bitwise <strong>AND</strong> operation:</p>
+<p><span class="math display">\[\text{Coverage} = \text{Coverage} \
+\&amp; \ \text{AlphaMask}\]</span></p></li>
+</ul>
+<h3 id="5-programmable-mask-control-in-spir-v">5. Programmable Mask
+Control in SPIR-V</h3>
+<p>In advanced anti-aliasing configurations—such as custom resolve
+algorithms, order-independent transparency, or conservative
+rasterization adjustments—shaders directly read and write coverage
+masks.</p>
+<ul>
+<li><strong>Reading the Input Mask:</strong> Shaders consume the
+built-in variable <code>gl_SampleMaskIn</code> (decorated as
+<code>SampleMask</code> in SPIR-V). This input reflects the combined
+result of geometric testing, custom sample locations, and
+<code>pSampleMask</code>.</li>
+<li><strong>Writing the Output Mask:</strong> Shaders output an array of
+32-bit integers to <code>gl_SampleMask</code> (also decorated as
+<code>SampleMask</code>). This explicitly overrides coverage.</li>
+</ul>
+<p>If a fragment shader writes to <code>SampleMask</code>, Vulkan
+combines this value with the previous mask stages via a bitwise
+<strong>AND</strong>:</p>
+<p><span class="math display">\[\text{FinalCoverage} =
+\text{GeometricCoverage} \ \&amp; \ \text{pSampleMask} \ \&amp; \
+\text{ShaderOutputMask} \ \&amp; \ \text{AlphaCoverage}\]</span></p>
+<p>Writing <code>0</code> to a specific bit in
+<code>gl_SampleMask</code> guarantees that the corresponding sample
+location will not be updated in the framebuffer attachments.</p>
+<h3 id="6-sample-shading-and-mask-interaction">6. Sample Shading and
+Mask Interaction</h3>
+<p>When sample shading is enabled
+(<code>sampleShadingEnable = VK_TRUE</code> and
+<code>minSampleShading &gt; 0.0</code>), fragment shaders execute
+per-sample or at a sub-pixel frequency rather than once per pixel:</p>
+<ul>
+<li><strong>Evaluation:</strong> The fragment shader executes multiple
+times per pixel footprint.</li>
+<li><strong>Coverage Scoping:</strong> For each shader invocation, the
+<code>SampleMaskIn</code> input contains only the bits corresponding to
+the subset of samples assigned to that specific invocation.</li>
+<li><strong>Depth/Stencil Testing:</strong> The final calculated
+coverage mask acts as a gate. Depth and stencil tests are evaluated
+exclusively for samples where the final coverage bit remains
+<code>1</code>.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

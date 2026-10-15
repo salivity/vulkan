@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan 8-Bit and 16-Bit Integer Storage Extensions - vulkan</title>
+    <meta name="description" content="Using reduced-precision data types is essential for maximizing memory bandwidth, cache utilization, and throughput in high-performance compute and graphics pipelines. This article details the specific extensions that enable 8-bit and 16-bit integer storag">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-8-bit-and-16-bit-integer-storage-extensions">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan 8-Bit and 16-Bit Integer Storage Extensions - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-8-bit-and-16-bit-integer-storage-extensions" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Using reduced-precision data types is essential for maximizing memory bandwidth, cache utilization, and throughput in high-performance compute and graphics pipelines. This article details the specific extensions that enable 8-bit and 16-bit integer storag" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-8-bit-and-16-bit-integer-storage-extensions">Vulkan 8-Bit
+and 16-Bit Integer Storage Extensions</h1>
+<p>Using reduced-precision data types is essential for maximizing memory
+bandwidth, cache utilization, and throughput in high-performance compute
+and graphics pipelines. This article details the specific extensions
+that enable 8-bit and 16-bit integer storage in Vulkan:
+<code>VK_KHR_8bit_storage</code> and <code>VK_KHR_16bit_storage</code>.
+It explains what capabilities these extensions unlock, how they
+integrate into core Vulkan specifications, the required SPIR-V
+capabilities, and the distinction between storage and arithmetic
+operations.</p>
+<h3 id="vk_khr_16bit_storage">VK_KHR_16bit_storage</h3>
+<p>The <code>VK_KHR_16bit_storage</code> extension enables shaders to
+load from and store to 16-bit integer (and 16-bit floating-point) types
+in memory buffers. Promoted to Vulkan 1.1 core, this extension reduces
+buffer footprints for geometries, weights, and compute workloads that do
+not require full 32-bit precision.</p>
+<p>When querying or enabling this extension, the
+<code>VkPhysicalDevice16BitStorageFeatures</code> structure defines
+fine-grained support across memory interfaces:</p>
+<ul>
+<li><strong><code>storageBuffer16BitAccess</code></strong>: Allows
+16-bit types in Storage Buffer Objects (SSBOs).</li>
+<li><strong><code>uniformAndStorageBuffer16BitAccess</code></strong>:
+Allows 16-bit types in both Uniform Buffer Objects (UBOs) and
+SSBOs.</li>
+<li><strong><code>storagePushConstant16</code></strong>: Allows 16-bit
+types in push constant blocks.</li>
+<li><strong><code>storageInputOutput16</code></strong>: Allows 16-bit
+types in shader input and output interfaces (primarily used in graphics
+stages).</li>
+</ul>
+<p>In SPIR-V shaders, this corresponds to the
+<code>StorageBuffer16BitAccess</code>,
+<code>UniformAndStorageBuffer16BitAccess</code>, and
+<code>StoragePushConstant16</code> capabilities.</p>
+<h3 id="vk_khr_8bit_storage">VK_KHR_8bit_storage</h3>
+<p>The <code>VK_KHR_8bit_storage</code> extension extends
+reduced-precision storage further by allowing 8-bit integers
+(<code>int8_t</code>, <code>uint8_t</code>) to be used directly in
+shader storage. Originally introduced as an extension, it was promoted
+to core in Vulkan 1.2.</p>
+<p>Support is queried and configured via the
+<code>VkPhysicalDevice8BitStorageFeatures</code> structure, which
+provides similar granularity to its 16-bit counterpart:</p>
+<ul>
+<li><strong><code>storageBuffer8BitAccess</code></strong>: Enables 8-bit
+integer access within SSBOs.</li>
+<li><strong><code>uniformAndStorageBuffer8BitAccess</code></strong>:
+Enables 8-bit integer access within both UBOs and SSBOs.</li>
+<li><strong><code>storagePushConstant8</code></strong>: Enables 8-bit
+integers within push constants.</li>
+</ul>
+<p>The corresponding SPIR-V capabilities mapped to these features are
+<code>StorageBuffer8BitAccess</code>,
+<code>UniformAndStorageBuffer8BitAccess</code>, and
+<code>StoragePushConstant8</code>.</p>
+<h3 id="storage-vs-arithmetic-operations">Storage vs. Arithmetic
+Operations</h3>
+<p>Enabling <code>VK_KHR_8bit_storage</code> or
+<code>VK_KHR_16bit_storage</code> only guarantees that data can be
+loaded from and stored into memory in packed formats. When a shader
+loads an 8-bit or 16-bit integer using only these storage extensions,
+the value is typically unpacked and converted to a standard 32-bit
+register internally to perform arithmetic calculations, then cast back
+upon storage.</p>
+<p>To execute native mathematical calculations directly on 8-bit
+integers without extending them to 32-bit types, implementations must
+also support and enable:</p>
+<ul>
+<li><strong><code>VK_KHR_shader_float16_int8</code></strong> (promoted
+to Vulkan 1.2 core): Provides the <code>shaderInt8</code> feature,
+mapping to the SPIR-V <code>Int8</code> capability, allowing 8-bit
+integer operations inside shader registers.</li>
+<li><strong><code>VkPhysicalDeviceFeatures::shaderInt16</code></strong>
+(core since Vulkan 1.0): Provides the SPIR-V <code>Int16</code>
+capability for executing native 16-bit integer arithmetic.</li>
+</ul>
+<h3 id="enabling-the-extensions-in-code">Enabling the Extensions in
+Code</h3>
+<p>To use these capabilities in a Vulkan compute pipeline:</p>
+<ol type="1">
+<li>Chain <code>VkPhysicalDevice8BitStorageFeatures</code> and
+<code>VkPhysicalDevice16BitStorageFeatures</code> into the
+<code>pNext</code> chain of <code>VkPhysicalDeviceFeatures2</code> when
+calling <code>vkGetPhysicalDeviceFeatures2</code> to verify hardware
+support.</li>
+<li>Chain the same structures with the desired feature flags set to
+<code>VK_TRUE</code> into the <code>pNext</code> chain of
+<code>VkDeviceCreateInfo</code> during logical device creation.</li>
+<li>In GLSL compute shaders, include the respective extensions to expose
+the types:
+<ul>
+<li><code>#extension GL_EXT_shader_16bit_storage : require</code></li>
+<li><code>#extension GL_EXT_shader_8bit_storage : require</code></li>
+<li><code>#extension GL_EXT_shader_explicit_arithmetic_types : require</code>
+(if performing math on smaller integer types directly).</li>
+</ul></li>
+</ol></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

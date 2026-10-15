@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DXVK Translates Direct3D to Vulkan in Proton - vulkan</title>
+    <meta name="description" content="DXVK is a core component of Valve’s Proton compatibility layer that enables Linux systems to run Windows games with near-native graphics performance. By acting as a drop-in replacement for Microsoft&#39;s Direct3D runtime libraries, DXVK intercepts Direct3D 9">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/how-dxvk-translates-direct-3-d-to-vulkan-in-proton">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DXVK Translates Direct3D to Vulkan in Proton - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/how-dxvk-translates-direct-3-d-to-vulkan-in-proton" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="DXVK is a core component of Valve’s Proton compatibility layer that enables Linux systems to run Windows games with near-native graphics performance. By acting as a drop-in replacement for Microsoft&#39;s Direct3D runtime libraries, DXVK intercepts Direct3D 9" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dxvk-translates-direct3d-to-vulkan-in-proton">How DXVK
+Translates Direct3D to Vulkan in Proton</h1>
+<p>DXVK is a core component of Valve’s Proton compatibility layer that
+enables Linux systems to run Windows games with near-native graphics
+performance. By acting as a drop-in replacement for Microsoft's Direct3D
+runtime libraries, DXVK intercepts Direct3D 9, 10, and 11 API calls and
+translates them into equivalent Vulkan commands in real time. This
+process bridges the gap between legacy, proprietary Microsoft graphics
+interfaces and modern, low-overhead Vulkan architecture, allowing the
+underlying Linux operating system to render complex 3D scenes without
+requiring native Linux game ports.</p>
+<h3 id="intercepting-direct3d-calls">Intercepting Direct3D Calls</h3>
+<p>DXVK operates at the dynamic-link library (DLL) level. Within Proton,
+it replaces standard Windows system DLLs—specifically
+<code>d3d9.dll</code>, <code>d3d10core.dll</code>,
+<code>d3d11.dll</code>, and <code>dxgi.dll</code>—with custom
+implementations. When a Windows game running under Proton requests a
+Direct3D device or issues draw calls, those commands are directed to
+DXVK instead of Microsoft's runtime. DXVK exposes the exact interfaces,
+methods, and behaviors expected by the game, making the translation
+layer completely transparent to the game engine.</p>
+<h3 id="shader-translation-via-dxbc-to-spir-v">Shader Translation via
+DXBC to SPIR-V</h3>
+<p>One of the most complex tasks DXVK handles is shader conversion.
+Direct3D 9 through 11 rely on High-Level Shading Language (HLSL)
+compiled into DirectX Bytecode (DXBC). Vulkan, conversely, consumes
+shaders in the Standard Portable Intermediate Representation (SPIR-V)
+format.</p>
+<p>DXVK parses DXBC instructions on the fly and generates equivalent
+SPIR-V bytecode. Because Direct3D and Vulkan handle features like
+coordinate systems, clip spaces, and resource bindings differently,
+DXVK's shader compiler injects necessary math and binding shifts into
+the resulting SPIR-V code to ensure pixel-perfect rendering parity.</p>
+<h3 id="state-mapping-and-pipeline-compilation">State Mapping and
+Pipeline Compilation</h3>
+<p>Direct3D 9, 10, and 11 use relatively high-level, mutable state
+models where games can change blend modes, depth states, and rasterizer
+settings individually on a single context. Vulkan, by design, uses
+immutable Pipeline State Objects (PSOs), where all render states,
+shaders, and formats must be baked into a monolithic object before
+rendering occurs.</p>
+<p>To bridge this architectural divide:</p>
+<ul>
+<li>DXVK tracks all discrete state updates made by the game.</li>
+<li>When a draw call is initiated, DXVK hashes the current state
+combination and looks it up in an internal pipeline cache.</li>
+<li>If the pipeline already exists, it is bound immediately.</li>
+<li>If the pipeline has not been compiled yet, DXVK compiles it on
+demand. To reduce the stutter caused by compiling new pipelines
+mid-game, DXVK caches compiled pipelines to disk across sessions, and
+Proton uses Steam's Fossilize system to pre-compile pipelines before
+gameplay begins.</li>
+</ul>
+<h3 id="resource-and-memory-synchronization">Resource and Memory
+Synchronization</h3>
+<p>Direct3D handles memory and pipeline synchronization with varying
+degrees of abstraction, often relying on the graphics driver to insert
+implicit hardware barriers. Vulkan requires explicit control over
+resource transitions, memory barriers, and execution
+synchronization.</p>
+<p>DXVK manages this by wrapping Direct3D resources (such as textures,
+vertex buffers, and constant buffers) into corresponding Vulkan objects
+(<code>VkImage</code>, <code>VkBuffer</code>, and
+<code>VkDeviceMemory</code>). The translation layer maintains internal
+tracking of resource usage across frames. When a resource transitions
+from being a render target to a shader input, DXVK automatically emits
+the required Vulkan pipeline barriers, subpass dependencies, and image
+layout transitions to maintain memory coherency without causing
+unnecessary GPU stalls.</p>
+<h3 id="command-execution-in-proton">Command Execution in Proton</h3>
+<p>Once DXVK has translated states, shaders, and resources into native
+Vulkan primitives, it records these operations into Vulkan command
+buffers (<code>VkCommandBuffer</code>). DXVK manages worker threads to
+handle command processing asynchronously, decoupling CPU-heavy state
+translation from GPU submission queues. These command buffers are
+submitted directly to the host system’s native Vulkan graphics driver,
+enabling Proton to execute Windows games with minimal CPU overhead.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

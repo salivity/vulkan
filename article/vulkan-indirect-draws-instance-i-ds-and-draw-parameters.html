@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Indirect Draws: Instance IDs and Draw Parameters - vulkan</title>
+    <meta name="description" content="Indirect drawing in Vulkan offloads draw call generation to the GPU, enabling massive draw batching without CPU intervention. However, because commands execute from indirect buffers rather than direct CPU dispatches, shaders require built-in draw paramete">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-indirect-draws-instance-i-ds-and-draw-parameters">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Indirect Draws: Instance IDs and Draw Parameters - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-indirect-draws-instance-i-ds-and-draw-parameters" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Indirect drawing in Vulkan offloads draw call generation to the GPU, enabling massive draw batching without CPU intervention. However, because commands execute from indirect buffers rather than direct CPU dispatches, shaders require built-in draw paramete" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-indirect-draws-instance-ids-and-draw-parameters">Vulkan
+Indirect Draws: Instance IDs and Draw Parameters</h1>
+<p>Indirect drawing in Vulkan offloads draw call generation to the GPU,
+enabling massive draw batching without CPU intervention. However,
+because commands execute from indirect buffers rather than direct CPU
+dispatches, shaders require built-in draw parameters to track which
+object is being rendered. By exposing hardware-level parameters like
+draw call indices and instance offsets directly to SPIR-V, Vulkan allows
+shaders to compute globally unique identifiers for every instance,
+facilitating direct indexing into storage buffers and descriptor arrays
+for per-instance transforms and material data.</p>
+<h3 id="the-indirect-rendering-challenge">The Indirect Rendering
+Challenge</h3>
+<p>When executing direct draw calls, developers typically update push
+constants or rebind descriptor sets to provide unique data to individual
+meshes. With functions like <code>vkCmdDrawIndirect</code> and
+<code>vkCmdDrawIndexedIndirect</code>—especially when driven by
+<code>drawCount</code> buffers via
+<code>vkCmdDrawIndirectCount</code>—thousands of draw calls execute in a
+single GPU-driven pipeline.</p>
+<p>Because the CPU is bypassed, uniform state cannot be rebound between
+these batched operations. Shaders must dynamically infer where their
+instance fits within the broader render pass using data exposed by the
+execution pipeline.</p>
+<h3 id="key-built-in-shader-variables">Key Built-in Shader
+Variables</h3>
+<p>Vulkan handles instance and draw identification through specific
+SPIR-V execution built-ins, standard in Vulkan 1.2 through the
+<code>shaderDrawParameters</code> feature (previously available in
+Vulkan 1.1 or via the <code>VK_KHR_shader_draw_parameters</code>
+extension):</p>
+<ol type="1">
+<li><p><strong><code>gl_InstanceIndex</code> (SPIR-V:
+<code>InstanceIndex</code>):</strong> Unlike OpenGL’s
+<code>gl_InstanceID</code>, which always begins at zero for each draw
+call, Vulkan’s <code>gl_InstanceIndex</code> includes the
+<code>firstInstance</code> offset defined in the indirect draw command
+structure (<code>VkDrawIndirectCommand</code> or
+<code>VkDrawIndexedIndirectCommand</code>). The value is calculated as:
+<span class="math display">\[\text{gl\_InstanceIndex} =
+\text{firstInstance} + \text{current instance offset}\]</span></p></li>
+<li><p><strong><code>gl_DrawID</code> (SPIR-V:
+<code>DrawIndex</code>):</strong> When issuing multi-draw indirect
+calls, <code>gl_DrawID</code> provides the zero-based index of the
+specific draw command currently executing within the indirect buffer. If
+an indirect buffer contains 500 commands, <code>gl_DrawID</code> ranges
+from <code>0</code> to <code>499</code>.</p></li>
+<li><p><strong><code>gl_BaseInstance</code> (SPIR-V:
+<code>BaseInstance</code>):</strong> This parameter retrieves the raw
+<code>firstInstance</code> integer that was populated in the indirect
+command structure.</p></li>
+</ol>
+<h3 id="calculating-unique-identifiers-in-the-shader">Calculating Unique
+Identifiers in the Shader</h3>
+<p>Depending on how scene data is organized in GPU buffers, shaders can
+resolve identifiers in two distinct ways:</p>
+<h4 id="1-flat-global-indexing-via-firstinstance">1. Flat Global
+Indexing via <code>firstInstance</code></h4>
+<p>If the application allocates a single large buffer containing all
+instance data across every draw call, the indirect command generator can
+assign each draw call a unique <code>firstInstance</code> offset.
+Because <code>gl_InstanceIndex</code> naturally incorporates this base
+offset, it can be used directly as a global array index:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">// GLSL Vertex Shader</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">std430</span><span class="op">,</span> set <span class="op">=</span> <span class="dv">0</span><span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">readonly</span> <span class="kw">buffer</span> InstanceBuffer <span class="op">{</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">mat4</span> modelMatrices<span class="op">[];</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    <span class="co">// gl_InstanceIndex inherently equals (firstInstance + instanceOffset)</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    <span class="dt">mat4</span> model <span class="op">=</span> modelMatrices<span class="op">[</span>gl_InstanceIndex<span class="op">];</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    <span class="bu">gl_Position</span> <span class="op">=</span> ubo<span class="op">.</span><span class="fu">viewProj</span> <span class="op">*</span> model <span class="op">*</span> <span class="dt">vec4</span><span class="op">(</span>inPosition<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h4 id="2-multi-draw-structuring-via-gl_drawid">2. Multi-Draw
+Structuring via <code>gl_DrawID</code></h4>
+<p>When data is organized by draw call—such as having an array of meshes
+where each mesh holds an array of instances—shaders use
+<code>gl_DrawID</code> to locate the draw command and derive the local
+instance index to find the specific transform:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#extension GL_ARB_shader_draw_parameters : enable</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">std430</span><span class="op">,</span> set <span class="op">=</span> <span class="dv">0</span><span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">readonly</span> <span class="kw">buffer</span> DrawBuffer <span class="op">{</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    DrawData draws<span class="op">[];</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Derive the local zero-based instance index for this specific draw</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint</span> localInstanceID <span class="op">=</span> gl_InstanceIndex <span class="op">-</span> gl_BaseInstance<span class="op">;</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>    DrawData currentDraw <span class="op">=</span> draws<span class="op">[</span>gl_DrawID<span class="op">];</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>    <span class="dt">mat4</span> model <span class="op">=</span> currentDraw<span class="op">.</span><span class="fu">instanceMatrices</span><span class="op">[</span>localInstanceID<span class="op">];</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>    <span class="bu">gl_Position</span> <span class="op">=</span> ubo<span class="op">.</span><span class="fu">viewProj</span> <span class="op">*</span> model <span class="op">*</span> <span class="dt">vec4</span><span class="op">(</span>inPosition<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="enabling-the-required-vulkan-features">Enabling the Required
+Vulkan Features</h3>
+<p>To access <code>gl_DrawID</code> and base parameter offsets, the
+Vulkan application must query and enable the capability during device
+creation:</p>
+<ul>
+<li><strong>Vulkan 1.2+:</strong> Set
+<code>shaderDrawParameters = VK_TRUE</code> in
+<code>VkPhysicalDeviceVulkan11Features</code> (chained to
+<code>VkDeviceCreateInfo</code>).</li>
+<li><strong>Vulkan 1.1:</strong> Enable the
+<code>VK_KHR_shader_draw_parameters</code> device extension.</li>
+</ul>
+<p>In the shader code, enable the corresponding extension if targeting
+GLSL:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#extension GL_ARB_shader_draw_parameters : require</span></span></code></pre></div>
+<p>Through this mechanism, the GPU seamlessly correlates the
+hardware-driven indirect command buffer with the shader's internal
+addressing logic, ensuring that high-throughput, compute-generated draw
+calls map correctly to memory.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

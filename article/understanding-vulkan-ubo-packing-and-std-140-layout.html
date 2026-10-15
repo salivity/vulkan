@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Understanding Vulkan UBO Packing and std140 Layout - vulkan</title>
+    <meta name="description" content="This article provides an overview of Uniform Buffer Object (UBO) memory packing in Vulkan, focusing on how the std140 layout rules determine the alignment, padding, and byte offsets of shader variables. Developers will learn how hardware requirements dict">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/understanding-vulkan-ubo-packing-and-std-140-layout">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Understanding Vulkan UBO Packing and std140 Layout - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/understanding-vulkan-ubo-packing-and-std-140-layout" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article provides an overview of Uniform Buffer Object (UBO) memory packing in Vulkan, focusing on how the std140 layout rules determine the alignment, padding, and byte offsets of shader variables. Developers will learn how hardware requirements dict" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="understanding-vulkan-ubo-packing-and-std140-layout">Understanding
+Vulkan UBO Packing and std140 Layout</h1>
+<p>This article provides an overview of Uniform Buffer Object (UBO)
+memory packing in Vulkan, focusing on how the <code>std140</code> layout
+rules determine the alignment, padding, and byte offsets of shader
+variables. Developers will learn how hardware requirements dictate
+memory layouts, the specific alignment rules applied to primitive types,
+vectors, arrays, and structs, and how to properly map host-side C/C++
+memory to GPU-accessible buffers without silent corruption.</p>
+<hr />
+<h3 id="what-is-uniform-buffer-object-ubo-packing">What is Uniform
+Buffer Object (UBO) Packing?</h3>
+<p>In the Vulkan API, a Uniform Buffer Object (UBO) is a memory buffer
+used to pass read-only, uniform data—such as view matrices, material
+properties, and light parameters—from the host CPU to GPU shaders.</p>
+<p>Because modern GPU memory architectures are optimized to read memory
+in wide, aligned memory blocks (typically 16 bytes or 128 bits),
+variables cannot simply be packed tightly next to each other as they
+might be in a packed C-struct. <strong>UBO packing</strong> refers to
+the arrangement, spacing, and memory alignment of individual variables
+within a uniform buffer. Without a uniform arrangement standard,
+differences between CPU compiler padding and GPU memory access patterns
+lead to data misalignment and visual bugs.</p>
+<h3 id="the-purpose-of-the-std140-layout">The Purpose of the std140
+Layout</h3>
+<p>To resolve discrepancies between CPU memory layouts and GPU memory
+architectures, GLSL and SPIR-V define standardized layouts. The
+<code>std140</code> layout is an explicit memory layout specification
+defined by the OpenGL and Vulkan specifications.</p>
+<p>When an interface block in a Vulkan shader is qualified with
+<code>layout(std140)</code>, the compiler enforces deterministic,
+hardware-agnostic alignment and offset rules. This ensures that a given
+variable in the shader always resides at a predictable byte offset from
+the beginning of the buffer.</p>
+<h3 id="std140-alignment-and-offset-rules">std140 Alignment and Offset
+Rules</h3>
+<p>Under <code>std140</code>, every variable type has a <strong>base
+alignment</strong> (the boundary multiple where the variable must start)
+and a size. Offsets must always be rounded up to the nearest multiple of
+the type's base alignment.</p>
+<p>The primary rules governing variable offsets are:</p>
+<ul>
+<li><strong>Scalars:</strong> 32-bit types such as <code>float</code>,
+<code>int</code>, <code>uint</code>, and <code>bool</code> have a base
+alignment of <strong>4 bytes</strong>.</li>
+<li><strong>Two-component vectors:</strong> <code>vec2</code>,
+<code>ivec2</code>, and <code>uvec2</code> have a base alignment of
+<strong>8 bytes</strong>.</li>
+<li><strong>Three-component vectors:</strong> <code>vec3</code>,
+<code>ivec3</code>, and <code>uvec3</code> have a base alignment of
+<strong>16 bytes</strong>.</li>
+<li><strong>Four-component vectors:</strong> <code>vec4</code>,
+<code>ivec4</code>, and <code>uvec4</code> have a base alignment of
+<strong>16 bytes</strong>.</li>
+<li><strong>Arrays of scalars or vectors:</strong> Each element in an
+array has its base alignment rounded up to a multiple of <strong>16
+bytes</strong> (the size of a <code>vec4</code>). An array of
+<code>float</code> values will consume 16 bytes per element, with 12
+bytes of padding between each valid 4-byte scalar.</li>
+<li><strong>Structures:</strong> The base alignment of a structure is
+rounded up to the alignment of its largest member, and the entire struct
+size is padded to a multiple of <strong>16 bytes</strong>.</li>
+<li><strong>Matrices:</strong> A matrix is treated as an array of column
+(or row) vectors. For example, a standard column-major <code>mat4</code>
+is treated as an array of four <code>vec4</code> vectors, each with a
+16-byte alignment and 16-byte size, requiring 64 bytes total.</li>
+</ul>
+<h3 id="calculating-variable-offsets-a-practical-example">Calculating
+Variable Offsets: A Practical Example</h3>
+<p>Consider the following GLSL uniform block:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">std140</span><span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="kw">uniform</span> CameraData <span class="op">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> exposure<span class="op">;</span>   <span class="co">// 4 bytes</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span>  position<span class="op">;</span>   <span class="co">// 12 bytes, requires 16-byte alignment</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">mat4</span>  projection<span class="op">;</span> <span class="co">// 64 bytes (4 x vec4)</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">bool</span>  enabled<span class="op">;</span>    <span class="co">// 4 bytes</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
+<p>Following the <code>std140</code> standard, the offsets are
+determined sequentially:</p>
+<ol type="1">
+<li><strong><code>exposure</code></strong>: Starts at offset
+<strong>0</strong>. Its size is 4 bytes, covering bytes 0 through
+3.</li>
+<li><strong><code>position</code></strong>: Being a <code>vec3</code>,
+its base alignment is 16 bytes. It cannot begin immediately at byte 4.
+The offset is rounded up to the next 16-byte boundary, placing
+<code>position</code> at offset <strong>16</strong>. Bytes 4 through 15
+are unused padding. The vector covers bytes 16 through 27.</li>
+<li><strong><code>projection</code></strong>: Each column vector
+requires a 16-byte alignment. The next available 16-byte boundary is
+offset <strong>32</strong>. The matrix occupies bytes 32 through 95 (64
+bytes total).</li>
+<li><strong><code>enabled</code></strong>: Requires 4-byte alignment.
+Offset 96 is already a multiple of 4, so <code>enabled</code> sits at
+offset <strong>96</strong>, spanning bytes 96 to 99.</li>
+<li><strong>Block Size:</strong> The total size of the block is rounded
+to a multiple of 16, resulting in a total buffer size of <strong>112
+bytes</strong>.</li>
+</ol>
+<h3 id="aligning-host-cpu-data">Aligning Host CPU Data</h3>
+<p>To write data from a C++ host program that correctly maps to a
+<code>std140</code> uniform buffer, developers must account for these
+rules using explicit padding or alignment specifiers:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> CameraData <span class="op">{</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> exposure<span class="op">;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> padding1<span class="op">[</span><span class="dv">3</span><span class="op">];</span>     <span class="co">// Pads offset from 4 to 16</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">alignas</span><span class="op">(</span><span class="dv">16</span><span class="op">)</span> glm<span class="op">::</span>vec3 position<span class="op">;</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">alignas</span><span class="op">(</span><span class="dv">16</span><span class="op">)</span> glm<span class="op">::</span>mat4 projection<span class="op">;</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    <span class="kw">alignas</span><span class="op">(</span><span class="dv">4</span><span class="op">)</span>  <span class="dt">int</span> enabled<span class="op">;</span> <span class="co">// C++ bool representation</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> padding2<span class="op">[</span><span class="dv">3</span><span class="op">];</span>     <span class="co">// Rounds total size to 112 bytes</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
+<p>Failing to match the CPU structure layout to the <code>std140</code>
+standard will cause the GPU to read offset values from incorrect memory
+locations, resulting in corrupted transforms, missing data, and
+undefined rendering behavior.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

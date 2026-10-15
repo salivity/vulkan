@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dual-Source Color Blending in Vulkan - vulkan</title>
+    <meta name="description" content="Dual-source color blending is an advanced rasterization feature that allows a fragment shader to output two separate color vectors to a single render target simultaneously. This article explains the fundamentals of dual-source blending, its primary use ca">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/dual-source-color-blending-in-vulkan">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Dual-Source Color Blending in Vulkan - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/dual-source-color-blending-in-vulkan" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Dual-source color blending is an advanced rasterization feature that allows a fragment shader to output two separate color vectors to a single render target simultaneously. This article explains the fundamentals of dual-source blending, its primary use ca" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dual-source-color-blending-in-vulkan">Dual-Source Color Blending
+in Vulkan</h1>
+<p>Dual-source color blending is an advanced rasterization feature that
+allows a fragment shader to output two separate color vectors to a
+single render target simultaneously. This article explains the
+fundamentals of dual-source blending, its primary use cases like
+subpixel font rendering, how it maps secondary colors in the blending
+equation, and the precise Vulkan API pipeline configurations and GLSL
+shader qualifiers needed to implement it.</p>
+<h2 id="what-is-dual-source-color-blending">What is Dual-Source Color
+Blending?</h2>
+<p>In standard rasterization, a fragment shader outputs a single color
+value (the source) per color attachment, which is then blended with the
+existing value in the framebuffer (the destination). Conventional
+blending factors—such as source alpha or destination color—allow for
+transparency and additive effects, but they limit the mathematical
+complexity of how source and destination data interact.</p>
+<p>Dual-source color blending expands this model by allowing a single
+fragment shader execution to produce two distinct source outputs: a
+primary color (<code>src0</code>) and a secondary color
+(<code>src1</code>), both routed to color attachment index 0. This
+enables advanced blend equations, most notably component-wise alpha
+blending for subpixel font anti-aliasing (such as ClearType). In
+subpixel text rendering, the red, green, and blue components of a pixel
+require independent blending factors rather than a single uniform alpha
+value. Dual-source blending allows the shader to output the RGB color on
+the first output and the per-component RGB mask on the second output,
+completing the blend in a single pass.</p>
+<h2 id="routing-two-fragment-colors-to-one-render-target">Routing Two
+Fragment Colors to One Render Target</h2>
+<p>To direct two colors to a single target, Vulkan relies on shader
+interface binding indices rather than multiple output locations.</p>
+<h3 id="glsl-output-qualifiers">GLSL Output Qualifiers</h3>
+<p>In a standard shader, multiple render targets use distinct
+<code>location</code> indices. For dual-source blending, both outputs
+share <code>location = 0</code>, but they are differentiated by an
+<code>index</code> qualifier:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 450</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="co">// Primary source color (src0)</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">0</span><span class="op">,</span> <span class="dt">index</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">out</span> <span class="dt">vec4</span> outColor<span class="op">;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="co">// Secondary source color (src1)</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">0</span><span class="op">,</span> <span class="dt">index</span> <span class="op">=</span> <span class="dv">1</span><span class="op">)</span> <span class="dt">out</span> <span class="dt">vec4</span> outSecondaryColor<span class="op">;</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    outColor <span class="op">=</span> <span class="dt">vec4</span><span class="op">(</span><span class="fl">1.0</span><span class="op">,</span> <span class="fl">1.0</span><span class="op">,</span> <span class="fl">1.0</span><span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span>          <span class="co">// Base color</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    outSecondaryColor <span class="op">=</span> <span class="dt">vec4</span><span class="op">(</span><span class="fl">0.8</span><span class="op">,</span> <span class="fl">0.5</span><span class="op">,</span> <span class="fl">0.2</span><span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span> <span class="co">// Per-component blend weights</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>The hardware treats <code>index = 0</code> as the standard source
+term and <code>index = 1</code> as the secondary source term. Because
+physical hardware routing lines are consumed by this secondary output,
+dual-source blending is typically restricted to the first render target
+(<code>location = 0</code>), and the total number of simultaneous render
+targets is reduced.</p>
+<h2 id="vulkan-api-implementation">Vulkan API Implementation</h2>
+<p>Using dual-source blending in Vulkan requires verifying hardware
+support, enabling the device feature, and setting up the pipeline blend
+state.</p>
+<h3 id="1-enabling-the-device-feature">1. Enabling the Device
+Feature</h3>
+<p>Dual-source blending is not enabled by default. Query
+<code>VkPhysicalDeviceFeatures</code> to ensure
+<code>dualSrcBlend</code> is supported, then enable it during logical
+device creation:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>VkPhysicalDeviceFeatures deviceFeatures<span class="op">{};</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>deviceFeatures<span class="op">.</span>dualSrcBlend <span class="op">=</span> VK_TRUE<span class="op">;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>VkDeviceCreateInfo createInfo<span class="op">{};</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>createInfo<span class="op">.</span>sType <span class="op">=</span> VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO<span class="op">;</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>createInfo<span class="op">.</span>pEnabledFeatures <span class="op">=</span> <span class="op">&amp;</span>deviceFeatures<span class="op">;</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="co">// ... populate queues, extensions, and create the VkDevice</span></span></code></pre></div>
+<h3 id="2-configuring-the-blend-state">2. Configuring the Blend
+State</h3>
+<p>When setting up the graphics pipeline, configure the
+<code>VkPipelineColorBlendAttachmentState</code> for the target
+attachment. Vulkan provides specific blend factors prefixed with
+<code>SRC1</code> to reference the secondary output:</p>
+<ul>
+<li><code>VK_BLEND_FACTOR_SRC1_COLOR</code></li>
+<li><code>VK_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR</code></li>
+<li><code>VK_BLEND_FACTOR_SRC1_ALPHA</code></li>
+<li><code>VK_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA</code></li>
+</ul>
+<p>For example, to implement component-wise text blending where the text
+color is multiplied by the mask and the destination is subtracted by the
+mask:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>VkPipelineColorBlendAttachmentState blendAttachment<span class="op">{};</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>blendAttachment<span class="op">.</span>blendEnable <span class="op">=</span> VK_TRUE<span class="op">;</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>blendAttachment<span class="op">.</span>srcColorBlendFactor <span class="op">=</span> VK_BLEND_FACTOR_ONE<span class="op">;</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>blendAttachment<span class="op">.</span>dstColorBlendFactor <span class="op">=</span> VK_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR<span class="op">;</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>blendAttachment<span class="op">.</span>colorBlendOp <span class="op">=</span> VK_BLEND_OP_ADD<span class="op">;</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>blendAttachment<span class="op">.</span>srcAlphaBlendFactor <span class="op">=</span> VK_BLEND_FACTOR_ONE<span class="op">;</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>blendAttachment<span class="op">.</span>dstAlphaBlendFactor <span class="op">=</span> VK_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA<span class="op">;</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>blendAttachment<span class="op">.</span>alphaBlendOp <span class="op">=</span> VK_BLEND_OP_ADD<span class="op">;</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>blendAttachment<span class="op">.</span>colorWriteMask <span class="op">=</span> VK_COLOR_COMPONENT_R_BIT <span class="op">|</span> </span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>                                VK_COLOR_COMPONENT_G_BIT <span class="op">|</span> </span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>                                VK_COLOR_COMPONENT_B_BIT <span class="op">|</span> </span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>                                VK_COLOR_COMPONENT_A_BIT<span class="op">;</span></span></code></pre></div>
+<p>In this setup, the hardware takes the primary color
+(<code>index = 0</code>), multiplies it by
+<code>VK_BLEND_FACTOR_ONE</code>, and blends it with the destination
+color multiplied by <code>1.0 - index = 1</code>, achieving precise
+component-level compositing in a single draw call.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

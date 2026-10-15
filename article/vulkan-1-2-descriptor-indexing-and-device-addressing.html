@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan 1.2 Descriptor Indexing and Device Addressing - vulkan</title>
+    <meta name="description" content="Vulkan 1.2 marked a major evolutionary step for low-level graphics programming by officially integrating modern, bindless rendering capabilities into the core API specification. By elevating the previously fragmented VKEXTdescriptorindexing and VKKHRbuffe">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-1-2-descriptor-indexing-and-device-addressing">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan 1.2 Descriptor Indexing and Device Addressing - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-1-2-descriptor-indexing-and-device-addressing" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Vulkan 1.2 marked a major evolutionary step for low-level graphics programming by officially integrating modern, bindless rendering capabilities into the core API specification. By elevating the previously fragmented VKEXTdescriptorindexing and VKKHRbuffe" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-12-descriptor-indexing-and-device-addressing">Vulkan 1.2
+Descriptor Indexing and Device Addressing</h1>
+<p>Vulkan 1.2 marked a major evolutionary step for low-level graphics
+programming by officially integrating modern, bindless rendering
+capabilities into the core API specification. By elevating the
+previously fragmented <code>VK_EXT_descriptor_indexing</code> and
+<code>VK_KHR_buffer_device_address</code> extensions into standardized
+core features, the Khronos Group removed the need for developer-managed
+extension fallbacks, established uniform hardware guarantees across
+vendors, and paved the way for fully GPU-driven rendering
+architectures.</p>
+<p>Prior to Vulkan 1.2, applications managed GPU resources through rigid
+descriptor sets that required extensive CPU-side binding and tracking.
+This traditional model struggled to match modern hardware capabilities
+and high-density asset pipelines. Developers looking to implement modern
+"bindless" rendering had to rely on extension availability that varied
+wildly across hardware vendors and operating systems.</p>
+<p>The integration of descriptor indexing directly addressed the
+limitations of classic descriptor set models. Originally introduced as
+<code>VK_EXT_descriptor_indexing</code>, this feature became standard in
+Vulkan 1.2 under the <code>VkPhysicalDeviceVulkan12Features</code>
+structure. Descriptor indexing allows shaders to access vast arrays of
+resources—such as textures and samplers—indexed dynamically at runtime
+using non-uniform integer handles. Furthermore, it formalized critical
+sub-features including:</p>
+<ul>
+<li><strong>Unsized and Unbounded Descriptor Arrays:</strong> Shaders
+can declare descriptor arrays without fixed sizes at compile time.</li>
+<li><strong>Update-After-Bind:</strong> Descriptors can be updated or
+written on the CPU even after the descriptor set has been bound to a
+command buffer, drastically reducing CPU-side synchronization.</li>
+<li><strong>Partially Bound Arrays:</strong> Arrays can contain empty or
+invalid entries, provided the shader does not execute an access
+instruction against an unpopulated slot.</li>
+</ul>
+<p>Alongside descriptor indexing, Vulkan 1.2 incorporated buffer device
+addressing, graduating <code>VK_KHR_buffer_device_address</code> into
+the core. This standard allows shaders to bypass the traditional
+descriptor system entirely when accessing memory buffers. Instead,
+developers can query raw 64-bit GPU virtual addresses from a
+<code>VkBuffer</code> on the CPU using
+<code>vkGetBufferDeviceAddress</code> and pass these direct pointers to
+shaders via push constants or other buffers.</p>
+<p>Buffer device addressing fundamentally alters shader architecture by
+enabling true pointer-like memory operations. Shaders can traverse
+complex data structures, such as linked lists, scene graphs, and custom
+memory allocators directly in GPU memory. This capability proved
+foundational not only for high-performance compute shaders and
+GPU-driven culling pipelines, but also served as the primary
+prerequisite for hardware-accelerated ray tracing, where bottom-level
+acceleration structures require direct, unhindered pointer
+referencing.</p>
+<p>By folding descriptor indexing and buffer device addressing into the
+baseline Vulkan 1.2 core, the Khronos Group unified cross-vendor feature
+sets. This standardization eliminated driver inconsistencies and gave
+engine developers the baseline guarantee needed to adopt modern bindless
+workflows across all conformant hardware.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan SC: Safety-Critical Graphics and Compute - vulkan</title>
+    <meta name="description" content="The Vulkan SC (Safety Critical) specification is an open, royalty-free standard designed to bring modern, low-level graphics and compute acceleration to systems where failure is not an option. Derived from the Khronos Group&#39;s Vulkan 1.2 standard, Vulkan S">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-sc-safety-critical-graphics-and-compute">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan SC: Safety-Critical Graphics and Compute - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-sc-safety-critical-graphics-and-compute" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The Vulkan SC (Safety Critical) specification is an open, royalty-free standard designed to bring modern, low-level graphics and compute acceleration to systems where failure is not an option. Derived from the Khronos Group&#39;s Vulkan 1.2 standard, Vulkan S" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-sc-safety-critical-graphics-and-compute">Vulkan SC:
+Safety-Critical Graphics and Compute</h1>
+<p>The Vulkan SC (Safety Critical) specification is an open,
+royalty-free standard designed to bring modern, low-level graphics and
+compute acceleration to systems where failure is not an option. Derived
+from the Khronos Group's Vulkan 1.2 standard, Vulkan SC simplifies the
+API by removing non-deterministic behavior, shifting resource-heavy
+operations offline, and embedding rigorous fault-handling mechanisms.
+This article explains the primary purpose of Vulkan SC, how it differs
+from standard Vulkan, and why it is essential for certified,
+mission-critical environments.</p>
+<h3 id="the-problem-with-standard-graphics-apis">The Problem with
+Standard Graphics APIs</h3>
+<p>Modern safety-critical systems—such as advanced driver assistance
+systems (ADAS), digital avionics cockpits, and medical imaging
+devices—increasingly rely on modern GPUs for both visual rendering and
+sensor-fusion compute tasks. However, mainstream graphics APIs like
+OpenGL or standard Vulkan prioritize maximum rendering flexibility and
+raw throughput over predictable execution times. They rely on dynamic
+memory allocation and on-the-fly shader compilation, both of which
+introduce runtime latency and non-deterministic behavior that make
+safety certification prohibitively difficult.</p>
+<h3 id="the-primary-purpose-of-vulkan-sc">The Primary Purpose of Vulkan
+SC</h3>
+<p>The core purpose of Vulkan SC is to provide a standardized,
+cross-vendor foundation for GPU acceleration that can be certified under
+functional safety standards, including ISO 26262 (automotive), RTCA
+DO-178C (avionics), and IEC 61508 (industrial).</p>
+<p>To meet these strict safety requirements, the specification addresses
+three key areas:</p>
+<ul>
+<li><strong>Predictability and Determinism:</strong> Safety-critical
+applications must execute within guaranteed time budgets. Vulkan SC
+removes runtime memory allocation and shifts shader compilation entirely
+offline. By pre-compiling pipelines and utilizing the Pipeline Creation
+Cache (PCC), the API guarantees deterministic execution times and
+eliminates runtime CPU and GPU frame spikes.</li>
+<li><strong>Streamlined Driver Footprint:</strong> To achieve safety
+certifications, every line of driver code must be audited, tested, and
+documented. Vulkan SC strips out legacy, dynamic, and non-essential
+features present in standard Vulkan. The resulting driver codebase is
+significantly smaller, reducing potential security attack surfaces and
+dramatically lowering the cost and complexity of the certification
+process.</li>
+<li><strong>Robust Fault Detection and Handling:</strong> In
+mission-critical environments, hardware or software anomalies must be
+contained without crashing the entire host system. Vulkan SC introduces
+a dedicated fault-handling framework that captures, logs, and isolates
+errors, enabling system architects to implement predictable fail-safe or
+fail-operational strategies.</li>
+</ul>
+<h3 id="target-applications">Target Applications</h3>
+<p>By bridging high-performance GPU computing with strict safety
+verification, Vulkan SC serves as a vital component for:</p>
+<ul>
+<li><strong>Automotive:</strong> Powering multi-display digital
+cockpits, head-up displays (HUDs), and real-time sensor processing for
+autonomous driving stacks.</li>
+<li><strong>Avionics:</strong> Driving primary flight displays (PFDs),
+synthetic vision systems, and multi-function cockpit consoles.</li>
+<li><strong>Industrial and Healthcare:</strong> Enabling safe
+human-robot collaboration in industrial automation and deterministic
+rendering for safety-critical surgical visualization equipment.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

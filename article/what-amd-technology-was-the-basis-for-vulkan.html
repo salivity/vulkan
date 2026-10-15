@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>What AMD Technology Was the Basis for Vulkan? - vulkan</title>
+    <meta name="description" content="The Vulkan graphics and compute API traces its core architecture back to Mantle, a groundbreaking low-overhead graphics API developed by AMD in collaboration with DICE. Released in late 2013, Mantle was designed to bypass the performance bottlenecks of le">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/what-amd-technology-was-the-basis-for-vulkan">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="What AMD Technology Was the Basis for Vulkan? - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/what-amd-technology-was-the-basis-for-vulkan" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The Vulkan graphics and compute API traces its core architecture back to Mantle, a groundbreaking low-overhead graphics API developed by AMD in collaboration with DICE. Released in late 2013, Mantle was designed to bypass the performance bottlenecks of le" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="what-amd-technology-was-the-basis-for-vulkan">What AMD
+Technology Was the Basis for Vulkan?</h1>
+<p>The Vulkan graphics and compute API traces its core architecture back
+to Mantle, a groundbreaking low-overhead graphics API developed by AMD
+in collaboration with DICE. Released in late 2013, Mantle was designed
+to bypass the performance bottlenecks of legacy APIs like DirectX 11 and
+OpenGL by giving developers explicit, low-level control over the GPU.
+Recognizing the industry-wide need for an open, modern standard, AMD
+donated the Mantle source code and specification to the Khronos Group in
+2014, establishing the foundation upon which Vulkan was formally
+developed and standardized.</p>
+<h3 id="the-bottleneck-of-legacy-apis">The Bottleneck of Legacy
+APIs</h3>
+<p>Prior to Mantle, standard graphics pipelines relied heavily on OpenGL
+and Microsoft's DirectX 11. These older APIs abstracted GPU hardware
+behind heavy driver layers that managed memory, resource
+synchronization, and state tracking automatically. While this simplified
+programming, it introduced severe CPU overhead, single-threaded driver
+constraints, and unpredictable frame latency. Multi-core central
+processors often sat underutilized while waiting on a single core to
+submit draw calls to the graphics processor.</p>
+<h3 id="amd-mantle-a-shift-toward-low-level-control">AMD Mantle: A Shift
+Toward Low-Level Control</h3>
+<p>AMD designed Mantle specifically for its Graphics Core Next
+architecture to eliminate this abstraction layer. By exposing direct
+hardware access, Mantle introduced several key innovations:</p>
+<ul>
+<li>Explicit GPU memory management handled entirely by application
+code</li>
+<li>Direct, multithreaded command buffer generation and submission</li>
+<li>Fine-grained resource barriers and synchronization primitives</li>
+<li>Drastically reduced CPU driver overhead for draw calls</li>
+</ul>
+<p>Demonstrated prominently in Frostbite-engine games such as
+Battlefield 4, Mantle proved that a thin driver layer could unlock
+substantial performance gains, especially on systems limited by CPU
+throughput.</p>
+<h3 id="the-transition-to-the-khronos-group-and-vulkan">The Transition
+to the Khronos Group and Vulkan</h3>
+<p>Despite its technical success, Mantle faced adoption limitations
+because it was a proprietary technology primarily targeted at AMD
+hardware. In mid-2014, the Khronos Group launched the Next Generation
+OpenGL initiative (initially dubbed "glNext") to modernize
+cross-platform rendering. To jumpstart this project, AMD contributed the
+Mantle specification and API source to Khronos.</p>
+<p>The Khronos Group used Mantle's foundational architecture, command
+submission model, and memory management semantics to build Vulkan. While
+Khronos expanded the design to incorporate vendor neutrality, mobile
+device profiles, and the standardized SPIR-V intermediate shading
+language, the architectural DNA of Mantle remains the core framework
+powering modern Vulkan applications today.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Turnip: Open-Source Vulkan for Qualcomm Adreno - vulkan</title>
+    <meta name="description" content="This article examines how the open-source Turnip driver implements the Vulkan graphics and compute API for Qualcomm Adreno GPUs. It details the driver&#39;s placement within the Mesa framework, its communication with the Linux kernel via the MSM direct render">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/turnip-open-source-vulkan-for-qualcomm-adreno">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Turnip: Open-Source Vulkan for Qualcomm Adreno - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/turnip-open-source-vulkan-for-qualcomm-adreno" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article examines how the open-source Turnip driver implements the Vulkan graphics and compute API for Qualcomm Adreno GPUs. It details the driver&#39;s placement within the Mesa framework, its communication with the Linux kernel via the MSM direct render" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="turnip-open-source-vulkan-for-qualcomm-adreno">Turnip:
+Open-Source Vulkan for Qualcomm Adreno</h1>
+<p>This article examines how the open-source Turnip driver implements
+the Vulkan graphics and compute API for Qualcomm Adreno GPUs. It details
+the driver's placement within the Mesa framework, its communication with
+the Linux kernel via the MSM direct rendering manager, the compilation
+pipeline for SPIR-V shaders, and how it handles Qualcomm’s tile-based
+rendering architecture through community-driven reverse engineering.</p>
+<h2 id="the-role-of-turnip-in-the-mesa-project">The Role of Turnip in
+the Mesa Project</h2>
+<p>Turnip is an open-source Vulkan driver designed specifically for
+Qualcomm Adreno hardware, maintained as part of the broader Mesa 3D
+Graphics Library. While Qualcomm provides its own proprietary Vulkan
+implementation for Android and Windows on Snapdragon devices, Turnip was
+developed to provide a completely free and open-source alternative. It
+operates alongside Freedreno, Mesa's reverse-engineered OpenGL driver
+for the same architecture, sharing key components such as compiler
+backends and register definitions.</p>
+<h2 id="communication-with-the-kernel">Communication with the
+Kernel</h2>
+<p>A user-space graphics driver cannot talk directly to hardware
+registers without operating system arbitration. Turnip relies on the
+Linux kernel's Direct Rendering Manager (DRM) subsystem, specifically
+the MSM kernel driver.</p>
+<p>When an application makes a Vulkan call, Turnip translates that
+request into hardware-specific command streams. It then allocates
+graphics memory and submits these command buffers to the MSM kernel
+driver using specialized input/output control (ioctl) calls. The kernel
+driver schedules the work, manages GPU memory mappings, and handles
+synchronization and power states, isolating the user space from critical
+system-level tasks.</p>
+<h2 id="shader-translation-and-execution">Shader Translation and
+Execution</h2>
+<p>Vulkan applications submit shaders in a standardized intermediate
+format known as SPIR-V. Turnip processes these shaders using Mesa’s
+common NIR (New Intermediate Representation) infrastructure:</p>
+<ol type="1">
+<li><strong>SPIR-V to NIR:</strong> Turnip ingests the SPIR-V bytecode
+and converts it into NIR, a machine-independent optimization layer.</li>
+<li><strong>Optimization:</strong> Generic optimizations—such as
+dead-code elimination, loop unrolling, and constant folding—are applied
+across the NIR representation.</li>
+<li><strong>Hardware Lowering:</strong> Turnip lowers NIR into
+machine-specific instructions tailored to Adreno’s Unified Processing
+Unit (ALU).</li>
+<li><strong>IR3 Compiler:</strong> Turnip feeds the lowered NIR into
+"ir3," the shared Freedreno/Turnip instruction compiler. The ir3
+compiler handles register allocation, instruction scheduling, and
+packing the resulting binary instructions into the exact format executed
+by the Adreno GPU.</li>
+</ol>
+<h2 id="managing-the-adreno-hardware-architecture">Managing the Adreno
+Hardware Architecture</h2>
+<p>Adreno GPUs rely heavily on a Tile-Based Immediate Mode Rendering
+(TBIMR) architecture. Unlike desktop GPUs that often render directly to
+a single large framebuffer in system RAM, Adreno chips divide the screen
+into small "tiles" (bins) to process geometry in high-speed, on-chip
+memory (GMEM).</p>
+<p>Turnip handles this architecture by managing two primary rendering
+paths:</p>
+<ul>
+<li><strong>Tiled Rendering (Binning):</strong> Turnip splits the render
+pass into a binning phase and a rendering phase. The binning phase
+determines which geometry intersects which tile. The rendering phase
+then loads the tile's data into on-chip GMEM, draws the primitives that
+touch that tile, and writes the final pixels back to main system memory.
+This significantly reduces memory bandwidth and power consumption.</li>
+<li><strong>Bypass Rendering (Direct):</strong> For workloads where
+binning overhead exceeds the bandwidth savings (such as large
+post-processing passes or specific compute tasks), Turnip configures the
+GPU to bypass GMEM and write directly to the system memory
+framebuffer.</li>
+</ul>
+<p>Turnip dynamically selects the optimal rendering path based on render
+target size, attachment formats, and the specific operations declared in
+Vulkan render passes.</p>
+<h2 id="reverse-engineering-the-command-stream">Reverse Engineering the
+Command Stream</h2>
+<p>Because Qualcomm does not publicly publish low-level hardware
+register documentation or command processor specifications, Turnip's
+implementation relies heavily on reverse engineering. Developers capture
+command streams from the proprietary driver using specialized logging
+tools. By comparing application-level Vulkan calls to the resulting raw
+hex packets submitted to the GPU, developers map out:</p>
+<ul>
+<li><strong>Packet Formats:</strong> How the GPU’s Command Processor
+(CP) expects state-setup packets, draw commands, and dispatch calls to
+be framed.</li>
+<li><strong>Control Registers:</strong> The specific memory-mapped
+registers responsible for blending modes, depth tests, viewport
+clipping, and rasterization states.</li>
+<li><strong>Synchronization Semantics:</strong> How hardware-level
+events, cache flushes, and pipeline barriers correspond to Vulkan’s
+explicit memory barriers and pipeline stages.</li>
+</ul>
+<h2 id="system-integration-and-ecosystem-impact">System Integration and
+Ecosystem Impact</h2>
+<p>Turnip supports Adreno 600-series and 700-series GPUs, frequently
+achieving full Vulkan conformance on newer hardware revisions. Because
+it is completely open source, it can be patched, optimized, and deployed
+independently of vendor update schedules. It is widely used in
+mainstream Linux distributions running on Snapdragon hardware, in
+Android emulation environments, and alongside compatibility layers like
+DXVK and VKD3D-Proton to run PC games on ARM-based platforms.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

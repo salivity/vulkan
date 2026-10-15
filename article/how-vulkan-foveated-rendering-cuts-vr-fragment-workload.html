@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How Vulkan Foveated Rendering Cuts VR Fragment Workload - vulkan</title>
+    <meta name="description" content="Foveated rendering significantly optimizes virtual reality (VR) performance by reducing visual fidelity in the user&#39;s peripheral vision while maintaining high detail at the focal point. In Vulkan-powered applications, this technique drastically cuts fragm">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/how-vulkan-foveated-rendering-cuts-vr-fragment-workload">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How Vulkan Foveated Rendering Cuts VR Fragment Workload - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/how-vulkan-foveated-rendering-cuts-vr-fragment-workload" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Foveated rendering significantly optimizes virtual reality (VR) performance by reducing visual fidelity in the user&#39;s peripheral vision while maintaining high detail at the focal point. In Vulkan-powered applications, this technique drastically cuts fragm" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-vulkan-foveated-rendering-cuts-vr-fragment-workload">How
+Vulkan Foveated Rendering Cuts VR Fragment Workload</h1>
+<p>Foveated rendering significantly optimizes virtual reality (VR)
+performance by reducing visual fidelity in the user's peripheral vision
+while maintaining high detail at the focal point. In Vulkan-powered
+applications, this technique drastically cuts fragment shader workloads
+by integrating native extensions—such as fragment density maps and
+variable rate shading—allowing the GPU to render fewer pixels without
+degrading the perceived visual quality. By lowering the sheer volume of
+fragment shader invocations, developers can sustain high, stable frame
+rates critical for VR comfort.</p>
+<h3 id="the-problem-uniform-shading-inefficiency">The Problem: Uniform
+Shading Inefficiency</h3>
+<p>In traditional VR rendering pipelines, every pixel across both eye
+buffers is shaded with uniform intensity. However, human visual acuity
+is sharply concentrated within the fovea—the central two degrees of the
+visual field. Outside this area, peripheral vision lacks the ability to
+resolve fine details. Shading every peripheral pixel at full display
+resolution wastes computational cycles and memory bandwidth on detail
+the user cannot perceive.</p>
+<h3 id="vulkan-extensions-for-foveated-rendering">Vulkan Extensions for
+Foveated Rendering</h3>
+<p>Vulkan addresses this inefficiency at the API level through
+specialized hardware-accelerated extensions:</p>
+<ul>
+<li><strong><code>VK_EXT_fragment_density_map</code> and
+<code>VK_EXT_fragment_density_map2</code></strong>: These extensions
+allow an application to pass a 2D density map as an input to a render
+pass. The density map defines varying sampling frequencies across the
+render target. The GPU rasterizer reads this map and automatically
+scales down the fragment generation rate in designated peripheral areas,
+ensuring that fewer fragments are processed during the render pass.</li>
+<li><strong><code>VK_KHR_fragment_shading_rate</code> (Variable Rate
+Shading / VRS)</strong>: This extension decouples geometric
+rasterization from fragment execution. Instead of shading every fragment
+individually (a 1x1 rate), the GPU can execute a single fragment shader
+across a block of pixels (such as 2x2, 2x4, or 4x4) while preserving
+full geometric coverage.</li>
+</ul>
+<h3 id="reducing-fragment-workload">Reducing Fragment Workload</h3>
+<p>The combination of gaze tracking or static peripheral masks with
+Vulkan’s low-overhead architecture reduces fragment workload in three
+distinct ways:</p>
+<ol type="1">
+<li><strong>Fewer Shader Invocations</strong>: Fragment programs perform
+the heaviest math in modern graphics pipelines, including complex
+lighting, texture lookups, and post-processing. By executing fragment
+shaders only once across larger pixel blocks in the periphery, the total
+number of shader invocations is reduced by 50% to 75% depending on the
+foveation profile.</li>
+<li><strong>Bandwidth and Cache Conservation</strong>: Rendering fewer
+distinct fragments reduces the read/write demand on the GPU’s render
+target caches, framebuffers, and memory bus. Lower memory traffic frees
+up memory bandwidth for high-resolution foveal assets and minimizes
+memory bottlenecks.</li>
+<li><strong>Decreased Thermal and Power Throttling</strong>: Standalone
+and tethered VR headsets are constrained by power and thermal limits.
+Reducing fragment shader activity lowers overall GPU power draw,
+preventing thermal throttling and keeping frame delivery times well
+under the strict thresholds (such as 11.1ms for 90 Hz or 8.3ms for 120
+Hz) required to avoid motion sickness.</li>
+</ol>
+<p>By targeting computing resources exclusively where the eye can see
+detail, Vulkan's foveated rendering mechanisms eliminate redundant
+fragment operations, enabling developers to push higher geometric
+complexity and fidelity where it matters most.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

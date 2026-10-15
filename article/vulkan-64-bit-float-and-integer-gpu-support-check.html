@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan 64-Bit Float and Integer GPU Support Check - vulkan</title>
+    <meta name="description" content="To determine whether a GPU supports 64-bit integer or 64-bit floating-point math in the Vulkan API, an application must query the physical device&#39;s feature set. Vulkan exposes these capabilities through specific boolean flags—shaderInt64 and shaderFloat64">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-64-bit-float-and-integer-gpu-support-check">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan 64-Bit Float and Integer GPU Support Check - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-64-bit-float-and-integer-gpu-support-check" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="To determine whether a GPU supports 64-bit integer or 64-bit floating-point math in the Vulkan API, an application must query the physical device&#39;s feature set. Vulkan exposes these capabilities through specific boolean flags—shaderInt64 and shaderFloat64" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-64-bit-float-and-integer-gpu-support-check">Vulkan 64-Bit
+Float and Integer GPU Support Check</h1>
+<p>To determine whether a GPU supports 64-bit integer or 64-bit
+floating-point math in the Vulkan API, an application must query the
+physical device's feature set. Vulkan exposes these capabilities through
+specific boolean flags—<code>shaderInt64</code> and
+<code>shaderFloat64</code>—located within the standard device features
+structure. By inspecting these flags before logical device creation,
+developers can verify hardware compatibility and enable the required
+arithmetic operations within their shader pipelines.</p>
+<h3 id="querying-device-features">Querying Device Features</h3>
+<p>Before creating a logical device (<code>VkDevice</code>), the
+application enumerates physical devices (<code>VkPhysicalDevice</code>)
+and retrieves their supported capabilities using
+<code>vkGetPhysicalDeviceFeatures</code> or the extended
+<code>vkGetPhysicalDeviceFeatures2</code>.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>VkPhysicalDeviceFeatures supportedFeatures<span class="op">;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>vkGetPhysicalDeviceFeatures<span class="op">(</span>physicalDevice<span class="op">,</span> <span class="op">&amp;</span>supportedFeatures<span class="op">);</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>VkBool32 has64BitFloat <span class="op">=</span> supportedFeatures<span class="op">.</span>shaderFloat64<span class="op">;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>VkBool32 has64BitInt   <span class="op">=</span> supportedFeatures<span class="op">.</span>shaderInt64<span class="op">;</span></span></code></pre></div>
+<ul>
+<li><strong>64-Bit Floating-Point (<code>shaderFloat64</code>):</strong>
+Indicates whether 64-bit floats (<code>double</code> in GLSL) can be
+used in shader code. If set to <code>VK_TRUE</code>, the GPU supports
+64-bit float types, storage, and standard arithmetic operations.</li>
+<li><strong>64-Bit Integer (<code>shaderInt64</code>):</strong>
+Indicates whether signed and unsigned 64-bit integers
+(<code>int64_t</code>, <code>uint64_t</code> in GLSL) are supported in
+shaders. If set to <code>VK_TRUE</code>, 64-bit integer types and
+operations are accessible.</li>
+</ul>
+<h3 id="enabling-features-at-device-creation">Enabling Features at
+Device Creation</h3>
+<p>Detecting support is only the first step. If the target GPU supports
+these features, the application must explicitly request and enable them
+when calling <code>vkCreateDevice</code>. If a feature is not explicitly
+enabled during device creation, using it in shaders will result in
+validation errors or pipeline compilation failures.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>VkPhysicalDeviceFeatures enabledFeatures <span class="op">=</span> <span class="op">{};</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="op">(</span>supportedFeatures<span class="op">.</span>shaderFloat64<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    enabledFeatures<span class="op">.</span>shaderFloat64 <span class="op">=</span> VK_TRUE<span class="op">;</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="op">(</span>supportedFeatures<span class="op">.</span>shaderInt64<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    enabledFeatures<span class="op">.</span>shaderInt64 <span class="op">=</span> VK_TRUE<span class="op">;</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>VkDeviceCreateInfo createInfo <span class="op">=</span> <span class="op">{};</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>createInfo<span class="op">.</span>sType <span class="op">=</span> VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO<span class="op">;</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>createInfo<span class="op">.</span>pEnabledFeatures <span class="op">=</span> <span class="op">&amp;</span>enabledFeatures<span class="op">;</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a><span class="co">// Fill out queue create infos, extensions, etc.</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>VkDevice device<span class="op">;</span></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>vkCreateDevice<span class="op">(</span>physicalDevice<span class="op">,</span> <span class="op">&amp;</span>createInfo<span class="op">,</span> NULL<span class="op">,</span> <span class="op">&amp;</span>device<span class="op">);</span></span></code></pre></div>
+<p>For applications utilizing Vulkan 1.1 or later, the query can also be
+performed via <code>VkPhysicalDeviceFeatures2</code> with
+<code>vkGetPhysicalDeviceFeatures2</code>. This structure can be chained
+with other feature extensions (such as
+<code>VkPhysicalDeviceVulkan12Features</code> or
+<code>VkPhysicalDeviceShaderFloat16Int8Features</code>) if advanced
+arithmetic control—like storage-only support—is required.</p>
+<h3 id="shader-implementation-requirements">Shader Implementation
+Requirements</h3>
+<p>Once detected and enabled at the API level, the corresponding
+features must be declared within the shader source code (such as
+GLSL):</p>
+<ul>
+<li><p>For 64-bit floating-point:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 450</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="pp">#extension GL_ARB_gpu_shader_fp64 : enable</span></span></code></pre></div></li>
+<li><p>For 64-bit integers:</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 450</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="pp">#extension GL_ARB_gpu_shader_int64 : enable</span></span></code></pre></div></li>
+</ul>
+<p>If the underlying hardware returns <code>VK_FALSE</code> for either
+capability, the application must implement a fallback algorithm using
+32-bit types or select a different physical device capable of handling
+64-bit precision.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

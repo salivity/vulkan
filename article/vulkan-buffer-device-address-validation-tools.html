@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Buffer Device Address Validation Tools - vulkan</title>
+    <meta name="description" content="Vulkan’s buffer device address feature allows shaders to access memory directly through 64-bit GPU pointers, bypassing traditional descriptors but introducing the risk of invalid memory operations. Because raw pointers can easily exceed hardware limits or">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-buffer-device-address-validation-tools">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Buffer Device Address Validation Tools - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-buffer-device-address-validation-tools" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Vulkan’s buffer device address feature allows shaders to access memory directly through 64-bit GPU pointers, bypassing traditional descriptors but introducing the risk of invalid memory operations. Because raw pointers can easily exceed hardware limits or" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-buffer-device-address-validation-tools">Vulkan Buffer
+Device Address Validation Tools</h1>
+<p>Vulkan’s buffer device address feature allows shaders to access
+memory directly through 64-bit GPU pointers, bypassing traditional
+descriptors but introducing the risk of invalid memory operations.
+Because raw pointers can easily exceed hardware limits or access
+unmapped allocations, specialized validation tools are essential during
+development. This article details the primary tools available to
+validate buffer device addresses against hardware limits and memory
+boundaries in Vulkan, including the Khronos Validation Layers, the
+Vulkan Configurator, and vendor-specific diagnostic suites.</p>
+<h2 id="khronos-validation-layers-gpu-assisted-validation">Khronos
+Validation Layers (GPU-Assisted Validation)</h2>
+<p>The standard Khronos validation layer
+(<code>VK_LAYER_KHRONOS_validation</code>) provides the primary
+mechanism for catching invalid buffer addresses through
+<strong>GPU-Assisted Validation (GPU-AV)</strong>.</p>
+<p>Standard CPU-side validation layers cannot inspect the runtime values
+of direct GPU pointers inside shader code. GPU-AV solves this by
+instrumenting SPIR-V shaders during pipeline creation. The tool:</p>
+<ul>
+<li>Injects boundary check instructions before pointer read/write
+operations.</li>
+<li>Cross-references addresses against the device's valid memory address
+ranges and allocation limits.</li>
+<li>Logs an error message to the debug callback when a pointer
+dereferences an unallocated range or exceeds the buffer's created
+size.</li>
+</ul>
+<p>To validate buffer device addresses specifically, enable GPU-AV and
+ensure the <code>gpuav_buffer_address_validation</code> feature is
+active in the layer configuration.</p>
+<h2 id="vulkan-configurator-vkconfig">Vulkan Configurator
+(vkconfig)</h2>
+<p>Included in the LunarG Vulkan SDK, the Vulkan Configurator
+(<code>vkconfig</code>) is a graphical user interface used to configure
+the Vulkan Validation Layers without altering application source
+code.</p>
+<p>For buffer device address validation, <code>vkconfig</code> enables
+developers to:</p>
+<ul>
+<li>Toggle <strong>GPU-Assisted Validation</strong> with a single
+click.</li>
+<li>Activate <strong>Shader Instrumentation</strong> presets designed to
+trace indirect memory accesses.</li>
+<li>Configure runtime flags such as buffer OOB (out-of-bounds)
+validation and descriptor indexing checks.</li>
+<li>Route error messages directly to system logs or dedicated debug
+outputs.</li>
+</ul>
+<h2 id="nvidia-nsight-graphics-and-amd-rdna-developer-tools">NVIDIA
+Nsight Graphics and AMD RDNA Developer Tools</h2>
+<p>Hardware vendors provide deep-inspection tools to catch low-level
+addressing faults that cause GPU crashes (such as
+<code>VK_ERROR_DEVICE_LOST</code>):</p>
+<ul>
+<li><strong>NVIDIA Nsight Graphics</strong>: Features the <em>Shader
+Profiler</em> and <em>Crash Dump Extraction (Aftermath)</em> SDK.
+Aftermath identifies exact shader lines that generated page faults,
+out-of-bounds pointer reads, or illegal memory operations on NVIDIA
+hardware.</li>
+<li><strong>AMD Radeon Developer Tool Suite (RMV and RGP)</strong>: The
+Radeon Memory Visualizer (RMV) monitors device memory allocations,
+virtual address space allocations, and fragmentation, allowing
+developers to ensure buffer device addresses conform to physical AMD
+hardware constraints.</li>
+</ul>
+<h2 id="renderdoc">RenderDoc</h2>
+<p>RenderDoc supports debugging shaders that use the
+<code>VK_KHR_buffer_device_address</code> extension. When capturing a
+frame:</p>
+<ul>
+<li>RenderDoc monitors buffer addresses used during command
+execution.</li>
+<li>The mesh viewer and pipeline state viewer map 64-bit addresses back
+to the originating <code>VkBuffer</code> objects.</li>
+<li>Shader debugging modules evaluate raw pointers in compute or
+graphics shaders, allowing step-by-step verification of calculated
+addresses against the base address and range limits of the targeted
+buffer.</li>
+</ul>
+<h2 id="programmatic-api-limits-verification">Programmatic API Limits
+Verification</h2>
+<p>In addition to external diagnostic tools, the Vulkan API provides
+programmatic limits to validate address spaces dynamically within the
+application:</p>
+<ul>
+<li><strong><code>VkPhysicalDeviceBufferDeviceAddressFeatures</code></strong>:
+Checks if the hardware explicitly supports 64-bit buffer architectures
+and capture/replay addresses.</li>
+<li><strong><code>VkPhysicalDeviceLimits</code></strong>: Exposes
+parameters like <code>minStorageBufferOffsetAlignment</code>,
+<code>maxStorageBufferRange</code>, and <code>maxBufferSize</code>.</li>
+<li><strong><code>vkGetBufferDeviceAddress</code></strong>: Provides the
+64-bit address for an allocated <code>VkBuffer</code>, allowing the CPU
+to verify base alignment and size bounds before addresses are packed
+into uniforms or push constants.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

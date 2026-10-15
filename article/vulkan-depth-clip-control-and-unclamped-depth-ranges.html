@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Depth Clip Control and Unclamped Depth Ranges - vulkan</title>
+    <meta name="description" content="This article explores how Vulkan handles depth ranges without clamping by using the depth clip control mechanism. By default, Vulkan ties depth clipping directly to the frustum and viewport parameters, which can constrain depth manipulation or introduce u">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-depth-clip-control-and-unclamped-depth-ranges">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Depth Clip Control and Unclamped Depth Ranges - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-depth-clip-control-and-unclamped-depth-ranges" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explores how Vulkan handles depth ranges without clamping by using the depth clip control mechanism. By default, Vulkan ties depth clipping directly to the frustum and viewport parameters, which can constrain depth manipulation or introduce u" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-depth-clip-control-and-unclamped-depth-ranges">Vulkan
+Depth Clip Control and Unclamped Depth Ranges</h1>
+<p>This article explores how Vulkan handles depth ranges without
+clamping by using the depth clip control mechanism. By default, Vulkan
+ties depth clipping directly to the frustum and viewport parameters,
+which can constrain depth manipulation or introduce unintended clamping
+artifacts. Through extensions such as
+<code>VK_EXT_depth_clip_control</code> and
+<code>VK_EXT_depth_clip_enable</code>, developers can alter the clipping
+space, decouple depth clipping from depth clamping, and preserve
+unclamped floating-point depth values across the pipeline.</p>
+<h3 id="the-standard-vulkan-depth-pipeline">The Standard Vulkan Depth
+Pipeline</h3>
+<p>In standard Vulkan execution, the depth coordinate <span
+class="math inline">\(z_c\)</span> in clip space must fall within the
+range <span class="math inline">\(0 \le z_c \le w_c\)</span>. Primitives
+outside this volume are clipped prior to rasterization unless depth
+clamping is enabled via
+<code>VkPipelineRasterizationStateCreateInfo::depthClampEnable</code>.</p>
+<p>However, enabling <code>depthClampEnable</code> causes fragments that
+would otherwise fall outside the near and far planes to be clamped to
+the viewport's <code>minDepth</code> and <code>maxDepth</code> bounds
+(typically <span class="math inline">\([0.0, 1.0]\)</span>). While
+useful for shadow volume construction or certain stencil operations,
+this default behavior makes it impossible to preserve fragments with
+true, unclamped depth values outside the conventional near/far
+boundaries.</p>
+<h3
+id="modifying-the-clip-volume-with-vk_ext_depth_clip_control">Modifying
+the Clip Volume with <code>VK_EXT_depth_clip_control</code></h3>
+<p>The <code>VK_EXT_depth_clip_control</code> extension alters the
+fundamental clip-space boundaries before viewport transformation occurs.
+It introduces
+<code>VkPipelineViewportDepthClipControlCreateInfoEXT</code>, which can
+be chained to <code>VkPipelineViewportStateCreateInfo</code> to
+configure the <code>negativeOneToOne</code> parameter.</p>
+<p>When <code>negativeOneToOne</code> is enabled, the depth clip range
+changes from the default Vulkan volume (<span class="math inline">\([0,
+w_c]\)</span>) to the symmetric range:</p>
+<p><span class="math display">\[-w_c \le z_c \le w_c\]</span></p>
+<p>This directly manages depth ranges without clamping by expanding the
+valid mathematical space of the projection matrix. It accommodates
+pipelines ported from Direct3D or OpenGL without forcing intermediate
+shader conversions or artificially clamping geometry that relies on a
+wider mathematical range.</p>
+<h3 id="decoupling-clipping-from-clamping">Decoupling Clipping from
+Clamping</h3>
+<p>To truly process depth values without clamping, the pipeline must
+decouple clipping (discarding geometry beyond planes) from clamping
+(constraining depth values to <span class="math inline">\([minDepth,
+maxDepth]\)</span>).</p>
+<ol type="1">
+<li><strong>Clip Disable via
+<code>VK_EXT_depth_clip_enable</code></strong>: While
+<code>depthClampEnable</code> suppresses clipping, it forces clamping.
+Enabling <code>VK_EXT_depth_clip_enable</code> allows an application to
+set <code>depthClipEnable = VK_FALSE</code> independently. Fragments
+outside the near/far planes are not clipped, yet their actual fragment
+depth remains unclamped if using an unconstrained depth format.</li>
+<li><strong>Floating-Point Depth Buffers</strong>: When combined with
+32-bit floating-point depth formats (such as
+<code>VK_FORMAT_D32_SFLOAT</code>), Vulkan can write depth values less
+than <span class="math inline">\(0.0\)</span> or greater than <span
+class="math inline">\(1.0\)</span> if viewport depth clamping is
+bypassed. Depth clip control ensures that primitives extending beyond
+standard boundaries maintain their continuous mathematical values rather
+than flattening against the near or far limits.</li>
+</ol>
+<h3 id="preventing-depth-distortions-in-modern-techniques">Preventing
+Depth Distortions in Modern Techniques</h3>
+<p>Controlling depth clipping without clamping is critical for advanced
+rendering techniques:</p>
+<ul>
+<li><strong>Infinite Reverse-Z Projections</strong>: Reverse-Z
+techniques map the near plane to <span
+class="math inline">\(1.0\)</span> and an infinite far plane toward
+<span class="math inline">\(0.0\)</span>. Utilizing depth clip control
+ensures that precision near infinity is not compromised by premature
+near-plane clipping or unwanted clamping limits.</li>
+<li><strong>Cascaded Shadow Maps</strong>: Shadow passes frequently
+process geometry situated behind the light's near plane to prevent holes
+in cast shadows. Bypassing clipping without forcing fragments into a
+fixed clamp boundary preserves correct depth testing for self-shadowing
+geometry.</li>
+<li><strong>Seamless API Translation</strong>: Graphics translation
+layers (such as DXVK and vkd3d) require identical depth behavior to
+Direct3D, which natively supports unclamped depth calculations. Depth
+clip control allows Vulkan to replicate these ranges natively,
+eliminating precision degradation or costly emulation in shaders.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

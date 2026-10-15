@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Bindless Texture Hardware Feature Flags - vulkan</title>
+    <meta name="description" content="Deploying bindless texture architectures in Vulkan requires querying and enabling specific hardware feature flags introduced via the VKEXTdescriptorindexing extension, which is core in Vulkan 1.2 and later. Before bypassing traditional slot-based binding">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-bindless-texture-hardware-feature-flags">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Bindless Texture Hardware Feature Flags - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-bindless-texture-hardware-feature-flags" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Deploying bindless texture architectures in Vulkan requires querying and enabling specific hardware feature flags introduced via the VKEXTdescriptorindexing extension, which is core in Vulkan 1.2 and later. Before bypassing traditional slot-based binding" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-bindless-texture-hardware-feature-flags">Vulkan Bindless
+Texture Hardware Feature Flags</h1>
+<p>Deploying bindless texture architectures in Vulkan requires querying
+and enabling specific hardware feature flags introduced via the
+<code>VK_EXT_descriptor_indexing</code> extension, which is core in
+Vulkan 1.2 and later. Before bypassing traditional slot-based binding
+models in favor of large global descriptor arrays, an application must
+inspect <code>VkPhysicalDeviceDescriptorIndexingFeatures</code> (or
+<code>VkPhysicalDeviceVulkan12Features</code>) and corresponding limits
+to ensure the underlying GPU supports runtime descriptor indexing,
+dynamic non-uniform indexing, and post-bind updates.</p>
+<h3 id="essential-feature-flags-to-query">Essential Feature Flags to
+Query</h3>
+<p>To establish a standard bindless pipeline where shaders dynamically
+index into a massive array of textures, the following boolean flags must
+be queried and explicitly enabled in the physical device feature
+chain:</p>
+<ul>
+<li><strong><code>descriptorBindingPartiallyBound</code></strong>: In a
+bindless setup, descriptor arrays are typically allocated with a large
+maximum capacity, but not every slot is populated with a valid
+<code>VkImageView</code> or <code>VkSampler</code>. Enabling this flag
+informs the driver that unreferenced descriptors in an array can be left
+empty or unbound without triggering validation errors or undefined
+device behavior.</li>
+<li><strong><code>runtimeDescriptorArray</code></strong>: This flag
+enables shaders to declare descriptor arrays without specifying a fixed
+compile-time size (for example,
+<code>layout(binding = 0) uniform sampler2D textures[];</code>). Without
+this capability, the shading language cannot declare the dynamically
+sized tables required for bindless resource pools.</li>
+<li><strong><code>descriptorBindingSampledImageUpdateAfterBind</code></strong>:
+Standard Vulkan behavior requires all descriptors in a set to be written
+before the set is bound to a command buffer. For bindless workflows,
+textures often need to be streamed, allocated, or updated
+asynchronously. This flag allows descriptor sets to be modified even
+after they have been bound in a command buffer, provided the
+modification occurs before the draw call executes on the GPU.</li>
+<li><strong><code>shaderSampledImageArrayNonUniformIndexing</code></strong>:
+If multiple invocation threads within the same subgroup (warp or
+wavefront) index different textures from the same descriptor array,
+non-uniform execution occurs. This flag guarantees that the hardware can
+handle divergent resource access paths dynamically without generating
+artifacts or crashes.</li>
+<li><strong><code>descriptorBindingVariableDescriptorCount</code></strong>:
+While optional for basic bindless setups, this flag is critical for
+memory-efficient designs. It allows the final binding in a
+<code>VkDescriptorSetLayout</code> to possess a variable descriptor
+count determined at set allocation time, preventing the over-allocation
+of descriptor memory across different pipelines.</li>
+</ul>
+<h3 id="corresponding-limits-to-inspect">Corresponding Limits to
+Inspect</h3>
+<p>Enabling the boolean flags is only the first step; the application
+must also query
+<code>VkPhysicalDeviceDescriptorIndexingProperties</code> to determine
+the maximum array sizes supported by the hardware:</p>
+<ul>
+<li><strong><code>maxDescriptorSetUpdateAfterBindSampledImages</code></strong>:
+Defines the absolute maximum number of sampled images that can be
+contained within a descriptor set configured with the
+<code>VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT</code> flag.</li>
+<li><strong><code>maxPerStageDescriptorUpdateAfterBindSampledImages</code></strong>:
+Specifies how many update-after-bind sampled images can be accessed
+simultaneously by a single shader stage (such as the fragment
+stage).</li>
+</ul>
+<p>If any of the primary indexing flags return <code>VK_FALSE</code>, or
+if the queried limits fall below your target texture pool capacity, the
+application must fall back to traditional per-material descriptor
+binding or texture atlasing architectures.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

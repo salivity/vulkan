@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Dynamic States: Preventing Pipeline Explosion - vulkan</title>
+    <meta name="description" content="In the Vulkan graphics and compute API, monolithic Pipeline State Objects (PSOs) bake rendering configurations directly into immutable objects to maximize driver optimization, which historically risked a combinatorial &quot;pipeline explosion.&quot; Dynamic states">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-dynamic-states-preventing-pipeline-explosion">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Dynamic States: Preventing Pipeline Explosion - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-dynamic-states-preventing-pipeline-explosion" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In the Vulkan graphics and compute API, monolithic Pipeline State Objects (PSOs) bake rendering configurations directly into immutable objects to maximize driver optimization, which historically risked a combinatorial &quot;pipeline explosion.&quot; Dynamic states" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-dynamic-states-preventing-pipeline-explosion">Vulkan
+Dynamic States: Preventing Pipeline Explosion</h1>
+<p>In the Vulkan graphics and compute API, monolithic Pipeline State
+Objects (PSOs) bake rendering configurations directly into immutable
+objects to maximize driver optimization, which historically risked a
+combinatorial "pipeline explosion." Dynamic states address this
+fundamental architecture challenge by allowing developers to defer
+specific rendering parameters until command buffer recording. By
+designating volatile or frequently changing states as dynamic,
+developers drastically reduce the number of unique PSO permutations
+required, preventing memory bloat, long compilation times, and runtime
+hitching.</p>
+<h3 id="the-problem-of-pipeline-explosion">The Problem of Pipeline
+Explosion</h3>
+<p>In older APIs like OpenGL or DirectX 11, pipeline state was mutable
+and tracked across individual state calls, forcing drivers to resolve
+state validation and recompilations lazily at draw time. Vulkan
+eliminated this runtime overhead by introducing monolithic, immutable
+PSOs. A standard Vulkan graphics pipeline encapsulates almost the entire
+rendering state: vertex input, input assembly, shader stages, viewport
+and scissor configuration, rasterization, multisampling, depth and
+stencil testing, and color blending.</p>
+<p>Because these configurations are baked into the pipeline at creation
+time, even a minor variance in state traditionally required a distinct
+PSO. For example, if an engine utilizes 100 shader combinations, 4 blend
+states, 3 depth-test configurations, and varying viewport setups, the
+total number of pipelines quickly multiplies into thousands. This
+exponential growth in permutations is known as "pipeline explosion,"
+which leads to extreme shader compilation times, high memory
+consumption, and runtime micro-stuttering whenever an uncompiled
+pipeline is encountered.</p>
+<h3 id="how-dynamic-states-mitigate-state-proliferation">How Dynamic
+States Mitigate State Proliferation</h3>
+<p>Dynamic states alleviate pipeline explosion by selectively decoupling
+non-critical state from the immutable pipeline compilation process. When
+constructing a pipeline using <code>VkGraphicsPipelineCreateInfo</code>,
+developers populate <code>VkPipelineDynamicStateCreateInfo</code> with
+an array of <code>VkDynamicState</code> enums.</p>
+<p>By marking a state as dynamic, the pipeline ignores the hardcoded
+values provided in the pipeline creation structs for that feature.
+Instead, the actual values are set at runtime inside the command buffer
+using dedicated <code>vkCmdSet*</code> functions before executing a draw
+call.</p>
+<p>Common core dynamic states include:</p>
+<ul>
+<li><code>VK_DYNAMIC_STATE_VIEWPORT</code>: Modifies rendering bounds
+via <code>vkCmdSetViewport</code>.</li>
+<li><code>VK_DYNAMIC_STATE_SCISSOR</code>: Modifies scissor rectangles
+via <code>vkCmdSetScissor</code>.</li>
+<li><code>VK_DYNAMIC_STATE_LINE_WIDTH</code>: Controls rasterized line
+width via <code>vkCmdSetLineWidth</code>.</li>
+<li><code>VK_DYNAMIC_STATE_DEPTH_BIAS</code>: Configures polygon depth
+offsets via <code>vkCmdSetDepthBias</code>.</li>
+<li><code>VK_DYNAMIC_STATE_BLEND_CONSTANTS</code>: Updates dynamic RGBA
+blend factors via <code>vkCmdSetBlendConstants</code>.</li>
+</ul>
+<p>Without dynamic viewports and scissors, an application would need to
+recompile pipelines whenever a window is resized or when rendering to
+differently sized framebuffers. Dynamic states collapse all
+viewport-dependent permutations into a single PSO.</p>
+<h3 id="modern-expansions-extended-dynamic-state">Modern Expansions:
+Extended Dynamic State</h3>
+<p>While core Vulkan 1.0 supported basic dynamic states, pipeline
+explosion could still occur from rasterizer and blend permutations.
+Modern Vulkan addresses this through extended dynamic state features
+(such as <code>VK_EXT_extended_dynamic_state</code>,
+<code>VK_EXT_extended_dynamic_state2</code>, and core features in Vulkan
+1.3).</p>
+<p>These extensions enable dynamic control over states that previously
+required full pipeline rebuilds, such as:</p>
+<ul>
+<li>Cull mode and front-face orientation (<code>vkCmdSetCullMode</code>,
+<code>vkCmdSetFrontFace</code>)</li>
+<li>Primitive topology (<code>vkCmdSetPrimitiveTopology</code>)</li>
+<li>Depth testing, depth writing, and depth compare operations</li>
+<li>Stencil testing and write masks</li>
+<li>Rasterizer discard and primitive restart enables</li>
+</ul>
+<p>By moving these structural toggles out of the baked PSO and into
+dynamic command streams, the permutation matrix collapses further. A
+single pipeline can now accommodate multiple geometric draw
+configurations and depth-stencil modes.</p>
+<h3 id="performance-and-architectural-impact">Performance and
+Architectural Impact</h3>
+<p>The primary trade-off of dynamic states is a negligible GPU/CPU
+overhead at draw time compared to completely baked hardware state.
+However, modern GPU hardware rarely requires static compilation for
+parameters like cull modes, depth bias, or viewport rects. Modern
+drivers map these dynamic calls directly to lightweight hardware
+registers.</p>
+<p>The architectural advantages far outweigh any minor dispatch
+cost:</p>
+<ol type="1">
+<li><strong>Reduced Memory Footprint:</strong> Drastically fewer
+pipeline objects must be retained in host and device memory.</li>
+<li><strong>Faster Load Times:</strong> Compiling fewer unique pipelines
+reduces initial load sequences and eliminates background compilation
+strain.</li>
+<li><strong>Mitigated Shader Hitching:</strong> With fewer pipelines to
+maintain, pre-warming pipeline caches becomes feasible, preventing
+runtime frame drops.</li>
+</ol>
+<p>By utilizing dynamic states, Vulkan allows developers to preserve the
+performance benefits of monolithic PSOs for heavy, hardware-dependent
+work like shader code generation and render pass layout, while keeping
+light, operational configurations flexible enough to prevent
+combinatorial explosion.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

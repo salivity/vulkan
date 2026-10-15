@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Depth Clamping vs Clipping in Vulkan Shadow Maps - vulkan</title>
+    <meta name="description" content="In Vulkan shadow map generation, choosing between depth clipping and depth clamping fundamentally alters how geometry outside the view frustum is rasterized. While depth clipping discards primitives falling outside the near and far planes, depth clamping">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/depth-clamping-vs-clipping-in-vulkan-shadow-maps">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Depth Clamping vs Clipping in Vulkan Shadow Maps - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/depth-clamping-vs-clipping-in-vulkan-shadow-maps" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Vulkan shadow map generation, choosing between depth clipping and depth clamping fundamentally alters how geometry outside the view frustum is rasterized. While depth clipping discards primitives falling outside the near and far planes, depth clamping" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="depth-clamping-vs-clipping-in-vulkan-shadow-maps">Depth Clamping
+vs Clipping in Vulkan Shadow Maps</h1>
+<p>In Vulkan shadow map generation, choosing between depth clipping and
+depth clamping fundamentally alters how geometry outside the view
+frustum is rasterized. While depth clipping discards primitives falling
+outside the near and far planes, depth clamping retains these fragments
+and clamps their depth values to the zero-to-one range. This article
+explores the technical differences between these two approaches, how
+Vulkan’s normalized depth coordinates affect them, and why depth
+clamping is widely preferred to eliminate missing shadow artifacts
+caused by the light's near clipping plane.</p>
+<h3 id="vulkan-depth-space-fundamentals">Vulkan Depth Space
+Fundamentals</h3>
+<p>Vulkan uses a clip-space depth range of <span
+class="math inline">\([0.0, 1.0]\)</span>, contrasting with OpenGL's
+default <span class="math inline">\([-1.0, 1.0]\)</span>. In normalized
+device coordinates (NDC), a depth value of <span
+class="math inline">\(0.0\)</span> represents the near plane, while
+<span class="math inline">\(1.0\)</span> corresponds to the far
+plane.</p>
+<p>During rasterization, fragment depth is evaluated against this range.
+How the graphics pipeline handles primitives with <span
+class="math inline">\(z\)</span>-values outside <span
+class="math inline">\([0.0, 1.0]\)</span> is governed by the
+<code>depthClampEnable</code> field within
+<code>VkPipelineRasterizationStateCreateInfo</code>.</p>
+<h3 id="depth-clipping-explained">Depth Clipping Explained</h3>
+<p>By default, depth clipping is active when
+<code>depthClampEnable</code> is set to <code>VK_FALSE</code>.</p>
+<p>Under depth clipping:</p>
+<ul>
+<li>Any fragment with an NDC depth of <span class="math inline">\(z &lt;
+0.0\)</span> (closer than the near plane) or <span
+class="math inline">\(z &gt; 1.0\)</span> (farther than the far plane)
+is clipped and discarded by the fixed-function rasterizer.</li>
+<li>The discarded fragments never reach the fragment shader or the depth
+attachment.</li>
+</ul>
+<h4 id="impact-on-shadow-mapping">Impact on Shadow Mapping</h4>
+<p>Depth clipping creates significant issues during shadow map
+rendering, particularly around the light's near plane. If a
+shadow-casting object (occluder) is positioned between the light source
+and the light's near plane, or if it intersects the near plane, the
+portion of the object in front of the near plane is discarded.</p>
+<p>As a result, that portion of the object is never written into the
+shadow map. When the scene is later rendered from the camera's
+perspective, the shadow suddenly disappears or develops large holes
+where the occluder crossed the light's near boundary. This visual
+artifact is commonly referred to as "shadow detachment" or near-plane
+popping.</p>
+<h3 id="depth-clamping-zero-to-one-explained">Depth Clamping
+(Zero-to-One) Explained</h3>
+<p>Depth clamping is enabled by setting <code>depthClampEnable</code> to
+<code>VK_TRUE</code>. This requires enabling the <code>depthClamp</code>
+feature on the physical device
+(<code>VkPhysicalDeviceFeatures::depthClamp</code>).</p>
+<p>Under depth clamping:</p>
+<ul>
+<li>Primitives outside the clip volume are not culled by the near and
+far planes.</li>
+<li>Instead, fragments that would otherwise have an NDC depth <span
+class="math inline">\(z &lt; 0.0\)</span> are clamped to <span
+class="math inline">\(0.0\)</span>.</li>
+<li>Fragments that have an NDC depth <span class="math inline">\(z &gt;
+1.0\)</span> are clamped to <span
+class="math inline">\(1.0\)</span>.</li>
+<li>The rasterizer processes these fragments, and the clamped depth
+values (<span class="math inline">\(0.0\)</span> or <span
+class="math inline">\(1.0\)</span>) are written to the depth
+buffer.</li>
+</ul>
+<h4 id="impact-on-shadow-mapping-1">Impact on Shadow Mapping</h4>
+<p>For shadow mapping, clamping to <span
+class="math inline">\(0.0\)</span> ensures that geometry positioned in
+front of the light's near plane still writes into the shadow map at the
+minimum depth value (<span class="math inline">\(0.0\)</span>).</p>
+<p>When the main scene pass samples the shadow map:</p>
+<ol type="1">
+<li>The receiver fragment depth (from the light’s perspective) will
+almost always be greater than <span
+class="math inline">\(0.0\)</span>.</li>
+<li>The occluder fragment clamped at <span
+class="math inline">\(0.0\)</span> will pass the shadow comparison test
+(<span class="math inline">\(z_{receiver} &gt;
+z_{shadowmap}\)</span>).</li>
+<li>The occluder successfully casts its shadow onto visible surfaces,
+completely preventing near-plane clipping artifacts.</li>
+</ol>
+<h3 id="key-differences-and-considerations">Key Differences and
+Considerations</h3>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Feature</th>
+<th style="text-align: left;">Depth Clipping
+(<code>VK_FALSE</code>)</th>
+<th style="text-align: left;">Depth Clamping (<code>VK_TRUE</code>)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>Out-of-Bounds
+Fragments</strong></td>
+<td style="text-align: left;">Discarded entirely</td>
+<td style="text-align: left;">Retained, depth clamped to <span
+class="math inline">\([0.0, 1.0]\)</span></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Near-Plane Behavior</strong></td>
+<td style="text-align: left;">Occluders cut off, causing holes in
+shadows</td>
+<td style="text-align: left;">Occluders projected to <span
+class="math inline">\(0.0\)</span>, preserving shadows</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Hardware Requirement</strong></td>
+<td style="text-align: left;">Core Vulkan baseline</td>
+<td style="text-align: left;">Requires the <code>depthClamp</code>
+device feature</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Common Artifact</strong></td>
+<td style="text-align: left;">Missing shadows when objects near the
+light source</td>
+<td style="text-align: left;">Potential "false" shadows from geometry
+behind the light</td>
+</tr>
+</tbody>
+</table>
+<h4 id="managing-geometry-behind-the-light">Managing Geometry Behind the
+Light</h4>
+<p>While depth clamping solves the near-plane problem, it can introduce
+artifacts if geometry physically located <em>behind</em> a point or spot
+light source is rendered. Because depth clamping treats <span
+class="math inline">\(z &lt; 0.0\)</span> as <span
+class="math inline">\(0.0\)</span>, geometry behind the light can
+project onto the shadow map and cast unintended shadows forward.</p>
+<p>To prevent this when using depth clamping:</p>
+<ul>
+<li>Tighten the light's projection frustum using culling before
+submission.</li>
+<li>In directional lighting or Cascaded Shadow Maps (CSM), position the
+near plane conservatively behind all potential occluders, or discard
+fragments in the vertex/fragment shader if their view-space <span
+class="math inline">\(z\)</span> is strictly behind the light
+position.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Supported Filter Modes in Vulkan vkCmdBlitImage - vulkan</title>
+    <meta name="description" content="When transferring and scaling pixel data between images in Vulkan using the vkCmdBlitImage command, developers must specify a VkFilter mode to control how texels are sampled and interpolated during scaling. This article details the filter modes supported">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/supported-filter-modes-in-vulkan-vk-cmd-blit-image">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Supported Filter Modes in Vulkan vkCmdBlitImage - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/supported-filter-modes-in-vulkan-vk-cmd-blit-image" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="When transferring and scaling pixel data between images in Vulkan using the vkCmdBlitImage command, developers must specify a VkFilter mode to control how texels are sampled and interpolated during scaling. This article details the filter modes supported" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="supported-filter-modes-in-vulkan-vkcmdblitimage">Supported
+Filter Modes in Vulkan vkCmdBlitImage</h1>
+<p>When transferring and scaling pixel data between images in Vulkan
+using the <code>vkCmdBlitImage</code> command, developers must specify a
+<code>VkFilter</code> mode to control how texels are sampled and
+interpolated during scaling. This article details the filter modes
+supported by <code>vkCmdBlitImage</code>, the differences in how they
+sample data, and the hardware capability checks required to use them
+properly.</p>
+<h3 id="supported-filter-modes">Supported Filter Modes</h3>
+<p>The <code>vkCmdBlitImage</code> function accepts a
+<code>VkFilter</code> parameter that dictates the reconstruction filter
+applied when the source and destination regions differ in size. Vulkan
+supports the following filter modes:</p>
+<ul>
+<li><strong><code>VK_FILTER_NEAREST</code></strong>: Selects the single
+texel closest to the integer coordinates of the source region. This mode
+does not perform interpolation, resulting in sharp, pixelated edges when
+scaling up, but it is computationally inexpensive and widely compatible
+across all formats that support blitting.</li>
+<li><strong><code>VK_FILTER_LINEAR</code></strong>: Computes a weighted
+average of the texels surrounding the sample point using linear
+interpolation (bilinear for 2D images, trilinear for 3D images). This
+produces smoother transitions when scaling, making it ideal for standard
+color image resampling.</li>
+<li><strong><code>VK_FILTER_CUBIC_EXT</code> (or
+<code>VK_FILTER_CUBIC_IMG</code>)</strong>: Implements higher-order
+bicubic filtering over an expanded neighborhood of texels. This mode
+offers superior edge preservation and sharpness compared to linear
+filtering. It is introduced via extensions such as
+<code>VK_EXT_filter_cubic</code> and is not part of the baseline core
+specification.</li>
+</ul>
+<h3 id="format-and-feature-requirements">Format and Feature
+Requirements</h3>
+<p>Not all filter modes can be used with every image format or hardware
+configuration. Before issuing a blit command, the application must query
+device capabilities using
+<code>vkGetPhysicalDeviceFormatProperties</code>:</p>
+<ol type="1">
+<li><strong>Blit Support</strong>: The source format must include
+<code>VK_FORMAT_FEATURE_BLIT_SRC_BIT</code>, and the destination format
+must include <code>VK_FORMAT_FEATURE_BLIT_DST_BIT</code> in their format
+feature flags.</li>
+<li><strong>Linear Filtering</strong>: To use
+<code>VK_FILTER_LINEAR</code>, the source image format must also support
+linear filtering, verified by the presence of
+<code>VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT</code>.</li>
+<li><strong>Cubic Filtering</strong>: Using
+<code>VK_FILTER_CUBIC_EXT</code> requires device extension support and
+the format feature flag
+<code>VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_CUBIC_BIT_EXT</code> on the
+source image format.</li>
+</ol>
+<h3 id="format-restrictions">Format Restrictions</h3>
+<p>Vulkan enforces strict limitations on filter modes based on the
+underlying format type:</p>
+<ul>
+<li><strong>Integer Formats</strong>: If the source format contains
+unsigned or signed integer components (such as
+<code>VK_FORMAT_R8G8B8A8_UINT</code> or
+<code>VK_FORMAT_R32G32_SINT</code>), the filter mode
+<strong>must</strong> be set to <code>VK_FILTER_NEAREST</code>. Linear
+or cubic filtering on integer formats is invalid.</li>
+<li><strong>Depth/Stencil Formats</strong>: Blits involving depth and
+stencil aspects are generally restricted to
+<code>VK_FILTER_NEAREST</code>, depending on implementation-specific
+support, because interpolating non-color data often results in invalid
+depth or stencil references.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

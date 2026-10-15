@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan GPU Pointers in Compute Shader Linked Lists - vulkan</title>
+    <meta name="description" content="In modern GPU computing, managing dynamic data structures such as linked lists has traditionally required indexing schemes within Shader Storage Buffer Objects (SSBOs). With the introduction of Vulkan&#39;s buffer device address feature, developers can utiliz">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-gpu-pointers-in-compute-shader-linked-lists">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan GPU Pointers in Compute Shader Linked Lists - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-gpu-pointers-in-compute-shader-linked-lists" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In modern GPU computing, managing dynamic data structures such as linked lists has traditionally required indexing schemes within Shader Storage Buffer Objects (SSBOs). With the introduction of Vulkan&#39;s buffer device address feature, developers can utiliz" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-gpu-pointers-in-compute-shader-linked-lists">Vulkan GPU
+Pointers in Compute Shader Linked Lists</h1>
+<p>In modern GPU computing, managing dynamic data structures such as
+linked lists has traditionally required indexing schemes within Shader
+Storage Buffer Objects (SSBOs). With the introduction of Vulkan's buffer
+device address feature, developers can utilize raw 64-bit GPU pointers
+directly within compute shaders. This article explores how GPU pointers
+eliminate addressing overhead, reduce register pressure, bypass
+descriptor constraints, and significantly accelerate linked list
+traversal during compute workloads.</p>
+<h3 id="the-limitation-of-index-based-traversal">The Limitation of
+Index-Based Traversal</h3>
+<p>Historically, linked lists on the GPU rely on simulated pointers:
+integer indices referencing slots within an SSBO. In this model,
+traversing a linked list requires the compute shader to compute the
+physical memory location of a node at runtime using a base address and
+an offset formula:</p>
+<p><span class="math display">\[\text{Target Address} = \text{Buffer
+Base Address} + (\text{Node Index} \times \text{Node
+Stride})\]</span></p>
+<p>This approach incurs multiple execution bottlenecks:</p>
+<ul>
+<li><strong>Redundant ALU Operations:</strong> Each traversal step
+requires integer multiplication and addition to resolve the byte offset
+before issuing the memory load instruction.</li>
+<li><strong>Buffer Boundary Constraints:</strong> All linked list nodes
+must generally reside within a single contiguous buffer allocation, or
+complex logic must be written to handle partitioning across multiple
+descriptors.</li>
+<li><strong>Descriptor Overhead:</strong> Accessing nodes via
+descriptors requires binding management and consumes GPU descriptor
+registers, which can throttle shader occupancy.</li>
+</ul>
+<h3 id="direct-address-dereferencing-with-buffer-device-address">Direct
+Address Dereferencing with Buffer Device Address</h3>
+<p>The <code>VK_KHR_buffer_device_address</code> extension (promoted to
+core in Vulkan 1.2) allows shaders to query and consume 64-bit GPU
+virtual addresses directly. Used in tandem with the GLSL extension
+<code>GL_EXT_buffer_reference</code>, structures can declare member
+pointers that point directly to other structures.</p>
+<p>In a linked list implementation, each node contains a 64-bit pointer
+pointing directly to the memory address of the next node:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span>buffer_reference<span class="op">,</span> <span class="dt">std430</span><span class="op">)</span> <span class="kw">buffer</span> Node<span class="op">;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span>buffer_reference<span class="op">,</span> <span class="dt">std430</span><span class="op">)</span> <span class="kw">buffer</span> Node <span class="op">{</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint</span> data<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    Node next<span class="op">;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
+<p>When dereferencing <code>node.next</code>, the GPU avoids calculating
+offsets relative to a descriptor base. Instead, it issues a direct
+memory load using the retrieved 64-bit address, mimicking standard
+pointer chasing in CPU C/C++ applications.</p>
+<h3
+id="elimination-of-address-arithmetic-and-latency-reduction">Elimination
+of Address Arithmetic and Latency Reduction</h3>
+<p>Traversing a linked list is a latency-bound operation; each iteration
+depends strictly on the arrival of the pointer load from the previous
+iteration. By eliminating the index-to-address scaling operations, GPU
+pointers cut down the instruction dependency chain in the inner
+traversal loop.</p>
+<p>Because the GPU's execution units do not have to perform index
+multiplication and boundary checking before memory fetches, the time
+between a node being read and the next fetch being issued is minimized.
+This tight dependency loop is critical for mitigating memory pipeline
+stalls.</p>
+<h3 id="reduced-register-pressure-and-improved-occupancy">Reduced
+Register Pressure and Improved Occupancy</h3>
+<p>When using conventional descriptor-backed buffers, the GPU must track
+descriptor state, buffer sizes, and base addresses throughout the
+lifetime of the traversal loop. This retention increases scalar and
+vector register pressure.</p>
+<p>GPU pointers are stored and manipulated as plain 64-bit integers. As
+a result:</p>
+<ul>
+<li>The compiler can pack addresses into standard general-purpose
+registers without reserving special descriptor-handling registers.</li>
+<li>Lower register pressure directly enables higher warp/wavefront
+occupancy on the compute units, allowing the GPU to hide memory latency
+more effectively across concurrent threads.</li>
+</ul>
+<h3 id="cross-buffer-traversals-and-heterogeneous-memory">Cross-Buffer
+Traversals and Heterogeneous Memory</h3>
+<p>Index-based approaches fail when data structures span multiple memory
+allocations, requiring indirection tables or complex paging systems. GPU
+pointers use the entire 64-bit virtual address space mapped by the
+Vulkan driver.</p>
+<p>Nodes belonging to the same logical linked list can reside in
+entirely separate <code>VkBuffer</code> objects or even different memory
+types (such as host-visible memory and high-bandwidth device-local
+memory). The traversal shader executes identically regardless of where
+the memory allocation resides, simplifying dynamic memory managers and
+custom GPU allocators.</p>
+<h3 id="memory-alignment-and-cache-behavior">Memory Alignment and Cache
+Behavior</h3>
+<p>GPU memory hierarchies favor coalesced, uniform access patterns.
+Linked lists inherently produce non-coalesced, divergent memory accesses
+across execution threads. While GPU pointers do not automatically fix
+divergence, they provide control over alignment via the
+<code>buffer_reference_align</code> layout qualifier.</p>
+<p>Specifying explicit memory alignment matching the GPU's cache line
+interfaces (e.g., 16, 32, or 64 bytes) ensures that dereferenced
+pointers do not cross cache lines unnecessarily. Combined with direct
+address loading, this control yields more predictable cache hit rates
+and minimizes wasted memory bus bandwidth during deep pointer-chasing
+operations.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

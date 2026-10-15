@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Ray Queries: Inline Ray Tracing in Compute Shaders - vulkan</title>
+    <meta name="description" content="This article provides an overview of Vulkan ray queries and explains how they enable developers to perform inline ray tracing directly inside compute shaders. It explores the core differences between dedicated ray tracing pipelines and ray queries, breaks">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-ray-queries-inline-ray-tracing-in-compute-shaders">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Ray Queries: Inline Ray Tracing in Compute Shaders - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-ray-queries-inline-ray-tracing-in-compute-shaders" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article provides an overview of Vulkan ray queries and explains how they enable developers to perform inline ray tracing directly inside compute shaders. It explores the core differences between dedicated ray tracing pipelines and ray queries, breaks" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-ray-queries-inline-ray-tracing-in-compute-shaders">Vulkan
+Ray Queries: Inline Ray Tracing in Compute Shaders</h1>
+<p>This article provides an overview of Vulkan ray queries and explains
+how they enable developers to perform inline ray tracing directly inside
+compute shaders. It explores the core differences between dedicated ray
+tracing pipelines and ray queries, breaks down the inline traversal
+execution model, and highlights practical use cases where ray queries
+offer optimal performance and integration simplicity.</p>
+<h3 id="understanding-ray-queries-in-vulkan">Understanding Ray Queries
+in Vulkan</h3>
+<p>In the Vulkan API, hardware-accelerated ray tracing is exposed
+primarily through two mechanisms introduced in the KHR ray tracing
+extensions: ray tracing pipelines
+(<code>VK_KHR_ray_tracing_pipeline</code>) and ray queries
+(<code>VK_KHR_ray_query</code>). While ray tracing pipelines introduce a
+complete pipeline architecture with dedicated shader stages (ray
+generation, closest hit, any-hit, and miss shaders), ray queries provide
+a lightweight alternative.</p>
+<p>Ray queries allow developers to initiate ray traversal directly from
+within existing shader stages, such as compute or fragment shaders. This
+mechanism is referred to as "inline ray tracing" because the ray
+traversal logic is embedded straight into standard shader code without
+requiring dedicated ray tracing pipelines, shader binding tables (SBTs),
+or pipeline switches.</p>
+<h3 id="how-inline-ray-tracing-operates-in-compute-shaders">How Inline
+Ray Tracing Operates in Compute Shaders</h3>
+<p>To utilize ray queries within a compute shader, the application
+enables the <code>VK_KHR_ray_query</code> device extension and includes
+the corresponding shading language extension, such as
+<code>GL_EXT_ray_query</code> in GLSL.</p>
+<p>The execution process in a compute shader revolves around a dedicated
+query object and follows a distinct control flow:</p>
+<ol type="1">
+<li><strong>Acceleration Structure Binding:</strong> The compute
+pipeline binds the top-level acceleration structure (TLAS) as an
+acceleration structure descriptor set, making the scene geometry
+accessible to the shader.</li>
+<li><strong>Object Declaration:</strong> The shader instantiates a
+<code>rayQueryEXT</code> object, which encapsulates the internal state
+of the ray traversal.</li>
+<li><strong>Initialization:</strong> The shader calls
+<code>rayQueryInitializeEXT()</code>. This function takes the TLAS, ray
+flags (such as cull masks or flags for terminating on first hit), the
+ray origin, minimum and maximum traversal distances, and the ray
+direction vector.</li>
+<li><strong>Traversal Loop:</strong> Traversal is driven manually via a
+loop using <code>rayQueryProceedEXT()</code>. This function executes the
+hardware traversal through the bounding volume hierarchy (BVH) and
+returns a boolean indicating whether the traversal is ongoing or
+complete.</li>
+<li><strong>Intersection Handling:</strong> During traversal, the shader
+can inspect candidate intersections (such as custom intersection logic
+for procedural geometry or alpha-tested geometry) and confirm or ignore
+them using <code>rayQueryConfirmIntersectionEXT()</code>.</li>
+<li><strong>Result Evaluation:</strong> Once
+<code>rayQueryProceedEXT()</code> returns <code>false</code>, the
+traversal finishes. The shader queries the final result using functions
+like <code>rayQueryGetIntersectionTypeEXT()</code> to determine if a
+geometry hit occurred, and accesses hit properties such as barycentric
+coordinates, instance IDs, and hit distances.</li>
+</ol>
+<h3 id="advantages-of-ray-queries-over-dedicated-pipelines">Advantages
+of Ray Queries over Dedicated Pipelines</h3>
+<p>Using ray queries inside compute shaders provides several
+architectural advantages:</p>
+<ul>
+<li><strong>Minimal Pipeline Overhead:</strong> Ray queries bypass the
+complex setup of shader binding tables and ray tracing pipeline layout
+objects. They run inside standard <code>VkComputePipeline</code>
+dispatches.</li>
+<li><strong>Coherence and Control:</strong> In a ray tracing pipeline,
+dynamic dispatch across various hit and miss shaders can introduce
+execution divergence. With ray queries, the control flow remains
+entirely inside the compute shader, allowing the compiler and developer
+to manage register allocation and divergence more strictly.</li>
+<li><strong>Seamless Hybrid Rendering:</strong> Compute-based
+post-processing passes can easily integrate ray-traced effects. A single
+compute pass can evaluate screen-space data and conditionally trace
+shadow, ambient occlusion, or reflection rays only for pixels that fail
+screen-space checks.</li>
+</ul>
+<p>Ray queries provide Vulkan developers with a flexible, low-overhead
+method to integrate hardware-accelerated visibility, collision, and
+lighting tests directly into compute workloads.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

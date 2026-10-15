@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Compute Read-After-Write Synchronization - vulkan</title>
+    <meta name="description" content="To safely execute read-after-write (RAW) operations across consecutive compute shader dispatches in Vulkan, applications must explicitly define both an execution dependency and a memory dependency using a pipeline barrier. Without explicit synchronization">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-compute-read-after-write-synchronization">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Compute Read-After-Write Synchronization - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-compute-read-after-write-synchronization" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="To safely execute read-after-write (RAW) operations across consecutive compute shader dispatches in Vulkan, applications must explicitly define both an execution dependency and a memory dependency using a pipeline barrier. Without explicit synchronization" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-compute-read-after-write-synchronization">Vulkan Compute
+Read-After-Write Synchronization</h1>
+<p>To safely execute read-after-write (RAW) operations across
+consecutive compute shader dispatches in Vulkan, applications must
+explicitly define both an execution dependency and a memory dependency
+using a pipeline barrier. Without explicit synchronization, the GPU may
+overlap compute dispatches or fail to flush write caches, resulting in
+data hazards. This article covers how to configure execution stages,
+establish memory access masks, and issue pipeline barriers to ensure
+that written buffer or storage image data is fully available and visible
+to subsequent reads.</p>
+<h2 id="understanding-the-raw-hazard-in-vulkan">Understanding the RAW
+Hazard in Vulkan</h2>
+<p>Vulkan follows an explicit execution and memory model. Commands
+submitted to a queue—such as sequential <code>vkCmdDispatch</code>
+calls—do not inherently wait for previous commands to complete, nor do
+they automatically invalidate or flush GPU caches.</p>
+<p>If Dispatch A writes to a resource (such as a Storage Buffer or
+Storage Image) and Dispatch B reads from that same resource, a
+read-after-write hazard occurs. To prevent Dispatch B from reading stale
+or partially written data, the application must insert a pipeline
+barrier using <code>vkCmdPipelineBarrier</code> or the modernized
+<code>vkCmdPipelineBarrier2</code> between the two dispatch calls.</p>
+<h2 id="establishing-execution-and-memory-dependencies">Establishing
+Execution and Memory Dependencies</h2>
+<p>A pipeline barrier resolves data hazards by establishing two
+guarantees:</p>
+<ol type="1">
+<li><strong>Execution Dependency:</strong> Guarantees that execution of
+the first dispatch reaches a specified stage before the subsequent
+dispatch begins its execution stage.</li>
+<li><strong>Memory Dependency:</strong> Guarantees that memory writes
+produced by the first dispatch are made <em>available</em> (flushed from
+local caches), and then made <em>visible</em> (invalidated in target
+caches) so that the subsequent dispatch can observe the new data.</li>
+</ol>
+<p>For a compute-to-compute dependency, both the source and destination
+execution stages are the compute shader stage.</p>
+<h2 id="synchronizing-storage-buffers">Synchronizing Storage
+Buffers</h2>
+<p>When dealing with SSBOs (Shader Storage Buffer Objects), an
+application inserts a buffer memory barrier into the command buffer
+between the dispatches.</p>
+<p>Using standard Vulkan 1.0 synchronization:</p>
+<ul>
+<li><strong>Source Stage (<code>srcStageMask</code>):</strong>
+<code>VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT</code></li>
+<li><strong>Destination Stage (<code>dstStageMask</code>):</strong>
+<code>VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT</code></li>
+<li><strong>Source Access Mask (<code>srcAccessMask</code>):</strong>
+<code>VK_ACCESS_SHADER_WRITE_BIT</code></li>
+<li><strong>Destination Access Mask
+(<code>dstAccessMask</code>):</strong>
+<code>VK_ACCESS_SHADER_READ_BIT</code></li>
+</ul>
+<p>The <code>VkBufferMemoryBarrier</code> must specify the target
+<code>VkBuffer</code>, the affected <code>offset</code>, and the
+<code>size</code>. When recorded between the two
+<code>vkCmdDispatch</code> commands, this barrier forces the GPU to
+finish all shader writes from Dispatch A and flush the relevant L1/L2
+caches before Dispatch B executes its shader reads.</p>
+<h2 id="synchronizing-storage-images">Synchronizing Storage Images</h2>
+<p>When Dispatch A writes to a storage image and Dispatch B reads from
+it (either as a storage image or as a sampled texture), a
+<code>VkImageMemoryBarrier</code> is required instead of a buffer
+barrier.</p>
+<p>In addition to specifying <code>srcAccessMask</code> and
+<code>dstAccessMask</code>:</p>
+<ul>
+<li>If Dispatch B continues reading the resource as an image with
+<code>imageStore</code>/<code>imageLoad</code>, keep
+<code>oldLayout</code> and <code>newLayout</code> set to
+<code>VK_IMAGE_LAYOUT_GENERAL</code>.</li>
+<li>If Dispatch B reads the resource as a sampled texture via a texture
+sampler, use the barrier to transition <code>oldLayout</code> from
+<code>VK_IMAGE_LAYOUT_GENERAL</code> to
+<code>newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL</code>. The
+<code>dstAccessMask</code> should then be
+<code>VK_ACCESS_SHADER_READ_BIT</code>.</li>
+</ul>
+<h2 id="using-synchronization2-vulkan-13">Using Synchronization2 (Vulkan
+1.3+)</h2>
+<p>Core Vulkan 1.3 and the <code>VK_KHR_synchronization2</code>
+extension introduce <code>vkCmdPipelineBarrier2</code>, which clarifies
+access flags and avoids ambiguity. The modern equivalent configuration
+uses <code>VkMemoryBarrier2</code>:</p>
+<ul>
+<li><strong><code>srcStageMask</code>:</strong>
+<code>VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT</code></li>
+<li><strong><code>srcAccessMask</code>:</strong>
+<code>VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT</code></li>
+<li><strong><code>dstStageMask</code>:</strong>
+<code>VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT</code></li>
+<li><strong><code>dstAccessMask</code>:</strong>
+<code>VK_ACCESS_2_SHADER_STORAGE_READ_BIT</code></li>
+</ul>
+<p>If the read dispatch requires sampled image access, change
+<code>dstAccessMask</code> to
+<code>VK_ACCESS_2_SHADER_SAMPLED_READ_BIT</code>.</p>
+<h2 id="best-practices">Best Practices</h2>
+<ul>
+<li><strong>Scope Barriers Accurately:</strong> Avoid using global
+memory barriers with <code>VK_ACCESS_MEMORY_WRITE_BIT</code> and
+<code>VK_ACCESS_MEMORY_READ_BIT</code> unless the dependency truly spans
+all active allocations. Targeted buffer or image barriers avoid
+unnecessary cache flushes.</li>
+<li><strong>Batch Barriers:</strong> If multiple resources need
+synchronization between dispatches, submit them in a single
+<code>vkCmdPipelineBarrier</code> call instead of issuing multiple
+barrier commands sequentially.</li>
+<li><strong>Queue Families:</strong> Ensure both compute dispatches are
+submitted to the same queue family. If transferring between distinct
+queue families (such as an asynchronous compute queue to a graphics
+queue), the barrier must explicitly define an ownership transfer using
+<code>srcQueueFamilyIndex</code> and
+<code>dstQueueFamilyIndex</code>.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

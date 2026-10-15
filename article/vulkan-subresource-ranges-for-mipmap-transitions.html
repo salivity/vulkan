@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Subresource Ranges for Mipmap Transitions - vulkan</title>
+    <meta name="description" content="In the Vulkan API, VkImageSubresourceRange within a VkImageMemoryBarrier defines the exact subset of an image—specifically mip levels and array layers—subject to execution dependencies and layout transitions. When transitioning specific mipmap levels, sub">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-subresource-ranges-for-mipmap-transitions">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Subresource Ranges for Mipmap Transitions - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-subresource-ranges-for-mipmap-transitions" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In the Vulkan API, VkImageSubresourceRange within a VkImageMemoryBarrier defines the exact subset of an image—specifically mip levels and array layers—subject to execution dependencies and layout transitions. When transitioning specific mipmap levels, sub" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-subresource-ranges-for-mipmap-transitions">Vulkan
+Subresource Ranges for Mipmap Transitions</h1>
+<p>In the Vulkan API, <code>VkImageSubresourceRange</code> within a
+<code>VkImageMemoryBarrier</code> defines the exact subset of an
+image—specifically mip levels and array layers—subject to execution
+dependencies and layout transitions. When transitioning specific mipmap
+levels, subresource ranges allow developers to isolate individual levels
+within the mip chain rather than forcing the entire image into a uniform
+state. This fine-grained control is vital for workflows such as runtime
+mipmap generation, where adjacent mip levels must simultaneously exist
+in different memory layouts and access states without causing
+synchronization stalls across the entire resource.</p>
+<h3 id="the-role-of-subresource-ranges-in-image-barriers">The Role of
+Subresource Ranges in Image Barriers</h3>
+<p>A Vulkan image is not always accessed as a single, monolithic block
+of memory. It often consists of multiple array layers and a chain of
+progressively downsampled mipmap levels. When you submit a
+<code>VkImageMemoryBarrier</code>, the driver must know both the
+synchronization scope (pipeline stages and access masks) and the memory
+layout requirements (<code>oldLayout</code> to
+<code>newLayout</code>).</p>
+<p>The <code>subresourceRange</code> member, typed as
+<code>VkImageSubresourceRange</code>, parameterizes this operation
+through four key fields:</p>
+<ul>
+<li><code>aspectMask</code>: Identifies color, depth, or stencil
+data.</li>
+<li><code>baseMipLevel</code>: The first mipmap level targeted by the
+barrier.</li>
+<li><code>levelCount</code>: The number of consecutive mipmap levels to
+transition.</li>
+<li><code>baseArrayLayer</code> and <code>layerCount</code>: The
+targeted array slices.</li>
+</ul>
+<p>By adjusting <code>baseMipLevel</code> and <code>levelCount</code>,
+you apply transitions to exact slices of the mip chain while leaving
+other levels untouched.</p>
+<h3 id="enabling-runtime-mipmap-generation">Enabling Runtime Mipmap
+Generation</h3>
+<p>The primary use case for isolating mip levels via subresource ranges
+is iterative downsampling (mipmap generation) on the GPU using
+<code>vkCmdBlitImage</code>.</p>
+<p>During this process:</p>
+<ol type="1">
+<li><strong>Level <span class="math inline">\(i - 1\)</span></strong>
+acts as the source and must be in
+<code>VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL</code>.</li>
+<li><strong>Level <span class="math inline">\(i\)</span></strong> acts
+as the destination and must be in
+<code>VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL</code>.</li>
+</ol>
+<p>Because an image cannot exist in two conflicting global layouts at
+once, transitioning the whole image would cause invalid state
+transitions or memory hazards. Subresource ranges solve this by allowing
+a sequential loop:</p>
+<ul>
+<li>Transition level <span class="math inline">\(i - 1\)</span> to
+<code>TRANSFER_SRC_OPTIMAL</code> (<code>baseMipLevel = i - 1</code>,
+<code>levelCount = 1</code>).</li>
+<li>Transition level <span class="math inline">\(i\)</span> to
+<code>TRANSFER_DST_OPTIMAL</code> (<code>baseMipLevel = i</code>,
+<code>levelCount = 1</code>).</li>
+<li>Execute the blit from level <span class="math inline">\(i -
+1\)</span> to level <span class="math inline">\(i\)</span>.</li>
+<li>Transition level <span class="math inline">\(i - 1\)</span> to
+<code>SHADER_READ_ONLY_OPTIMAL</code> so it is ready for sampling once
+generation completes.</li>
+</ul>
+<p>This loop repeats down the chain until all levels are downsampled and
+transitioned to their final read layout.</p>
+<h3 id="eliminating-pipeline-stalls-and-overhead">Eliminating Pipeline
+Stalls and Overhead</h3>
+<p>Applying barriers to an entire image when only a single mip level
+requires an update creates false dependencies. If compute shaders are
+writing to mip level 0 while a background task samples from
+lower-resolution levels (such as in progressive texture streaming),
+transitioning the entire image forces execution stalls and invalidates
+GPU caches across all mip levels.</p>
+<p>Targeting only the necessary mip levels through
+<code>subresourceRange</code>:</p>
+<ul>
+<li><strong>Restricts Cache Invalidation:</strong> Restricts cache
+flushing or invalidation flags solely to the modified memory range,
+reducing memory bus traffic.</li>
+<li><strong>Allows Asynchronous Overlap:</strong> Permits independent
+read or write operations on non-overlapping mip levels across distinct
+queues or command buffers without triggering synchronization
+hazards.</li>
+<li><strong>Prevents Undefined Values:</strong> Guarantees that
+untouched mip levels retain their existing contents and layout,
+preventing driver-induced data corruption that can occur when an entire
+image is unintentionally transitioned.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

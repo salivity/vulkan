@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Dedicated Memory Allocations for Render Targets - vulkan</title>
+    <meta name="description" content="In Vulkan, graphics drivers often indicate a strong preference or strict requirement for dedicated memory allocations when creating render target images. This article explains the architectural reasons behind this design, focusing on hardware-specific los">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-dedicated-memory-allocations-for-render-targets">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Dedicated Memory Allocations for Render Targets - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-dedicated-memory-allocations-for-render-targets" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Vulkan, graphics drivers often indicate a strong preference or strict requirement for dedicated memory allocations when creating render target images. This article explains the architectural reasons behind this design, focusing on hardware-specific los" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-dedicated-memory-allocations-for-render-targets">Vulkan
+Dedicated Memory Allocations for Render Targets</h1>
+<p>In Vulkan, graphics drivers often indicate a strong preference or
+strict requirement for dedicated memory allocations when creating render
+target images. This article explains the architectural reasons behind
+this design, focusing on hardware-specific lossless compression, strict
+tiling and alignment demands, virtual memory management, and display
+engine interoperability.</p>
+<h3 id="lossless-framebuffer-compression">Lossless Framebuffer
+Compression</h3>
+<p>Modern GPUs rely on proprietary, lossless compression algorithms to
+reduce memory bandwidth consumption when writing to and reading from
+color, depth, and stencil attachments. Examples include AMD’s Delta
+Color Compression (DCC) and NVIDIA’s memory compression engines.</p>
+<p>These compression schemes depend on dedicated metadata or clear-state
+buffers tied directly to the physical storage of the image. When an
+image is suballocated from a general pool of memory alongside buffers or
+other small textures, the driver cannot always configure the memory
+controller to assign the necessary metadata planes cleanly. A dedicated
+allocation ensures the memory controller has total ownership over the
+physical address space, enabling full hardware compression without
+pipeline bottlenecks.</p>
+<h3 id="strict-alignment-and-page-layout-requirements">Strict Alignment
+and Page Layout Requirements</h3>
+<p>Render targets often have complex alignment and swizzling
+requirements that differ drastically from generic linear buffers or
+standard sampled textures.</p>
+<ul>
+<li><strong>Large Page Sizes:</strong> Modern graphics hardware often
+maps render targets using large or huge virtual memory pages (e.g., 64
+KB or 2 MB pages) to minimize Translation Lookaside Buffer (TLB) misses
+during high-throughput rasterization.</li>
+<li><strong>Tiling Schemes:</strong> Render targets use
+hardware-dependent 2D or 3D tiling (morton order/swizzled layouts) to
+ensure spatial locality during rendering operations.</li>
+</ul>
+<p>Suballocating a render target inside a shared
+<code>VkDeviceMemory</code> block frequently results in massive padding
+waste (internal fragmentation) to satisfy these alignment restrictions.
+A dedicated allocation cleanly isolates the resource into its own
+virtual memory mapping optimized explicitly for the hardware's tiling
+architecture.</p>
+<h3 id="driver-and-os-level-memory-management">Driver and OS-Level
+Memory Management</h3>
+<p>Vulkan leaves physical resource management largely to the
+application, but the underlying operating system kernel (such as WDDM on
+Windows or DRM/KMS on Linux) still oversees page management and
+swapping.</p>
+<p>When resources need to be paged out to system RAM during VRAM
+oversubscription, the OS handles whole allocations rather than
+individual sub-allocated Vulkan resources. Because render targets
+represent large, critical chunks of working memory, the OS and driver
+can manage their residency, eviction, and migration far more efficiently
+if they are not co-located with unrelated static assets.</p>
+<h3 id="display-engine-and-swapchain-integration">Display Engine and
+Swapchain Integration</h3>
+<p>Render targets that are eventually presented to the screen (or shared
+across APIs and processes) often must interface with hardware display
+controllers or compositor engines. Hardware scan-out engines have rigid
+physical addressing constraints. By using dedicated memory allocations,
+the driver can ensure that surface memory conforms to the exact physical
+contiguousness, pitch, and bank-selection rules required by the display
+scan-out hardware.</p>
+<h3 id="querying-dedicated-allocation-in-vulkan">Querying Dedicated
+Allocation in Vulkan</h3>
+<p>Vulkan exposes this preference through the core API (originally via
+the <code>VK_KHR_dedicated_allocation</code> extension). Applications
+query support using <code>vkGetImageMemoryRequirements2</code> with
+<code>VkMemoryDedicatedRequirements</code>.</p>
+<p>When <code>prefersDedicatedAllocation</code> is returned as
+<code>VK_TRUE</code>, developers should bypass general-purpose
+suballocators (like the Vulkan Memory Allocator) and bind the
+<code>VkImage</code> directly to its own unique
+<code>VkDeviceMemory</code> handle to guarantee peak rasterization
+performance and avoid silent compression disablement.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Instance Extensions vs Device Extensions - vulkan</title>
+    <meta name="description" content="In the Vulkan API, extensions provide optional features beyond the core specification and are strictly categorized into instance extensions and device extensions. This article explains how these two extension types are distinguished, focusing on their sco">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-instance-extensions-vs-device-extensions">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Instance Extensions vs Device Extensions - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-instance-extensions-vs-device-extensions" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In the Vulkan API, extensions provide optional features beyond the core specification and are strictly categorized into instance extensions and device extensions. This article explains how these two extension types are distinguished, focusing on their sco" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-instance-extensions-vs-device-extensions">Vulkan Instance
+Extensions vs Device Extensions</h1>
+<p>In the Vulkan API, extensions provide optional features beyond the
+core specification and are strictly categorized into instance extensions
+and device extensions. This article explains how these two extension
+types are distinguished, focusing on their scope of operation, how they
+are queried, how they are enabled during initialization, and how their
+functions are dispatched.</p>
+<h3 id="scope-of-operation">Scope of Operation</h3>
+<p>The primary distinction between instance and device extensions is
+their scope:</p>
+<ul>
+<li><strong>Instance Extensions:</strong> Modify or extend global,
+host-level Vulkan functionality. They affect the Vulkan runtime
+environment before a logical device is created. Typical examples include
+platform-specific window system integration
+(<code>VK_KHR_surface</code>, <code>VK_KHR_win32_surface</code>) and
+global debugging tools (<code>VK_EXT_debug_utils</code>).</li>
+<li><strong>Device Extensions:</strong> Pertain to specific hardware
+capabilities of a given physical device (<code>VkPhysicalDevice</code>)
+and apply to a logical device (<code>VkDevice</code>). They control
+features executed on the GPU, such as swapchain image presentation
+(<code>VK_KHR_swapchain</code>), ray tracing pipelines, or
+vendor-specific shader operations.</li>
+</ul>
+<h3 id="enumeration-and-querying">Enumeration and Querying</h3>
+<p>Vulkan provides separate entry points for discovering which
+extensions are supported by the driver:</p>
+<ul>
+<li><strong>Instance Extensions:</strong> Queried using
+<code>vkEnumerateInstanceExtensionProperties</code>. Because an instance
+is not yet created, this function takes a layer name (or
+<code>nullptr</code> for core extensions) and returns all extensions
+supported by the Vulkan loader and installed drivers.</li>
+<li><strong>Device Extensions:</strong> Queried using
+<code>vkEnumerateDeviceExtensionProperties</code>. This function
+requires a valid <code>VkPhysicalDevice</code> handle, as available
+device extensions vary depending on the underlying GPU architecture and
+its driver support.</li>
+</ul>
+<h3 id="activation-during-initialization">Activation During
+Initialization</h3>
+<p>Vulkan requires explicit opt-in for extensions during object
+creation:</p>
+<ul>
+<li><strong>Instance Extensions:</strong> Enabled at the application
+startup phase via the <code>VkInstanceCreateInfo</code> struct passed to
+<code>vkCreateInstance</code>. Extension names are provided in the
+<code>ppEnabledExtensionNames</code> array, with the count specified by
+<code>enabledExtensionCount</code>.</li>
+<li><strong>Device Extensions:</strong> Enabled after selecting a
+physical device via the <code>VkDeviceCreateInfo</code> struct passed to
+<code>vkCreateDevice</code>. The desired device-level extensions are
+assigned to <code>ppEnabledExtensionNames</code> alongside their count
+in <code>enabledExtensionCount</code>.</li>
+</ul>
+<h3 id="function-pointer-dispatch">Function Pointer Dispatch</h3>
+<p>While function pointers for both instance and device extensions can
+be loaded using <code>vkGetInstanceProcAddr</code>, device-level
+extensions should be loaded using <code>vkGetDeviceProcAddr</code>.
+Loading device extensions with <code>vkGetDeviceProcAddr</code> avoids
+the overhead of internal loader dispatch tables, providing direct calls
+to the driver-specific functions for improved performance in
+performance-critical code paths.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

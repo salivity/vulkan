@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Load Op Clear vs Dont Care Differences - vulkan</title>
+    <meta name="description" content="In the Vulkan API, attachment load operations determine how the GPU handles existing render target data at the start of a render pass instance. The primary difference between VKATTACHMENTLOADOPCLEAR and VKATTACHMENTLOADOPDONTCARE is intent: CLEAR explicit">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-load-op-clear-vs-dont-care-differences">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Load Op Clear vs Dont Care Differences - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-load-op-clear-vs-dont-care-differences" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In the Vulkan API, attachment load operations determine how the GPU handles existing render target data at the start of a render pass instance. The primary difference between VKATTACHMENTLOADOPCLEAR and VKATTACHMENTLOADOPDONTCARE is intent: CLEAR explicit" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-load-op-clear-vs-dont-care-differences">Vulkan Load Op
+Clear vs Dont Care Differences</h1>
+<p>In the Vulkan API, attachment load operations determine how the GPU
+handles existing render target data at the start of a render pass
+instance. The primary difference between
+<code>VK_ATTACHMENT_LOAD_OP_CLEAR</code> and
+<code>VK_ATTACHMENT_LOAD_OP_DONT_CARE</code> is intent:
+<code>CLEAR</code> explicitly fills the render target with a designated
+clear color or depth/stencil value before rendering begins, while
+<code>DONT_CARE</code> informs the driver that the previous contents are
+irrelevant and can be left undefined. Choosing the correct load
+operation directly impacts rendering performance and memory bandwidth
+efficiency, particularly on mobile and tiled graphics architectures.</p>
+<h3 id="vk_attachment_load_op_clear">VK_ATTACHMENT_LOAD_OP_CLEAR</h3>
+<p><code>VK_ATTACHMENT_LOAD_OP_CLEAR</code> instructs the GPU to
+overwrite the specified render area with a uniform value defined in your
+<code>VkClearValue</code> structures.</p>
+<ul>
+<li><strong>Behavior:</strong> Every pixel or texel within the render
+area is reset to the clear value before any draw commands execute.</li>
+<li><strong>Use Cases:</strong> This operation is standard when
+rendering a new frame where background geometry does not cover the
+entire screen, or when resetting depth and stencil buffers to known
+baseline values (such as depth <code>1.0</code>) prior to depth
+testing.</li>
+<li><strong>Hardware Cost:</strong> While modern desktop GPUs often
+handle clears via fast-clear hardware metadata rather than writing
+values across all memory, the operation still involves initialization
+overhead.</li>
+</ul>
+<h3
+id="vk_attachment_load_op_dont_care">VK_ATTACHMENT_LOAD_OP_DONT_CARE</h3>
+<p><code>VK_ATTACHMENT_LOAD_OP_DONT_CARE</code> signals to the GPU that
+the application does not rely on any prior data residing in the
+attachment, and the implementation does not need to preserve or
+initialize it.</p>
+<ul>
+<li><strong>Behavior:</strong> The contents within the render area
+become undefined. The GPU does not read existing data from VRAM, nor
+does it spend cycles writing a uniform clear value.</li>
+<li><strong>Use Cases:</strong> This operation is optimal when every
+pixel in the attachment will be guaranteed to be overwritten during the
+render pass. Common examples include:
+<ul>
+<li>Full-screen quads or post-processing passes.</li>
+<li>Opaque geometry passes that draw an enclosing skybox.</li>
+<li>G-Buffer attachments in deferred rendering pipelines that are
+completely written to by geometry shaders.</li>
+<li>Transient attachments, such as intermediate MSAA buffers that are
+resolved and discarded within the same pass.</li>
+</ul></li>
+<li><strong>Hardware Cost:</strong> Minimal. It allows the driver to
+completely skip loading or initializing memory.</li>
+</ul>
+<h3 id="architectural-impact-and-performance">Architectural Impact and
+Performance</h3>
+<p>The performance distinction between these two operations is most
+critical on Tile-Based Deferred Rendering (TBDR) architectures commonly
+found in mobile devices (such as ARM Mali, Qualcomm Adreno, and Apple
+GPUs):</p>
+<ol type="1">
+<li><strong>Memory Bandwidth:</strong> When using
+<code>DONT_CARE</code>, a TBDR GPU does not waste bandwidth loading
+memory from main system RAM into fast, on-chip tile memory. The tile
+memory is simply allocated and left uninitialized.</li>
+<li><strong>Clear Optimization:</strong> While <code>CLEAR</code> is
+heavily optimized on TBDR hardware to clear on-chip tile memory without
+touching main memory, <code>DONT_CARE</code> remains cheaper because it
+allows the hardware to bypass the initialization step entirely.</li>
+<li><strong>Desktop (IMR) Architectures:</strong> On immediate-mode
+desktop GPUs, using <code>DONT_CARE</code> when full-screen geometry is
+drawn prevents unnecessary fast-clear state tracking and eliminates any
+memory traffic associated with establishing a baseline clear state.</li>
+</ol>
+<h3 id="selection-guide">Selection Guide</h3>
+<ul>
+<li>Choose <strong><code>CLEAR</code></strong> if any pixel in the
+attachment might not be drawn over during the render pass, or if
+depth/stencil tests rely on a specific starting baseline.</li>
+<li>Choose <strong><code>DONT_CARE</code></strong> if the draw
+operations inside the render pass will definitively overwrite every
+pixel in the attachment, or if the attachment is intermediate scratch
+space whose contents are discarded after execution.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

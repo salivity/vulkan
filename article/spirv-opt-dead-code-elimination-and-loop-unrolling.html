@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SPIRV-Opt Dead-Code Elimination and Loop Unrolling - vulkan</title>
+    <meta name="description" content="In Vulkan development, shader modules are authored in high-level languages like GLSL or HLSL and compiled into SPIR-V, a binary intermediate representation. Before these modules reach the GPU driver, the spirv-opt optimizer—part of the Khronos Group&#39;s SPI">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/spirv-opt-dead-code-elimination-and-loop-unrolling">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="SPIRV-Opt Dead-Code Elimination and Loop Unrolling - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/spirv-opt-dead-code-elimination-and-loop-unrolling" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Vulkan development, shader modules are authored in high-level languages like GLSL or HLSL and compiled into SPIR-V, a binary intermediate representation. Before these modules reach the GPU driver, the spirv-opt optimizer—part of the Khronos Group&#39;s SPI" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="spirv-opt-dead-code-elimination-and-loop-unrolling">SPIRV-Opt
+Dead-Code Elimination and Loop Unrolling</h1>
+<p>In Vulkan development, shader modules are authored in high-level
+languages like GLSL or HLSL and compiled into SPIR-V, a binary
+intermediate representation. Before these modules reach the GPU driver,
+the <code>spirv-opt</code> optimizer—part of the Khronos Group's
+SPIRV-Tools collection—applies compiler transformation passes to
+maximize execution efficiency. This article details how
+<code>spirv-opt</code> performs dead-code elimination to strip
+unreachable or redundant operations and executes loop unrolling to
+optimize control flow and expose instruction-level parallelism.</p>
+<h3 id="the-spir-v-representation-context">The SPIR-V Representation
+Context</h3>
+<p>SPIR-V is built around Static Single Assignment (SSA) form and
+enforces strictly structured control flow. Each result produced by an
+instruction is assigned a unique SSA ID (<code>%id</code>), and control
+flow structures (such as loops and selections) are demarcated by
+explicit merge instructions (<code>OpLoopMerge</code>,
+<code>OpSelectionMerge</code>). Because <code>spirv-opt</code> operates
+directly on this standardized graph representation, optimizations like
+dead-code elimination and loop unrolling can be performed independently
+of the target graphics driver.</p>
+<h3 id="dead-code-elimination-in-spirv-opt">Dead-Code Elimination in
+spirv-opt</h3>
+<p><code>spirv-opt</code> provides multiple dead-code elimination (DCE)
+passes, most notably standard dead-code elimination
+(<code>--eliminate-dead-code-aggressive</code> or ADCE) and dead
+variable/function removal (<code>--eliminate-dead-functions</code>,
+<code>--eliminate-dead-variables</code>).</p>
+<ol type="1">
+<li><strong>Def-Use Graph Construction</strong>: The optimization pass
+builds def-use chains across the entire module. In SSA form, every
+instruction clearly lists its operands (uses) and produces a
+deterministic result ID (definition).</li>
+<li><strong>Liveness Propagation</strong>: ADCE assumes all instructions
+are dead by default. It seeds a "live" worklist with inherently
+essential root instructions. In a Vulkan shader, roots typically
+include:
+<ul>
+<li>Output writes (instructions writing to variables with
+<code>Output</code> storage class).</li>
+<li>Global memory side effects (e.g., writes to storage buffers via
+<code>OpStore</code>).</li>
+<li>Atomic operations, image write operations, and synchronization
+barriers (<code>OpControlBarrier</code>).</li>
+<li>Function return statements and critical control-flow branches.</li>
+</ul></li>
+<li><strong>Graph Traversal</strong>: The pass traverses backward from
+the root nodes. If an instruction is marked live, all instructions
+defining its input operands are recursively marked live.</li>
+<li><strong>Pruning</strong>: Once the worklist is empty, any
+instruction whose result ID is not marked live is safely erased. If an
+instruction produces side effects, it cannot be eliminated even if its
+result is unused.</li>
+<li><strong>Control-Flow Dead-Code Removal</strong>: If branch
+conditions evaluate to compile-time constants, <code>spirv-opt</code>
+replaces conditional branches (<code>OpBranchConditional</code>) with
+direct branches (<code>OpBranch</code>), leaving entire basic blocks
+unreachable. A subsequent CFG cleanup pass trims the detached blocks
+from the function.</li>
+</ol>
+<h3 id="loop-unrolling-in-spirv-opt">Loop Unrolling in spirv-opt</h3>
+<p>Loop unrolling in <code>spirv-opt</code> (invoked via
+<code>--loop-unroll</code>) transforms loops by duplicating the loop
+body, reducing branch overhead and enabling subsequent optimization
+passes (such as constant propagation and instruction scheduling) across
+iterations.</p>
+<ol type="1">
+<li><strong>Loop Detection and Validation</strong>:
+<code>spirv-opt</code> identifies natural loops by inspecting
+<code>OpLoopMerge</code> instructions. A valid unroll target must
+feature:
+<ul>
+<li>A single loop header containing <code>OpLoopMerge</code>.</li>
+<li>A clearly identifiable continue target (the basic block that loops
+back to the header).</li>
+<li>A distinct merge target block where execution resumes after loop
+termination.</li>
+</ul></li>
+<li><strong>Induction Variable and Trip Count Analysis</strong>: The
+pass inspects the loop condition to calculate the loop bounds
+statically:
+<ul>
+<li>It identifies the basic induction variable governed by an
+<code>OpPhi</code> node in the header.</li>
+<li>It traces the step value (e.g., an <code>OpIAdd</code> incrementing
+by a constant literal) and the boundary condition comparison (e.g.,
+<code>OpSLessThan</code>).</li>
+<li>If the initial value, step, and bound are deterministic at
+optimization time, <code>spirv-opt</code> calculates the exact trip
+count.</li>
+</ul></li>
+<li><strong>Duplication and SSA Remapping</strong>:
+<ul>
+<li>For a full unroll, the loop body blocks are cloned <span
+class="math inline">\(N\)</span> times (where <span
+class="math inline">\(N\)</span> is the trip count).</li>
+<li><code>spirv-opt</code> generates new SSA IDs for every duplicated
+instruction to preserve SSA invariants.</li>
+<li>The inputs of cloned instructions are updated using an ID
+translation map; operands previously bound to an earlier iteration's
+outputs are rewired to the corresponding cloned output IDs.</li>
+<li>Values propagated via <code>OpPhi</code> nodes are resolved linearly
+from one unrolled iteration into the next.</li>
+</ul></li>
+<li><strong>CFG Restructuring</strong>:
+<ul>
+<li>The loop header’s <code>OpLoopMerge</code> is eliminated.</li>
+<li>The final iteration's back-edge branch to the continue target is
+rewired directly to the loop's original merge block.</li>
+<li>The original loop constructs are removed, converting the loop into a
+single straight-line basic block chain or a sequence of linear
+blocks.</li>
+</ul></li>
+</ol>
+<h3 id="pipeline-benefits-for-vulkan">Pipeline Benefits for Vulkan</h3>
+<p>Running these passes via <code>spirv-opt</code> before deploying
+shaders directly benefits Vulkan applications. Eliminating dead code
+prevents the driver's native hardware compiler from allocating
+unnecessary vector and scalar registers, reducing overall register
+pressure. Simultaneously, unrolling loops exposes redundant uniform
+loads and common subexpressions between iterations, allowing Vulkan
+drivers to emit tighter, more vectorized GPU machine code.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

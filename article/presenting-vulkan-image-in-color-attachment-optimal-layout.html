@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Presenting Vulkan Image in Color Attachment Optimal Layout - vulkan</title>
+    <meta name="description" content="Presenting a swapchain image in Vulkan while it remains in the VKIMAGELAYOUTCOLORATTACHMENTOPTIMAL layout violates the Vulkan specification and triggers undefined behavior. This article explores the technical repercussions of this mistake—ranging from val">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/presenting-vulkan-image-in-color-attachment-optimal-layout">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Presenting Vulkan Image in Color Attachment Optimal Layout - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/presenting-vulkan-image-in-color-attachment-optimal-layout" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Presenting a swapchain image in Vulkan while it remains in the VKIMAGELAYOUTCOLORATTACHMENTOPTIMAL layout violates the Vulkan specification and triggers undefined behavior. This article explores the technical repercussions of this mistake—ranging from val" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="presenting-vulkan-image-in-color-attachment-optimal-layout">Presenting
+Vulkan Image in Color Attachment Optimal Layout</h1>
+<p>Presenting a swapchain image in Vulkan while it remains in the
+<code>VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL</code> layout violates
+the Vulkan specification and triggers undefined behavior. This article
+explores the technical repercussions of this mistake—ranging from
+validation layer errors and visual artifacts to platform-dependent
+rendering failures—and explains how to resolve the issue to ensure
+cross-platform stability.</p>
+<h3 id="the-vulkan-specification-requirement">The Vulkan Specification
+Requirement</h3>
+<p>When using <code>vkQueuePresentKHR</code> to submit a swapchain image
+to the display engine, the Vulkan specification requires that the image
+be in an acceptable presentation layout at the moment the presentation
+engine reads it. Specifically, the valid usage conditions demand that
+the image be in either:</p>
+<ul>
+<li><code>VK_IMAGE_LAYOUT_PRESENT_SRC_KHR</code> (for standard
+presentation)</li>
+<li><code>VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR</code> (for shared
+presentable images)</li>
+</ul>
+<p>Leaving an image in
+<code>VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL</code> directly breaches
+this specification requirement.</p>
+<h3 id="validation-layer-errors">Validation Layer Errors</h3>
+<p>If the Vulkan Validation Layers
+(<code>VK_LAYER_KHRONOS_validation</code>) are enabled, the application
+will immediately flag a valid usage violation (such as
+<code>VUID-VkPresentInfoKHR-pImageIndices-01430</code>). The debug
+output will state that the swapchain image is being presented in an
+invalid layout (<code>VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL</code>)
+rather than the expected
+<code>VK_IMAGE_LAYOUT_PRESENT_SRC_KHR</code>.</p>
+<h3 id="visual-and-runtime-consequences">Visual and Runtime
+Consequences</h3>
+<p>Because the operation introduces undefined behavior, the exact result
+depends entirely on the underlying hardware, driver implementation,
+windowing system, and operating system compositor:</p>
+<ul>
+<li><strong>Tiling and Compression Artifacts:</strong> Rendering
+hardware often applies vendor-specific compression formats (such as ARM
+AFBC, AMD DCC, or Intel lossless compression) and tiling modes to images
+configured for <code>VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL</code>.
+The display controller or compositor, expecting a de-tiled, decompressed
+layout suitable for display scanning, cannot correctly decode this data.
+This typically produces scrambled, blocky, distorted visuals or inverted
+colors.</li>
+<li><strong>Black or Blank Frames:</strong> On many platforms—especially
+mobile architectures (Tile-Based Deferred Renderers) and Wayland or
+macOS (via MoltenVK)—the compositor or display engine will reject the
+presentation entirely or read invalid data, resulting in a black screen
+or persistent flickering.</li>
+<li><strong>Apparent Success (False Positives):</strong> On certain
+desktop configurations (such as discrete GPUs on Windows running under
+the Desktop Window Manager), the presentation engine may perform an
+implicit copy or blit that masks the layout mismatch. The application
+may appear to work correctly on development hardware while failing
+completely on other systems.</li>
+<li><strong>Device Lost and Crashes:</strong> In severe cases,
+particularly under strict drivers or embedded display pipelines,
+hardware memory faults can trigger a driver crash or return
+<code>VK_ERROR_DEVICE_LOST</code>.</li>
+</ul>
+<h3 id="how-to-fix-the-issue">How to Fix the Issue</h3>
+<p>To resolve the problem, the image must transition to
+<code>VK_IMAGE_LAYOUT_PRESENT_SRC_KHR</code> before the presentation
+engine accesses it. This transition can be handled in two ways:</p>
+<ol type="1">
+<li><strong>Using Render Pass Layout Transitions:</strong> If rendering
+via a <code>VkRenderPass</code>, configure the swapchain attachment's
+<code>finalLayout</code> member to
+<code>VK_IMAGE_LAYOUT_PRESENT_SRC_KHR</code>. Vulkan will automatically
+execute the layout transition at the completion of the render pass.</li>
+<li><strong>Using Pipeline Barriers:</strong> If rendering dynamically
+with <code>VK_KHR_dynamic_rendering</code>
+(<code>vkCmdBeginRendering</code>) or without a standard render pass,
+record an explicit <code>vkCmdPipelineBarrier</code> or
+<code>vkCmdPipelineBarrier2</code>. Set the <code>oldLayout</code> to
+<code>VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL</code>, the
+<code>newLayout</code> to <code>VK_IMAGE_LAYOUT_PRESENT_SRC_KHR</code>,
+and synchronize the <code>COLOR_ATTACHMENT_OUTPUT</code> stage to the
+appropriate destination stage.</li>
+</ol></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Individual Command Buffer Reset Flag - vulkan</title>
+    <meta name="description" content="This article covers the specific Vulkan command pool flag required to return and reuse individual command buffers dynamically. It explains the default memory management behavior of Vulkan command pools, how to enable individual command buffer resets, and">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-individual-command-buffer-reset-flag">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Individual Command Buffer Reset Flag - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-individual-command-buffer-reset-flag" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article covers the specific Vulkan command pool flag required to return and reuse individual command buffers dynamically. It explains the default memory management behavior of Vulkan command pools, how to enable individual command buffer resets, and" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-individual-command-buffer-reset-flag">Vulkan Individual
+Command Buffer Reset Flag</h1>
+<p>This article covers the specific Vulkan command pool flag required to
+return and reuse individual command buffers dynamically. It explains the
+default memory management behavior of Vulkan command pools, how to
+enable individual command buffer resets, and the practical
+considerations when configuring pool creation flags.</p>
+<p>In the Vulkan graphics and compute API, the flag that allows
+individual command buffers to be reset and returned to a pool
+dynamically is
+<code>VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT</code>.</p>
+<h3 id="default-command-pool-behavior">Default Command Pool
+Behavior</h3>
+<p>By default, command buffers allocated from a
+<code>VkCommandPool</code> share memory chunks managed by the pool.
+Without specific flags enabled, an application cannot reset individual
+command buffers. The only way to reclaim the underlying memory and reset
+execution state is to reset or free the entire command pool at once
+using <code>vkResetCommandPool</code> or
+<code>vkDestroyCommandPool</code>.</p>
+<p>Attempting to call <code>vkResetCommandBuffer</code> on a command
+buffer whose parent pool lacks the reset flag will result in a runtime
+validation error and undefined behavior.</p>
+<h3 id="enabling-dynamic-individual-resets">Enabling Dynamic Individual
+Resets</h3>
+<p>To enable individual command buffers to be recycled, you must provide
+<code>VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT</code> in the
+<code>flags</code> field of the <code>VkCommandPoolCreateInfo</code>
+structure when creating the command pool with
+<code>vkCreateCommandPool</code>:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>VkCommandPoolCreateInfo poolInfo<span class="op">{};</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>poolInfo<span class="op">.</span>sType <span class="op">=</span> VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO<span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>poolInfo<span class="op">.</span>queueFamilyIndex <span class="op">=</span> queueFamilyIndex<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>poolInfo<span class="op">.</span>flags <span class="op">=</span> VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT<span class="op">;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>VkCommandPool commandPool<span class="op">;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>vkCreateCommandPool<span class="op">(</span>device<span class="op">,</span> <span class="op">&amp;</span>poolInfo<span class="op">,</span> <span class="kw">nullptr</span><span class="op">,</span> <span class="op">&amp;</span>commandPool<span class="op">);</span></span></code></pre></div>
+<h3 id="resetting-command-buffers">Resetting Command Buffers</h3>
+<p>Once a pool is created with this flag, command buffers allocated from
+it can be returned to their initial state in two ways:</p>
+<ol type="1">
+<li><strong>Explicit Reset:</strong> Calling
+<code>vkResetCommandBuffer(commandBuffer, flags)</code> directly returns
+the buffer to the initial state, freeing or retaining its allocated
+resources based on the <code>VkCommandBufferResetFlagBits</code>
+provided.</li>
+<li><strong>Implicit Reset:</strong> Calling
+<code>vkBeginCommandBuffer(commandBuffer, &amp;beginInfo)</code> on a
+buffer that has already completed execution automatically resets the
+buffer prior to recording new commands.</li>
+</ol>
+<h3 id="performance-considerations">Performance Considerations</h3>
+<p>Allowing individual resets introduces memory management overhead
+within the pool. Because command buffers are recycled independently,
+internal memory fragmentation can occur compared to the bulk-reset
+approach.</p>
+<p>For high-throughput rendering architectures, a common practice is to
+create separate command pools for different threading and lifecycle
+requirements: pools without individual reset flags for grouped frame
+buffers that are reset in bulk every frame, and pools with
+<code>VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT</code> for
+secondary or asynchronous worker tasks that complete and reset on
+variable timelines.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

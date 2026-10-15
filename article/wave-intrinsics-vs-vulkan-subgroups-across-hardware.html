@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wave Intrinsics vs Vulkan Subgroups Across Hardware - vulkan</title>
+    <meta name="description" content="This article provides an architectural comparison between wave-intrinsics and Vulkan subgroup operations, examining their terminology, hardware implementation, and functional behavior. While the terms originate from different shading languages and graphic">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/wave-intrinsics-vs-vulkan-subgroups-across-hardware">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Wave Intrinsics vs Vulkan Subgroups Across Hardware - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/wave-intrinsics-vs-vulkan-subgroups-across-hardware" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article provides an architectural comparison between wave-intrinsics and Vulkan subgroup operations, examining their terminology, hardware implementation, and functional behavior. While the terms originate from different shading languages and graphic" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="wave-intrinsics-vs-vulkan-subgroups-across-hardware">Wave
+Intrinsics vs Vulkan Subgroups Across Hardware</h1>
+<p>This article provides an architectural comparison between
+wave-intrinsics and Vulkan subgroup operations, examining their
+terminology, hardware implementation, and functional behavior. While the
+terms originate from different shading languages and graphics
+APIs—wave-intrinsics primarily from DirectX HLSL and subgroups from
+Vulkan and SPIR-V—they target the exact same low-level SIMD (Single
+Instruction, Multiple Data) hardware units. Understanding the
+differences requires examining how API abstraction, cross-compilation,
+varying hardware SIMD widths, and execution models interact when running
+Vulkan workloads across modern GPUs.</p>
+<h3 id="terminology-and-api-abstraction">Terminology and API
+Abstraction</h3>
+<p>The distinction between "wave" and "subgroup" is largely a matter of
+API lineage rather than distinct hardware execution paths:</p>
+<ul>
+<li><strong>Wave-Intrinsics (HLSL / DirectX):</strong> DirectX 12 refers
+to a collection of threads executed in lockstep as a "wave" (drawing
+from AMD's "wavefront" nomenclature). HLSL exposes these through
+<code>Wave*</code> intrinsics (e.g., <code>WaveActiveSum</code>,
+<code>WaveReadLaneFirst</code>).</li>
+<li><strong>Subgroups (SPIR-V / Vulkan):</strong> Vulkan standardizes
+this concept under the term "subgroup." Standardized in Vulkan 1.1,
+operations like <code>subgroupAdd</code> or
+<code>subgroupBroadcast</code> are represented in SPIR-V via
+<code>OpGroupNonUniform*</code> instructions.</li>
+</ul>
+<p>When compiling HLSL code containing wave-intrinsics into SPIR-V for
+Vulkan (using compilers like DXC), HLSL wave operations map directly to
+Vulkan SPIR-V subgroup instructions. Functionally, they generate
+equivalent hardware instructions.</p>
+<h3 id="hardware-variations-in-subgroup-sizes">Hardware Variations in
+Subgroup Sizes</h3>
+<p>The primary operational difference between hardware running Vulkan is
+not the API instruction used, but the physical size of the SIMD
+execution block, referred to as the subgroup size
+(<code>subgroupSize</code> in Vulkan).</p>
+<ul>
+<li><strong>NVIDIA (Warps):</strong> NVIDIA GPUs universally execute
+threads in fixed groups of 32 threads, termed "warps." In Vulkan, NVIDIA
+hardware reports a fixed <code>subgroupSize</code> of 32 across all
+shader stages.</li>
+<li><strong>AMD (Wavefronts):</strong> Older AMD architectures (GCN) run
+fixed 64-thread wavefronts (<code>subgroupSize</code> of 64). RDNA
+architectures natively support both Wave32 and Wave64. Under Vulkan,
+RDNA hardware can alternate between 32 and 64 lanes depending on the
+shader stage, optimization heuristics, or explicit developer
+requests.</li>
+<li><strong>Intel (Execution Units / Xe Cores):</strong> Intel
+integrated and discrete GPUs feature flexible SIMD dispatch widths.
+Depending on register pressure and shader complexity, an Intel driver
+might execute shaders using subgroup sizes of 8, 16, or 32.</li>
+<li><strong>Mobile GPUs (ARM Mali, Qualcomm Adreno, PowerVR):</strong>
+Mobile architectures vary significantly. Qualcomm Adreno often uses
+sizes of 32 or 64, while ARM Mali traditionally handled execution across
+different SIMD widths (commonly 4, 8, or 16 lanes) or historically
+abstracted thread communication, leading to varying levels of subgroup
+support.</li>
+</ul>
+<h3 id="feature-support-matrix-and-capabilities">Feature Support Matrix
+and Capabilities</h3>
+<p>Vulkan exposes subgroup capabilities granularly through
+<code>VkPhysicalDeviceSubgroupProperties</code> and feature bits in
+<code>VkPhysicalDeviceVulkan11Features</code>. While Vulkan 1.1 mandates
+basic subgroup support in all stages, specific operation categories vary
+by hardware vendor:</p>
+<ul>
+<li><strong>Basic Operations:</strong> Standard across all desktop
+vendors (querying subgroup size, lane index, and uniform tests).</li>
+<li><strong>Vote, Ballot, and Arithmetic:</strong> NVIDIA, AMD, and
+modern Intel GPUs generally support full arithmetic, bitwise, and ballot
+operations. Some mobile GPUs omit arithmetic or shuffle operations to
+save die space and power.</li>
+<li><strong>Shuffle vs. Quad Operations:</strong> Quad operations
+(<code>subgroupQuadBroadcast</code>, <code>subgroupQuadSwap</code>)
+require four adjacent lanes to exchange data. While universal in
+fragment shaders due to 2x2 pixel derivative math, hardware support for
+quad operations in compute shaders depends on the architecture.</li>
+</ul>
+<h3 id="lane-masking-and-divergent-control-flow">Lane Masking and
+Divergent Control Flow</h3>
+<p>Wave-intrinsics and subgroup operations behave differently depending
+on how hardware handles divergent control flow:</p>
+<ul>
+<li><strong>Lockstep Execution with Inactive Lanes:</strong> Most
+architectures (e.g., AMD RDNA, pre-Volta NVIDIA) use a unified program
+counter for all threads in the wave. When an <code>if-else</code> branch
+occurs, lanes that do not take the current path are masked off. Subgroup
+operations that query inactive lanes (like <code>subgroupBallot</code>)
+reflect these inactive execution masks.</li>
+<li><strong>Independent Thread Scheduling:</strong> Introduced in NVIDIA
+Volta and maintained in subsequent architectures (Turing, Ampere, Ada,
+Blackwell), each lane maintains its own execution state and program
+counter. While the GPU converges threads into warps whenever possible
+for SIMD efficiency, diverging threads do not necessarily execute in
+lockstep. In Vulkan, subgroup operations enforce a temporary
+reconvergence point for the lanes participating in the operation.</li>
+</ul>
+<h3 id="developer-control-vk_ext_subgroup_size_control">Developer
+Control: <code>VK_EXT_subgroup_size_control</code></h3>
+<p>Because HLSL wave-intrinsics historically assumed fixed hardware
+sizes (often tailored specifically to desktop hardware), porting these
+directly to Vulkan can cause algorithmic failures if code assumes a
+32-lane or 64-lane width.</p>
+<p>Vulkan resolves this via the
+<code>VK_EXT_subgroup_size_control</code> extension (promoted to core in
+Vulkan 1.3). This extension allows applications to:</p>
+<ol type="1">
+<li>Query the supported subgroup size range
+(<code>minSubgroupSize</code> and <code>maxSubgroupSize</code>).</li>
+<li>Explicitly request a specific subgroup size per pipeline or shader
+stage (e.g., enforcing Wave32 on AMD RDNA for compute tasks requiring
+lower register pressure).</li>
+<li>Require full subgroups (ensuring compute dispatches do not spawn
+partially filled subgroups).</li>
+</ol>
+<h3 id="summary">Summary</h3>
+<p>The distinction between wave-intrinsics and subgroup operations is
+linguistic at the source level, as HLSL wave functions map directly to
+SPIR-V subgroup instructions in Vulkan. However, across Vulkan-supported
+hardware, underlying execution varies substantially by subgroup width
+(ranging from 8 to 64), support for advanced shuffle and arithmetic
+features, and how independent thread scheduling manages diverged lanes.
+Robust cross-platform Vulkan applications must query subgroup properties
+at runtime rather than relying on vendor-specific wave assumptions.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

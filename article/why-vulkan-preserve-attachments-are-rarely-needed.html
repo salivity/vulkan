@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Why Vulkan Preserve Attachments Are Rarely Needed - vulkan</title>
+    <meta name="description" content="In the Vulkan API, preserve attachments allow a render pass to declare that an attachment&#39;s contents must remain intact across intermediate subpasses that do not explicitly read from or write to it. While vital for bandwidth optimization on mobile tile-ba">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/why-vulkan-preserve-attachments-are-rarely-needed">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Why Vulkan Preserve Attachments Are Rarely Needed - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/why-vulkan-preserve-attachments-are-rarely-needed" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In the Vulkan API, preserve attachments allow a render pass to declare that an attachment&#39;s contents must remain intact across intermediate subpasses that do not explicitly read from or write to it. While vital for bandwidth optimization on mobile tile-ba" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="why-vulkan-preserve-attachments-are-rarely-needed">Why Vulkan
+Preserve Attachments Are Rarely Needed</h1>
+<p>In the Vulkan API, preserve attachments allow a render pass to
+declare that an attachment's contents must remain intact across
+intermediate subpasses that do not explicitly read from or write to it.
+While vital for bandwidth optimization on mobile tile-based
+architectures, preserve attachments are rarely needed on modern desktop
+graphics cards. This article explains the architectural differences
+between mobile and desktop GPUs, why immediate-mode desktop hardware
+naturally retains framebuffer data, and how modern Vulkan practices make
+preserve attachments largely obsolete for desktop-focused
+development.</p>
+<h3 id="what-preserve-attachments-do">What Preserve Attachments Do</h3>
+<p>When configuring a <code>VkSubpassDescription</code>, developers can
+pass an array of indices via <code>pPreserveAttachments</code>. This
+array explicitly informs the driver that although the current subpass
+does not bind or touch the specified attachment, the data within that
+attachment must not be discarded because a subsequent subpass will need
+it.</p>
+<h3 id="desktop-immediate-mode-vs-mobile-tile-based-rendering">Desktop
+Immediate-Mode vs. Mobile Tile-Based Rendering</h3>
+<p>The requirement for preserve attachments stems directly from
+Tile-Based Deferred Rendering (TBDR) architectures, which dominate
+mobile hardware such as ARM Mali, Qualcomm Adreno, and Imagination
+PowerVR GPUs.</p>
+<ul>
+<li><strong>TBDR (Mobile):</strong> Render targets are split into small,
+on-chip tiles. Color and depth data reside in fast, transient tile
+memory (SRAM). If Subpass 1 writes to Attachment A, Subpass 2 ignores
+it, and Subpass 3 requires Attachment A, the driver needs to know
+whether it must preserve that tile's memory across Subpass 2. Without
+declaring Attachment A as a preserve attachment in Subpass 2, the
+hardware might overwrite the tile memory or evict it to high-latency
+system RAM.</li>
+<li><strong>Immediate-Mode Rendering (Desktop):</strong> Modern desktop
+GPUs from AMD, NVIDIA, and Intel predominantly use Immediate-Mode
+Rendering (IMR) or hybrid architectures with unified, large cache
+hierarchies (L2/L3). Framebuffer attachments live in dedicated VRAM or
+coherent cache lines rather than transient tile scratchpads that are
+aggressively wiped between subpass transitions.</li>
+</ul>
+<h3 id="why-desktop-hardware-ignores-the-need">Why Desktop Hardware
+Ignores the Need</h3>
+<p>On desktop GPUs, subpasses are typically lowered by the driver into
+standard pipeline barriers, cache flushes, and sequential draw calls.
+Because the framebuffer is backed by persistent VRAM:</p>
+<ol type="1">
+<li><strong>Persistent Memory Allocation:</strong> Attachments allocated
+in device-local memory do not magically vanish when an intermediate draw
+call or subpass ignores them. The memory addresses remain allocated and
+untouched until overwritten or explicitly cleared.</li>
+<li><strong>Driver Optimization:</strong> Desktop Vulkan drivers
+translate multi-subpass render passes into conventional execution
+passes. If a subpass does not reference an attachment, the desktop GPU
+simply does not issue read or write instructions against that
+attachment's memory address. The data naturally remains preserved.</li>
+<li><strong>No Forced Eviction:</strong> Desktop GPUs do not require
+developer-directed hints to keep non-active attachments from being
+cleared in the middle of a render pass because there is no localized,
+per-tile on-chip buffer to swap out.</li>
+</ol>
+<h3 id="the-rise-of-dynamic-rendering">The Rise of Dynamic
+Rendering</h3>
+<p>The introduction of Vulkan 1.3 and the
+<code>VK_KHR_dynamic_rendering</code> extension further reduces the
+relevance of preserve attachments on desktop systems. Dynamic rendering
+bypasses the traditional <code>VkRenderPass</code> and
+<code>VkFramebuffer</code> abstraction altogether, eliminating subpasses
+and the associated preserve attachment declarations in favor of explicit
+pipeline barriers and simplified rendering loops.</p>
+<p>Because modern desktop hardware inherently preserves untouched VRAM
+allocations across rendering operations, manual preservation
+declarations yield no performance benefit or safety guarantee, rendering
+them practically irrelevant for desktop graphics pipelines.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

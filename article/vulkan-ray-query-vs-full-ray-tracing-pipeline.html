@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Ray Query vs Full Ray Tracing Pipeline - vulkan</title>
+    <meta name="description" content="Hardware-accelerated ray tracing in Vulkan is exposed through two distinct mechanisms: the dedicated ray tracing pipeline (VKKHRraytracingpipeline) and inline ray queries (VKKHRrayquery). While both interfaces traverse identical bounding volume hierarchy">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-ray-query-vs-full-ray-tracing-pipeline">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Ray Query vs Full Ray Tracing Pipeline - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-ray-query-vs-full-ray-tracing-pipeline" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Hardware-accelerated ray tracing in Vulkan is exposed through two distinct mechanisms: the dedicated ray tracing pipeline (VKKHRraytracingpipeline) and inline ray queries (VKKHRrayquery). While both interfaces traverse identical bounding volume hierarchy" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-ray-query-vs-full-ray-tracing-pipeline">Vulkan Ray Query
+vs Full Ray Tracing Pipeline</h1>
+<p>Hardware-accelerated ray tracing in Vulkan is exposed through two
+distinct mechanisms: the dedicated ray tracing pipeline
+(<code>VK_KHR_ray_tracing_pipeline</code>) and inline ray queries
+(<code>VK_KHR_ray_query</code>). While both interfaces traverse
+identical bounding volume hierarchy (BVH) acceleration structures, they
+differ fundamentally in execution model, shader dispatch, memory
+overhead, and scheduling control. This article contrasts how inline ray
+traversal compares against full pipeline dispatch, outlining their
+architectural tradeoffs, performance profiles, and ideal use cases.</p>
+<h3 id="execution-model-and-pipeline-architecture">Execution Model and
+Pipeline Architecture</h3>
+<p>The <strong>Ray Tracing Pipeline</strong> introduces a dedicated,
+asynchronous execution model using specialized shader stages: Ray
+Generation, Intersection, Any-Hit, Closest-Hit, Miss, and Callable
+shaders. Work is dispatched using <code>vkCmdTraceRaysKHR</code>. The
+driver and GPU hardware handle the traversal loop, dynamic thread
+dispatch, and execution state switching. When a ray hits geometry, the
+system automatically resolves the appropriate Closest-Hit or Any-Hit
+shader based on records in the Shader Binding Table (SBT).</p>
+<p>In contrast, <strong>Ray Query</strong> provides inline ray traversal
+capabilities inside existing shader stages, including compute, fragment,
+vertex, and mesh shaders. Instead of dispatching a specialized pipeline
+via <code>vkCmdTraceRaysKHR</code>, execution remains within standard
+commands like <code>vkCmdDraw</code> or <code>vkCmdDispatch</code>.
+Traversal is driven imperatively within the shader code using intrinsic
+objects and functions that initialize the query, step through the BVH,
+and process intersection candidates explicitly.</p>
+<h3 id="shader-binding-table-and-setup-complexity">Shader Binding Table
+and Setup Complexity</h3>
+<p>A primary differentiator is runtime and setup complexity:</p>
+<ul>
+<li><strong>Ray Tracing Pipeline:</strong> Requires creating complex
+<code>VkRayTracingPipelineCreateInfoKHR</code> structures and managing a
+Shader Binding Table (SBT). The SBT maps geometry instances to specific
+shader handles and parameters in device memory. Managing SBT alignment,
+stride requirements, and resource binding across dozens of unique
+materials requires significant boilerplate and memory management.</li>
+<li><strong>Ray Query:</strong> Bypasses the SBT entirely. The ray query
+is treated like an intrinsic variable inside a standard shader. Shaders
+access global buffers, bindless descriptor arrays, or push constants to
+resolve materials and data. This drastically lowers integration friction
+and pipeline creation overhead.</li>
+</ul>
+<h3 id="scheduling-divergence-and-coherence">Scheduling, Divergence, and
+Coherence</h3>
+<p>Hardware handling of thread coherence and divergence varies
+significantly between both approaches:</p>
+<ul>
+<li><strong>Thread Scheduling:</strong> Ray tracing pipelines allow the
+hardware scheduler to reorganize and sort rays (on architectures that
+support shader execution reordering) to maintain SIMD coherence across
+complex hit shaders. Rays can spawn recursively (up to hardware limits)
+or chain secondary rays through separate stages.</li>
+<li><strong>SIMD Divergence:</strong> Ray queries execute strictly
+inside the invoking shader's execution lane. If adjacent threads within
+a warp or wavefront trace divergent rays (e.g., rays going in opposite
+directions or hitting widely different BVH depths), the entire warp
+stalls until all lanes finish their inline traversal loop. Ray queries
+offer no native execution reordering across threads.</li>
+</ul>
+<h3 id="traversal-control">Traversal Control</h3>
+<p>Ray queries grant fine-grained, manual control over the traversal
+process. A developer can choose between a fully unrolled loop that
+yields control only on potential hits (useful for procedural geometry or
+manual alpha testing) or a fast, opaque traversal that runs to
+completion. Ray queries also allow early exits and conditional branching
+directly in the middle of standard rendering logic.</p>
+<p>Ray tracing pipelines delegate traversal control to the hardware.
+Traversal logic is fragmented across discrete stages, making it
+impossible to inline mid-shader checks without completing a hit or miss
+pass.</p>
+<h3 id="optimal-use-cases">Optimal Use Cases</h3>
+<ul>
+<li><strong>Use Ray Queries for:</strong>
+<ul>
+<li>Screen-space shadows, ambient occlusion, and simple visibility
+checks.</li>
+<li>Adding ray-traced validation to existing rasterization pipelines
+(e.g., in a deferred lighting fragment shader or compute pass).</li>
+<li>Direct probing and sound propagation in compute workloads.</li>
+<li>Scenarios where materials are homogeneous, or where standard
+bindless textures can quickly resolve surface hits without distinct hit
+shaders.</li>
+</ul></li>
+<li><strong>Use Ray Tracing Pipelines for:</strong>
+<ul>
+<li>Full path tracers and multi-bounce global illumination.</li>
+<li>Scenes with highly diverse shading models and materials that benefit
+from isolated Closest-Hit shaders.</li>
+<li>Complex geometry requiring dynamic custom intersections and
+procedural primitives.</li>
+<li>Primary visibility replacement where the SBT acts as a dynamic
+rasterization substitute.</li>
+</ul></li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

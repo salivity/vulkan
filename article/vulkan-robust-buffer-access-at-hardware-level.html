@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Robust Buffer Access at Hardware Level - vulkan</title>
+    <meta name="description" content="Vulkan&#39;s robustBufferAccess feature is a safety mechanism that guarantees out-of-bounds shader reads and writes to buffers will not crash the GPU, corrupt unrelated memory, or trigger device-loss errors. At the hardware level, enabling this feature alters">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-robust-buffer-access-at-hardware-level">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Robust Buffer Access at Hardware Level - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-robust-buffer-access-at-hardware-level" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Vulkan&#39;s robustBufferAccess feature is a safety mechanism that guarantees out-of-bounds shader reads and writes to buffers will not crash the GPU, corrupt unrelated memory, or trigger device-loss errors. At the hardware level, enabling this feature alters" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-robust-buffer-access-at-hardware-level">Vulkan Robust
+Buffer Access at Hardware Level</h1>
+<p>Vulkan's <code>robustBufferAccess</code> feature is a safety
+mechanism that guarantees out-of-bounds shader reads and writes to
+buffers will not crash the GPU, corrupt unrelated memory, or trigger
+device-loss errors. At the hardware level, enabling this feature alters
+how the GPU's memory management and execution units handle buffer
+address calculations. Instead of allowing memory requests to access
+arbitrary physical or virtual addresses beyond a buffer's allocated
+range, the hardware enforces runtime bounds checking, data clamping, and
+write-discarding mechanisms.</p>
+<h3 id="hardware-address-clamping-and-descriptors">Hardware Address
+Clamping and Descriptors</h3>
+<p>Modern GPUs handle buffer access through resource descriptors loaded
+into execution registers. When robust buffer access is active, the GPU
+utilizes the size or record count field encoded directly in the buffer
+descriptor to evaluate memory operations against explicit
+boundaries:</p>
+<ul>
+<li><strong>Hardware Range Registers:</strong> The GPU's Load/Store
+Units (LSUs) check the memory offset of an incoming instruction against
+the base address and the upper limit stored in the descriptor.</li>
+<li><strong>Native Clamping:</strong> In architectures with dedicated
+hardware support (such as AMD's buffer resource descriptors or modern
+NVIDIA architectures), the hardware automatically clamps the computed
+memory address to the valid buffer range, or checks if
+<code>offset + access_size &gt; buffer_size</code> at the execution
+stage.</li>
+<li><strong>Compiler-Injected Instructions:</strong> If a particular
+hardware generation lacks dedicated fixed-function bounds checking in
+its load/store pipelines, the Vulkan shader compiler injects conditional
+instructions directly into the shader binary. This involves inserting
+integer minimum/maximum or comparison operations to validate indices
+before issuing read or write opcodes.</li>
+</ul>
+<h3 id="handling-out-of-bounds-reads">Handling Out-of-Bounds Reads</h3>
+<p>When a shader attempts to read data from an address outside the
+defined buffer range, the hardware prevents an invalid page access or
+memory fault:</p>
+<ul>
+<li><strong>Zero or Defined Padding Returns:</strong> Depending on the
+exact hardware implementation and configuration (such as
+<code>robustBufferAccess2</code>), the load unit intercepts the invalid
+request and directly returns zeros, or returns data from within the
+valid allocation range (such as the last valid element).</li>
+<li><strong>Fault Suppression:</strong> At the memory controller level,
+the hardware suppresses Translation Lookaside Buffer (TLB) misses and
+invalid virtual memory page faults that would otherwise trigger a GPU
+reset (TDR) or kernel panic.</li>
+</ul>
+<h3 id="handling-out-of-bounds-writes">Handling Out-of-Bounds
+Writes</h3>
+<p>Out-of-bounds writes present the highest risk to system stability and
+application state. The hardware handles these attempts with strict
+isolation:</p>
+<ul>
+<li><strong>Discarding Writes (No-Op):</strong> The memory controller or
+cache hierarchy detects that the destination address lies outside the
+descriptor's limit and drops the write transaction entirely. The write
+becomes a no-operation (no-op).</li>
+<li><strong>Scratch Writes:</strong> On certain architectures, invalid
+writes are redirected to a dedicated dummy or scratch memory location,
+ensuring that execution flow continues uninterrupted without overwriting
+adjacent buffers, render targets, or system memory.</li>
+</ul>
+<h3 id="hardware-performance-trade-offs">Hardware Performance
+Trade-offs</h3>
+<p>Enabling robust buffer access at the hardware level introduces
+specific execution costs. When implemented purely via hardware
+descriptors, it can reduce descriptor cache efficiency and slightly
+increase latency in memory address resolution. When implemented via
+compiler-injected instructions, it increases register pressure and
+instruction count, leading to lower wave/warp occupancy and reduced
+compute throughput.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

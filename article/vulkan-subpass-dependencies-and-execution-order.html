@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Subpass Dependencies and Execution Order - vulkan</title>
+    <meta name="description" content="This article explains how Vulkan subpass dependencies establish execution order and memory synchronization between internal passes within a render pass. By configuring source and destination subpass indices alongside specific pipeline stage masks and memo">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-subpass-dependencies-and-execution-order">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Subpass Dependencies and Execution Order - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-subpass-dependencies-and-execution-order" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how Vulkan subpass dependencies establish execution order and memory synchronization between internal passes within a render pass. By configuring source and destination subpass indices alongside specific pipeline stage masks and memo" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-subpass-dependencies-and-execution-order">Vulkan Subpass
+Dependencies and Execution Order</h1>
+<p>This article explains how Vulkan subpass dependencies establish
+execution order and memory synchronization between internal passes
+within a render pass. By configuring source and destination subpass
+indices alongside specific pipeline stage masks and memory access masks,
+developers create explicit execution barriers. This mechanism prevents
+data hazards, ensures determinism across GPU architectures, and enables
+mobile and tile-based rendering architectures to keep transient data
+entirely within on-chip memory.</p>
+<h2 id="the-role-of-vksubpassdependency">The Role of
+<code>VkSubpassDependency</code></h2>
+<p>In Vulkan, a render pass can be broken down into multiple sequential
+or parallel phases called subpasses. Subpasses do not automatically
+execute in sequential order based on their array index; the Vulkan
+driver may overlap or reorder them unless explicit synchronization is
+provided.</p>
+<p>A subpass dependency is defined using the
+<code>VkSubpassDependency</code> structure. It acts as an execution and
+memory barrier constrained to the boundaries of the render pass. It
+establishes a directed acyclic graph (DAG) where the driver evaluates
+what work must finish before subsequent work can begin.</p>
+<h2 id="specifying-the-dependency-direction">Specifying the Dependency
+Direction</h2>
+<p>The execution relationship begins with two indices:</p>
+<ul>
+<li><code>srcSubpass</code>: The index of the subpass generating the
+data or finishing work first.</li>
+<li><code>dstSubpass</code>: The index of the subpass consuming the data
+or executing later.</li>
+</ul>
+<p>Setting <code>srcSubpass</code> to a lower index and
+<code>dstSubpass</code> to a higher index creates a forward dependency
+within the render pass. Vulkan also provides the
+<code>VK_SUBPASS_EXTERNAL</code> pseudo-subpass identifier, which links
+commands executing before or after the entire render pass to a specific
+subpass inside it.</p>
+<h2 id="execution-dependencies-via-pipeline-stages">Execution
+Dependencies via Pipeline Stages</h2>
+<p>To control the actual order of execution,
+<code>VkSubpassDependency</code> relies on pipeline stage masks:</p>
+<ul>
+<li><code>srcStageMask</code>: Specifies the pipeline stages in
+<code>srcSubpass</code> that must complete before execution can
+proceed.</li>
+<li><code>dstStageMask</code>: Specifies the pipeline stages in
+<code>dstSubpass</code> that must stall until the stages specified in
+<code>srcStageMask</code> have finished.</li>
+</ul>
+<p>For example, if Subpass 0 writes color data and Subpass 1 reads that
+data as an input attachment in the fragment shader,
+<code>srcStageMask</code> is set to
+<code>VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT</code> and
+<code>dstStageMask</code> is set to
+<code>VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT</code>. The GPU can execute
+early pipeline stages (such as vertex fetching and vertex shading) of
+Subpass 1 in parallel with Subpass 0, but it will block Subpass 1’s
+fragment shader until Subpass 0 finishes writing color attachments.</p>
+<h2 id="memory-dependencies-via-access-masks">Memory Dependencies via
+Access Masks</h2>
+<p>Execution ordering alone does not guarantee that memory writes are
+visible to subsequent reads. A memory dependency must be coupled with
+the execution dependency using access flags:</p>
+<ul>
+<li><code>srcAccessMask</code>: Declares the types of memory operations
+that must be made available (flushed from local caches) by the source
+subpass.</li>
+<li><code>dstAccessMask</code>: Declares the types of memory operations
+in the destination subpass that must receive visible (invalidated and
+re-fetched) data.</li>
+</ul>
+<p>Continuing the input attachment example, setting
+<code>srcAccessMask</code> to
+<code>VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT</code> ensures write caches
+are flushed. Setting <code>dstAccessMask</code> to
+<code>VK_ACCESS_INPUT_ATTACHMENT_READ_BIT</code> ensures the fragment
+shader invalidates its read caches and fetches the latest written
+values.</p>
+<h2 id="managing-attachment-layout-transitions">Managing Attachment
+Layout Transitions</h2>
+<p>Subpasses frequently require attachments to change their underlying
+image layouts (for example, transitioning from
+<code>VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL</code> to
+<code>VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL</code>).</p>
+<p>When a subpass dependency is defined between two subpasses, the
+Vulkan implementation automatically schedules and inserts layout
+transitions between the stages specified by <code>srcStageMask</code>
+and <code>dstStageMask</code>. The dependency ensures that memory writes
+are completed before the layout changes and that the layout transition
+completes before the destination stage attempts to access the
+attachment.</p>
+<h2 id="performance-impact-on-tiled-gpus">Performance Impact on Tiled
+GPUs</h2>
+<p>Properly specifying subpass dependencies allows Tile-Based Deferred
+Rendering (TBDR) GPUs, common in mobile hardware, to process multi-pass
+rendering efficiently. When an input attachment dependency is correctly
+chained within a single render pass, the hardware can keep the data
+resident in fast, on-chip tile memory instead of writing intermediate
+framebuffers out to external VRAM. If dependencies are omitted or
+misconfigured, the driver must fall back to costly full-memory barriers
+and VRAM round-trips.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

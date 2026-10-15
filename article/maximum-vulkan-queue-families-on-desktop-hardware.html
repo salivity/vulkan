@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maximum Vulkan Queue Families on Desktop Hardware - vulkan</title>
+    <meta name="description" content="This article examines the maximum number of queue families that can be queried via the Vulkan graphics and compute API on modern desktop hardware. While the Vulkan specification technically permits an arbitrary number governed only by integer capacity, st">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/maximum-vulkan-queue-families-on-desktop-hardware">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Maximum Vulkan Queue Families on Desktop Hardware - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/maximum-vulkan-queue-families-on-desktop-hardware" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article examines the maximum number of queue families that can be queried via the Vulkan graphics and compute API on modern desktop hardware. While the Vulkan specification technically permits an arbitrary number governed only by integer capacity, st" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="maximum-vulkan-queue-families-on-desktop-hardware">Maximum
+Vulkan Queue Families on Desktop Hardware</h1>
+<p>This article examines the maximum number of queue families that can
+be queried via the Vulkan graphics and compute API on modern desktop
+hardware. While the Vulkan specification technically permits an
+arbitrary number governed only by integer capacity, standard consumer
+desktop GPUs from NVIDIA, AMD, and Intel realistically expose between
+<strong>3 and 5</strong> distinct queue families, rarely exceeding
+<strong>8</strong> even when specialized multimedia and optical flow
+engines are exposed.</p>
+<h2 id="the-api-specification-vs-hardware-reality">The API Specification
+vs. Hardware Reality</h2>
+<p>In the Vulkan API, queue families are queried using the function
+<code>vkGetPhysicalDeviceQueueFamilyProperties</code>. The count
+parameter passed to this function is an unsigned 32-bit integer
+(<code>uint32_t</code>). Theoretically, the Vulkan specification sets no
+arbitrary hard ceiling on the number of queue families an implementation
+can expose, meaning the programmatic limit is <span
+class="math inline">\(2^{32} - 1\)</span>.</p>
+<p>In practice, physical silicon design strictly dictates this number. A
+queue family represents a group of queues with identical capabilities
+and execution properties mapped to physical hardware engines on the GPU.
+Because desktop GPUs only possess a discrete set of execution engines,
+drivers expose only a few distinct families.</p>
+<h2 id="queue-family-counts-on-desktop-gpus">Queue Family Counts on
+Desktop GPUs</h2>
+<p>On standard consumer desktop platforms running modern drivers, the
+typical queue family counts are distributed as follows:</p>
+<ul>
+<li><strong>NVIDIA (GeForce GTX / RTX):</strong> Typically exposes
+<strong>3 to 5</strong> queue families. These generally include:
+<ol type="1">
+<li>A primary universal family supporting Graphics, Compute, and
+Transfer.</li>
+<li>A dedicated Transfer (DMA) family for asynchronous data
+uploads.</li>
+<li>An Async Compute family.</li>
+<li>Specialized families for hardware video decoding, encoding, or
+optical flow (depending on driver version and extension support).</li>
+</ol></li>
+<li><strong>AMD (Radeon RX series):</strong> Typically exposes <strong>4
+to 5</strong> queue families. These generally cover:
+<ol type="1">
+<li>A universal Graphics/Compute/Transfer family.</li>
+<li>Dedicated Asynchronous Compute families (often mapped to hardware
+Asynchronous Compute Engines or ACEs).</li>
+<li>Dedicated Transfer/DMA copy engines.</li>
+<li>Video decode and encode queues (via Vulkan Video extensions).</li>
+</ol></li>
+<li><strong>Intel (Arc Graphics):</strong> Typically exposes <strong>2
+to 4</strong> queue families, dividing workloads between the main
+render/compute pipeline, dedicated compute engines, transfer/copy
+blitters, and media processing.</li>
+</ul>
+<h2 id="why-the-number-remains-low">Why the Number Remains Low</h2>
+<p>Hardware manufacturers keep the number of queue families low because
+each family represents fundamentally different hardware scheduling
+pipelines. Granular parallelism is achieved by allocating multiple
+individual <em>queues</em> within a single queue family—such as multiple
+compute queues—rather than creating an excessive number of separate
+families. Consequently, standard desktop systems virtually never expose
+more than a single-digit number of queue families.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

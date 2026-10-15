@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Integer Dot Product for Quantized Neural Networks - vulkan</title>
+    <meta name="description" content="This article explores how hardware-accelerated integer dot products significantly enhance quantized neural network evaluation using the Vulkan graphics and compute API. Deploying neural networks typically demands immense computational power, but modern in">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-integer-dot-product-for-quantized-neural-networks">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Integer Dot Product for Quantized Neural Networks - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-integer-dot-product-for-quantized-neural-networks" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explores how hardware-accelerated integer dot products significantly enhance quantized neural network evaluation using the Vulkan graphics and compute API. Deploying neural networks typically demands immense computational power, but modern in" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-integer-dot-product-for-quantized-neural-networks">Vulkan
+Integer Dot Product for Quantized Neural Networks</h1>
+<p>This article explores how hardware-accelerated integer dot products
+significantly enhance quantized neural network evaluation using the
+Vulkan graphics and compute API. Deploying neural networks typically
+demands immense computational power, but modern inference techniques use
+low-precision integer formats to reduce overhead. By leveraging
+dedicated Vulkan extensions, developers can map core neural network
+operations directly to specialized GPU instructions, slashing memory
+bandwidth constraints, increasing arithmetic throughput, and achieving
+high-performance, cross-platform machine learning inference.</p>
+<h3 id="understanding-quantization-in-neural-networks">Understanding
+Quantization in Neural Networks</h3>
+<p>Standard neural networks rely heavily on 32-bit floating-point (FP32)
+or 16-bit floating-point (FP16) arithmetic during training to maintain
+precision. However, when evaluating (running inference on) trained
+models, that high degree of precision is often unnecessary. Quantization
+converts these continuous floating-point weights and activation values
+into low-bitwidth integers, typically 8-bit (INT8) or 4-bit (INT4).</p>
+<p>Quantization provides immediate benefits: it reduces model file
+sizes, fits larger networks into VRAM or device caches, and uses
+significantly less memory bandwidth. The primary mathematical operation
+in these models remains the Multiply-Accumulate (MAC) sequence—computing
+the dot product between an input vector and a weight vector.</p>
+<h3 id="the-role-of-vk_khr_shader_integer_dot_product">The Role of
+<code>VK_KHR_shader_integer_dot_product</code></h3>
+<p>Traditionally, performing 8-bit integer operations on GPUs designed
+primarily for floating-point graphics required emulating integer
+multiplication and addition. Developers had to unpack vectors into wider
+formats, perform calculations, and repack them, which introduced massive
+instruction overhead and erased the benefits of quantization.</p>
+<p>Vulkan solves this with the
+<code>VK_KHR_shader_integer_dot_product</code> extension (integrated
+into Vulkan 1.3 core). This extension exposes dedicated SPIR-V
+instructions that allow compute shaders to compute the dot product of
+integer vectors natively in a single operation. It supports signed and
+unsigned formats (e.g., INT8 and INT4) and handles the accumulation
+directly into wider 32-bit integer registers, preventing mathematical
+overflow.</p>
+<h3 id="how-hardware-acceleration-speeds-up-evaluation">How Hardware
+Acceleration Speeds Up Evaluation</h3>
+<h4 id="1-native-vector-instructions-dp4a">1. Native Vector Instructions
+(DP4A)</h4>
+<p>Modern graphics architectures from NVIDIA, AMD, Intel, and mobile
+vendors feature dedicated instructions for integer dot products, such as
+DP4A (Dot Product of 4 elements with Accumulate). Instead of decoding
+four separate multiplications and additions, the GPU executes a 4-way
+INT8 vector dot product and adds the result to a 32-bit accumulator in a
+single instruction cycle. Vulkan’s integer dot product extension
+translates directly to these low-level hardware instructions,
+multiplying effective compute throughput up to four times over standard
+scalar operations.</p>
+<h4 id="2-reduced-memory-bandwidth-and-register-pressure">2. Reduced
+Memory Bandwidth and Register Pressure</h4>
+<p>Neural network inference is frequently memory-bound; the GPU often
+stalls while waiting for model weights to stream from system memory or
+VRAM. INT8 data consumes 75% less bandwidth than FP32. Because the
+integer dot product extension operates directly on packed 32-bit words
+containing four 8-bit values, registers can hold four times as much
+operational data. This reduction in register pressure allows the GPU
+scheduler to keep more execution threads (warps or wavefronts) in flight
+simultaneously, hiding memory latency.</p>
+<h4 id="3-increased-cache-utilization">3. Increased Cache
+Utilization</h4>
+<p>Because quantized weights and activations are compact, significantly
+more of the model’s data resides in high-speed L1 and L2 GPU caches.
+This spatial locality ensures that compute units spend less time
+fetching data from external memory, enabling matrix multiplications to
+run at peak compute efficiency.</p>
+<h3 id="cross-platform-efficiency">Cross-Platform Efficiency</h3>
+<p>Before standardized Vulkan support, tapping into low-precision GPU
+hardware required vendor-specific APIs. Vulkan provides an open, uniform
+abstraction across desktop GPUs, integrated chipsets, and mobile devices
+(via Android). By querying supported integer dot product capabilities at
+runtime, a single Vulkan compute pipeline can adapt dynamically to run
+quantized neural networks at native hardware speeds across diverse
+hardware ecosystems.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

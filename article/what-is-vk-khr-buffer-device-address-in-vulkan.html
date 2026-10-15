@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>What Is VK_KHR_buffer_device_address in Vulkan? - vulkan</title>
+    <meta name="description" content="The VKKHRbufferdeviceaddress extension is a foundational feature in modern Vulkan that enables shaders to access buffer memory directly using 64-bit GPU virtual addresses, mimicking standard C/C++ pointer operations. This article explores the purpose of t">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/what-is-vk-khr-buffer-device-address-in-vulkan">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="What Is VK_KHR_buffer_device_address in Vulkan? - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/what-is-vk-khr-buffer-device-address-in-vulkan" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The VKKHRbufferdeviceaddress extension is a foundational feature in modern Vulkan that enables shaders to access buffer memory directly using 64-bit GPU virtual addresses, mimicking standard C/C++ pointer operations. This article explores the purpose of t" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="what-is-vk_khr_buffer_device_address-in-vulkan">What Is
+VK_KHR_buffer_device_address in Vulkan?</h1>
+<p>The <code>VK_KHR_buffer_device_address</code> extension is a
+foundational feature in modern Vulkan that enables shaders to access
+buffer memory directly using 64-bit GPU virtual addresses, mimicking
+standard C/C++ pointer operations. This article explores the purpose of
+the extension, how it replaces traditional descriptor-based workflows,
+its necessity in hardware-accelerated ray tracing, and how it simplifies
+the implementation of complex, dynamic GPU data structures.</p>
+<h2 id="direct-gpu-memory-addressing">Direct GPU Memory Addressing</h2>
+<p>Historically, Vulkan required developers to access GPU buffer memory
+via descriptor sets, binding Uniform Buffer Objects (UBOs) or Storage
+Buffer Objects (SSBOs) to specific shader binding slots. While
+effective, this model introduces CPU overhead for descriptor allocation,
+binding updates, and descriptor set management.</p>
+<p>The <code>VK_KHR_buffer_device_address</code> extension removes this
+friction by allowing applications to query a raw 64-bit integer address
+for any <code>VkBuffer</code> on the GPU timeline using the function
+<code>vkGetBufferDeviceAddress</code> (or its KHR equivalent). Shaders
+can cast this 64-bit integer into a pointer type and directly read or
+write memory without referencing a binding slot or a descriptor set.</p>
+<h2 id="pointer-based-shading-and-buffer-references">Pointer-Based
+Shading and Buffer References</h2>
+<p>In shading languages such as GLSL (via
+<code>GL_EXT_buffer_reference</code>) and HLSL, buffer device addresses
+enable native pointer syntax. Shaders can define structures, dereference
+pointers, and perform pointer arithmetic directly in GPU code.</p>
+<p>This capability fundamentally changes how data is organized:</p>
+<ul>
+<li><strong>Embedded Pointers:</strong> Buffers can store pointers to
+other buffers. Instead of tracking multiple descriptors, a single root
+buffer can contain an array of addresses pointing to
+sub-allocations.</li>
+<li><strong>Complex Data Structures:</strong> It becomes straightforward
+to implement linked lists, trees, and graphs on the GPU, enabling direct
+pointer-chasing algorithms that were previously inefficient or
+impossible using flat indexing.</li>
+</ul>
+<h2 id="core-requirement-for-vulkan-ray-tracing">Core Requirement for
+Vulkan Ray Tracing</h2>
+<p>The most prominent driver for
+<code>VK_KHR_buffer_device_address</code> is hardware ray tracing
+(<code>VK_KHR_acceleration_structure</code> and
+<code>VK_KHR_ray_tracing_pipeline</code>).</p>
+<p>When building Bottom-Level Acceleration Structures (BLAS), Vulkan
+requires the memory locations of vertex buffers, index buffers, and
+transform matrices to be passed as raw <code>VkDeviceAddress</code>
+values rather than descriptor bindings. Furthermore, shader binding
+tables (SBTs) use device addresses to reference ray generation, miss,
+and hit shaders alongside their embedded local root arguments.</p>
+<h2 id="enabling-true-bindless-rendering">Enabling True Bindless
+Rendering</h2>
+<p>In bindless rendering architectures, applications aim to eliminate
+descriptor switching between draw calls. While standard descriptor
+indexing (<code>VK_EXT_descriptor_indexing</code>) permits large arrays
+of descriptors, buffer device addresses push bindless architecture
+further.</p>
+<p>A draw or dispatch call can receive a small push constant containing
+a single 64-bit device address. The shader then uses this address to
+traverse global scene data, material properties, and mesh geometry
+without altering the Vulkan pipeline or binding states.</p>
+<h2 id="integration-and-core-status">Integration and Core Status</h2>
+<p>Due to its utility, the functionality introduced by
+<code>VK_KHR_buffer_device_address</code> was promoted to the core
+specification in Vulkan 1.2. In modern Vulkan programming, relying on
+buffer device addresses is the standard methodology for ray tracing,
+GPU-driven pipelines, and high-performance compute algorithms requiring
+dynamic memory layouts.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

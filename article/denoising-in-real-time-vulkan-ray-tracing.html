@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Denoising in Real-Time Vulkan Ray Tracing - vulkan</title>
+    <meta name="description" content="Denoising is an essential component of modern real-time rendering, serving as the bridge between raw, undersampled ray tracing data and clean, photorealistic visuals. In real-time graphics using the Vulkan API, hardware constraints limit the number of ray">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/denoising-in-real-time-vulkan-ray-tracing">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Denoising in Real-Time Vulkan Ray Tracing - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/denoising-in-real-time-vulkan-ray-tracing" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Denoising is an essential component of modern real-time rendering, serving as the bridge between raw, undersampled ray tracing data and clean, photorealistic visuals. In real-time graphics using the Vulkan API, hardware constraints limit the number of ray" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="denoising-in-real-time-vulkan-ray-tracing">Denoising in
+Real-Time Vulkan Ray Tracing</h1>
+<p>Denoising is an essential component of modern real-time rendering,
+serving as the bridge between raw, undersampled ray tracing data and
+clean, photorealistic visuals. In real-time graphics using the Vulkan
+API, hardware constraints limit the number of rays cast per pixel,
+resulting in high levels of Monte Carlo noise. Denoising filters resolve
+this issue by leveraging spatial, temporal, and geometric data to
+reconstruct accurate illumination, shadows, and reflections without
+incurring the massive computational cost of casting dozens of rays per
+pixel.</p>
+<h3 id="the-real-time-ray-tracing-problem">The Real-Time Ray Tracing
+Problem</h3>
+<p>Full fidelity in path tracing or ray tracing requires hundreds of
+samples per pixel (spp) to resolve Monte Carlo noise and converge on an
+accurate image. However, maintaining a real-time frame rate of 60 or 120
+frames per second allows only a fraction of a millisecond for lighting
+calculations.</p>
+<p>Under current hardware limitations, developers using Vulkan can
+typically only afford 1 to 2 rays per pixel for effects like ambient
+occlusion, diffuse global illumination, soft shadows, and glossy
+reflections. Casting so few rays leaves the raw output heavily
+undersampled, appearing as a severe, dynamic grain across the screen.
+Without a method to resolve this noise, real-time ray tracing is
+visually unusable.</p>
+<h3 id="how-denoising-functions">How Denoising Functions</h3>
+<p>Denoising algorithms reconstruct a smooth, stable image by combining
+multiple adjacent data points rather than tracing additional rays. These
+filters generally rely on three main strategies:</p>
+<ul>
+<li><strong>Temporal Accumulation:</strong> The denoiser blends
+information from previous frames into the current frame. By projecting
+the current frame’s pixels back to their positions in the previous frame
+using 2D motion vectors, the system simulates a much higher sample count
+over time.</li>
+<li><strong>Spatial Filtering:</strong> When temporal data is
+insufficient—such as during rapid camera movement or
+disocclusion—spatial filters blur neighboring pixels that share similar
+geometric and material properties, smoothing out variance while
+preserving high-contrast edges.</li>
+<li><strong>Variance-Guided and Machine Learning Models:</strong> Modern
+denoisers, such as Spatio-Temporal Variance-Guided Filtering (SVGF) or
+neural-network-based systems, calculate the statistical variance of the
+incoming samples or use trained AI models to predict what the fully
+converged image should look like.</li>
+</ul>
+<h3 id="implementing-denoising-in-vulkan">Implementing Denoising in
+Vulkan</h3>
+<p>Vulkan provides the low-level control required to execute
+high-performance denoising pipelines, typically implemented via compute
+shaders or machine learning execution paths.</p>
+<ol type="1">
+<li><strong>G-Buffer Generation:</strong> During the rasterization or
+primary ray generation stage (<code>VK_KHR_ray_tracing_pipeline</code>
+or <code>VK_KHR_ray_query</code>), the engine outputs primary geometric
+buffers. These contain surface normals, linear depth, albedo, roughness,
+and screen-space motion vectors.</li>
+<li><strong>Noisy Lighting Pass:</strong> Vulkan ray tracing shaders
+trace shadows, reflections, or indirect light, storing the noisy
+radiance output in intermediate HDR framebuffers.</li>
+<li><strong>Cross-Bilateral Filtering via Compute:</strong> A sequence
+of compute dispatches (<code>vkCmdDispatch</code>) reads both the noisy
+radiance buffer and the G-buffer guides. The G-buffer ensures the
+spatial filter does not blur across geometric edges, depth
+discontinuities, or distinct materials.</li>
+<li><strong>Temporal Reprojection and History Tracking:</strong> Compute
+shaders reproject past frames stored in persistent image descriptors
+(<code>VkDescriptorSet</code>), accumulating valid history and rejecting
+invalid history caused by dynamic object movement or disocclusion.</li>
+</ol>
+<h3 id="performance-and-visual-trade-offs">Performance and Visual
+Trade-offs</h3>
+<p>Denoising fundamentally alters the performance economics of ray
+tracing in Vulkan. A compute-based denoiser typically executes in 1 to 3
+milliseconds, whereas tracing the hundreds of additional rays required
+to achieve an equivalent signal-to-noise ratio would take tens or
+hundreds of milliseconds.</p>
+<p>However, denoising introduces distinct challenges that developers
+must manage:</p>
+<ul>
+<li><strong>Ghosting:</strong> Incorrect temporal history rejection can
+leave trails behind moving objects.</li>
+<li><strong>Boiling/Temporal Instability:</strong> In areas with very
+low sample counts or high variance (such as rough reflections), residual
+noise may manifest as flickering or "boiling" artifacts.</li>
+<li><strong>Loss of Fine Detail:</strong> Overly aggressive spatial
+filtering can blur subtle contact shadows or high-frequency lighting
+details.</li>
+</ul>
+<p>In Vulkan applications, denoising is not merely an optional
+post-processing effect; it is half of the ray tracing pipeline. By
+handling the variance of low-sample-count tracing through optimized
+compute passes, denoising makes practical real-time ray tracing
+achievable on modern hardware.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

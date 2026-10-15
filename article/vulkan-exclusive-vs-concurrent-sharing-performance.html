@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Exclusive vs Concurrent Sharing Performance - vulkan</title>
+    <meta name="description" content="In the Vulkan graphics and compute API, resources such as buffers and images can be defined using either VKSHARINGMODEEXCLUSIVE or VKSHARINGMODECONCURRENT to manage access across distinct queue families. Exclusive resource sharing consistently offers high">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-exclusive-vs-concurrent-sharing-performance">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Exclusive vs Concurrent Sharing Performance - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-exclusive-vs-concurrent-sharing-performance" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In the Vulkan graphics and compute API, resources such as buffers and images can be defined using either VKSHARINGMODEEXCLUSIVE or VKSHARINGMODECONCURRENT to manage access across distinct queue families. Exclusive resource sharing consistently offers high" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-exclusive-vs-concurrent-sharing-performance">Vulkan
+Exclusive vs Concurrent Sharing Performance</h1>
+<p>In the Vulkan graphics and compute API, resources such as buffers and
+images can be defined using either
+<code>VK_SHARING_MODE_EXCLUSIVE</code> or
+<code>VK_SHARING_MODE_CONCURRENT</code> to manage access across distinct
+queue families. Exclusive resource sharing consistently offers higher
+performance than concurrent sharing because it allows the GPU driver to
+utilize optimal memory layouts, retain hardware compression, and
+eliminate ambiguous synchronization overhead. By requiring developers to
+explicitly transfer ownership between queue families, exclusive mode
+enables the underlying hardware to execute operations along highly
+optimized, vendor-specific fast paths.</p>
+<h2 id="hardware-level-memory-compression">Hardware-Level Memory
+Compression</h2>
+<p>The most significant performance difference between the two sharing
+modes stems from GPU memory compression. Modern GPUs from vendors like
+AMD, NVIDIA, Intel, and ARM rely on specialized compression algorithms
+(such as Delta Color Compression or Framebuffer Compression) to minimize
+memory bandwidth usage during render and compute operations.</p>
+<p>When a resource is set to <code>VK_SHARING_MODE_EXCLUSIVE</code>, the
+driver knows that only a single queue family will access the data at any
+given moment. This guarantees that the hardware engine currently
+interacting with the resource fully supports its internal compression
+format. Conversely, with <code>VK_SHARING_MODE_CONCURRENT</code>, a
+resource can be accessed simultaneously or interchangeably by disparate
+queue families—such as graphics, compute, and transfer engines—which may
+have fundamentally different capabilities. To maintain data integrity
+across engines that cannot all decode the same proprietary compression
+metadata, drivers frequently disable compression entirely or drop down
+to a slower, uncompressed baseline format. This drastically increases
+memory bandwidth consumption and lowers throughput.</p>
+<h2 id="deterministic-cache-invalidation-and-flushing">Deterministic
+Cache Invalidation and Flushing</h2>
+<p>Exclusive sharing mode requires explicit Queue Family Ownership
+Transfers (QFOT) via pipeline barriers. During a transfer, the
+application explicitly releases the resource from the source queue
+family and acquires it on the destination queue family.</p>
+<p>This explicit handoff enables the driver to perform cache flushes and
+cache invalidations only when strictly necessary:</p>
+<ul>
+<li><strong>Write-back operations:</strong> Data modified in
+engine-specific local caches (such as an L1 compute cache) is flushed to
+an L2 or system cache only during the explicit release phase.</li>
+<li><strong>Cache invalidation:</strong> Stale data in the receiving
+queue family's caches is cleared specifically during the acquire
+phase.</li>
+</ul>
+<p>In concurrent mode, there is no explicit ownership transfer mechanism
+to trigger these precise handoffs. Because multiple queue families
+retain simultaneous read and write permissions, the hardware and driver
+must apply conservative, generic memory access strategies to maintain
+coherence. This lack of deterministic transition points causes more
+frequent or overly broad cache flushes, which stall the execution
+pipeline and degrade cache hit rates.</p>
+<h2 id="driver-optimization-paths-and-state-tracking">Driver
+Optimization Paths and State Tracking</h2>
+<p>Under <code>VK_SHARING_MODE_EXCLUSIVE</code>, the driver avoids
+runtime state tracking and validation across multiple queues. Because
+access is mutually exclusive, the driver can schedule tasks and execute
+low-level layout transitions assuming localized context.</p>
+<p>In <code>VK_SHARING_MODE_CONCURRENT</code>, developers must predefine
+an array of all queue family indices that will interact with the
+resource at creation time (<code>queueFamilyIndexCount</code> and
+<code>pQueueFamilyIndices</code>). The driver must configure the memory
+controller and internal tracking structures to accommodate the lowest
+common denominator among all designated queue families. This dynamic
+introduces runtime overhead, degrades the driver's ability to reorder
+commands effectively, and prevents hardware schedulers from maximizing
+instruction throughput across asynchronous compute and graphics
+pipelines.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Dynamic Rendering: Purpose of VkRenderingInfo - vulkan</title>
+    <meta name="description" content="Dynamic rendering in Vulkan, formalized in Vulkan 1.3 through the VKKHRdynamicrendering extension, removes the traditional requirement to create complex VkRenderPass and VkFramebuffer objects prior to drawing. At the heart of this modern workflow is the V">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-dynamic-rendering-purpose-of-vk-rendering-info">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Dynamic Rendering: Purpose of VkRenderingInfo - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-dynamic-rendering-purpose-of-vk-rendering-info" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Dynamic rendering in Vulkan, formalized in Vulkan 1.3 through the VKKHRdynamicrendering extension, removes the traditional requirement to create complex VkRenderPass and VkFramebuffer objects prior to drawing. At the heart of this modern workflow is the V" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-dynamic-rendering-purpose-of-vkrenderinginfo">Vulkan
+Dynamic Rendering: Purpose of VkRenderingInfo</h1>
+<p>Dynamic rendering in Vulkan, formalized in Vulkan 1.3 through the
+<code>VK_KHR_dynamic_rendering</code> extension, removes the traditional
+requirement to create complex <code>VkRenderPass</code> and
+<code>VkFramebuffer</code> objects prior to drawing. At the heart of
+this modern workflow is the <code>VkRenderingInfo</code> structure,
+passed directly to <code>vkCmdBeginRendering</code>. This article
+explores the purpose of <code>VkRenderingInfo</code>, detailing how it
+consolidates render target bindings, manages load and store operations,
+specifies spatial dimensions, and provides essential pipeline parameters
+directly at command recording time.</p>
+<h3 id="eliminating-render-pass-and-framebuffer-boilerplate">Eliminating
+Render Pass and Framebuffer Boilerplate</h3>
+<p>In legacy Vulkan, drawing geometry requires instantiating a
+<code>VkRenderPass</code> to specify subpasses, dependencies, and
+attachment formats, alongside a compatible <code>VkFramebuffer</code>
+binding specific image views. This architecture often resulted in
+significant boilerplate, rigid state management, and combinatorial
+explosion of objects when managing variable targets or dynamic window
+resizing.</p>
+<p><code>VkRenderingInfo</code> eliminates these static abstractions.
+Instead of querying a pre-baked framebuffer object, the command buffer
+uses <code>VkRenderingInfo</code> to describe the immediate rendering
+context on the fly. This enables graphics engines to bind images to
+color, depth, and stencil targets dynamically right before issuing draw
+commands.</p>
+<h3 id="defining-spatial-render-boundaries">Defining Spatial Render
+Boundaries</h3>
+<p>A primary responsibility of <code>VkRenderingInfo</code> is declaring
+the physical execution scope of the rendering commands. It defines:</p>
+<ul>
+<li><strong><code>renderArea</code></strong>: A <code>VkRect2D</code>
+defining the offset and extent of the pixels affected by the render
+pass. Operations such as clears, discards, and drawing commands are
+constrained to this region.</li>
+<li><strong><code>layerCount</code></strong>: The number of layers
+targeted during the rendering pass, essential for layered rendering
+techniques such as cubemaps or texture arrays.</li>
+<li><strong><code>viewMask</code></strong>: A bitmask used for multiview
+rendering (e.g., VR headsets). It replaces Vulkan's legacy multiview
+subpass configurations by designating which views receive geometry
+within a single pass.</li>
+</ul>
+<h3 id="dynamic-attachment-configuration">Dynamic Attachment
+Configuration</h3>
+<p>The core function of <code>VkRenderingInfo</code> is binding the
+actual memory resources where rendering output is written. It achieves
+this by referencing arrays of <code>VkRenderingAttachmentInfo</code>
+structures:</p>
+<ul>
+<li><strong>Color Attachments</strong>: Through
+<code>colorAttachmentCount</code> and <code>pColorAttachments</code>,
+the struct binds arbitrary sets of color buffers. Each attachment
+specifies its target <code>VkImageView</code>, the expected
+<code>imageLayout</code> during rendering, clear values, and explicit
+<code>loadOp</code> and <code>storeOp</code> behavior (such as loading
+existing content, clearing, or discarding memory upon completion).</li>
+<li><strong>Depth and Stencil Attachments</strong>: The struct provides
+explicit pointers (<code>pDepthAttachment</code> and
+<code>pStencilAttachment</code>) to configure depth and stencil behavior
+independently, using the same attachment specification format.</li>
+</ul>
+<p>Because these attachment structures are submitted at execution time,
+image views can be changed, swapped, or dynamically sized between frames
+without recreating any underlying pipeline objects.</p>
+<h3 id="managing-rendering-flags-and-suspensions">Managing Rendering
+Flags and Suspensions</h3>
+<p><code>VkRenderingInfo</code> also manages execution boundaries via
+its <code>flags</code> member (<code>VkRenderingFlags</code>). This
+capability allows rendering passes to be suspended and resumed across
+multiple command buffers:</p>
+<ul>
+<li><strong><code>VK_RENDERING_SUSPENDING_BIT</code></strong>: Informs
+the driver that the render target state will pause, allowing subsequent
+command buffers to resume operations without flushing or invalidating
+attachment contents.</li>
+<li><strong><code>VK_RENDERING_RESUMING_BIT</code></strong>: Signals
+that the pass is continuing execution from a previously suspended render
+pass.</li>
+</ul>
+<p>This mechanism replaces legacy secondary command buffer inheritance
+routines, allowing multi-threaded command buffer generation to feed
+directly into a unified dynamic rendering pass cleanly.</p>
+<h3 id="summary">Summary</h3>
+<p>The <code>VkRenderingInfo</code> struct serves as the single source
+of truth for the graphics pipeline when recording dynamic draw commands
+in Vulkan. By packaging image targets, attachment operations, execution
+areas, and pass continuation flags into a unified structure, it
+streamlines graphics state setup and simplifies rendering pipeline
+maintenance.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

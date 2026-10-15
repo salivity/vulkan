@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Supported Codecs in Vulkan Video API - vulkan</title>
+    <meta name="description" content="Vulkan Video introduces vendor-neutral, hardware-accelerated video decoding and encoding seamlessly integrated into the Vulkan graphics and compute API ecosystem. This article details the specific video compression codecs currently supported across the of">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/supported-codecs-in-vulkan-video-api">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Supported Codecs in Vulkan Video API - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/supported-codecs-in-vulkan-video-api" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Vulkan Video introduces vendor-neutral, hardware-accelerated video decoding and encoding seamlessly integrated into the Vulkan graphics and compute API ecosystem. This article details the specific video compression codecs currently supported across the of" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="supported-codecs-in-vulkan-video-api">Supported Codecs in Vulkan
+Video API</h1>
+<p>Vulkan Video introduces vendor-neutral, hardware-accelerated video
+decoding and encoding seamlessly integrated into the Vulkan graphics and
+compute API ecosystem. This article details the specific video
+compression codecs currently supported across the official Khronos
+Vulkan Video specifications, covering finalized production standards and
+emerging formats across decode and encode pipelines.</p>
+<h3 id="finalized-video-decode-codecs">Finalized Video Decode
+Codecs</h3>
+<p>Vulkan Video provides fully ratified, cross-vendor extensions for
+hardware-accelerated video decoding. These operate alongside the base
+<code>VK_KHR_video_queue</code> and
+<code>VK_KHR_video_decode_queue</code> extensions:</p>
+<ul>
+<li><strong>H.264 / AVC
+(<code>VK_KHR_video_decode_h264</code>):</strong> Supports decoding of
+Advanced Video Coding streams up to High Profile. It handles
+intra-coded, predictive, and bidirectionally predictive frames with
+complete control over reference picture management.</li>
+<li><strong>H.265 / HEVC
+(<code>VK_KHR_video_decode_h265</code>):</strong> Supports High
+Efficiency Video Coding bitstreams, including Main and Main 10 profiles,
+allowing 8-bit and 10-bit color depths.</li>
+<li><strong>AV1 (<code>VK_KHR_video_decode_av1</code>):</strong>
+Ratified to support the modern, royalty-free AOMedia Video 1 format. It
+enables hardware decoding for the AV1 Main profile up to level 6.x,
+supporting 8-bit and 10-bit 4:2:0 content.</li>
+</ul>
+<h3 id="finalized-video-encode-codecs">Finalized Video Encode
+Codecs</h3>
+<p>Hardware video encoding profiles require integration with
+<code>VK_KHR_video_encode_queue</code> to control quantization
+parameters, rate control algorithms, and picture generation:</p>
+<ul>
+<li><strong>H.264 / AVC
+(<code>VK_KHR_video_encode_h264</code>):</strong> Provides standardized
+hardware compression targeting baseline, main, and high profiles. It
+supports CBR (Constant Bitrate), VBR (Variable Bitrate), and direct
+frame-level control over intra and inter prediction.</li>
+<li><strong>H.265 / HEVC
+(<code>VK_KHR_video_encode_h265</code>):</strong> Standardizes hardware
+HEVC encoding for modern streaming and recording workflows, providing
+full support for Main and Main 10 profiles.</li>
+</ul>
+<h3 id="provisional-and-roadmap-codecs">Provisional and Roadmap
+Codecs</h3>
+<ul>
+<li><strong>AV1 Encode (<code>VK_KHR_video_encode_av1</code>):</strong>
+Khronos maintains active development for AV1 hardware encoding
+extensions, designed to enable royalty-free AV1 compression directly
+inside the Vulkan timeline without proprietary platform layers.</li>
+</ul>
+<h3 id="technical-implementation">Technical Implementation</h3>
+<p>All supported codecs operate via standardized Vulkan command buffers.
+Decoded video frames reside directly in <code>VkImage</code> memory,
+eliminating host-to-device memory copies when feeding decoded frames
+into graphics rendering pipelines, compute shaders, or machine learning
+workloads. Hardware support is provided across modern graphics hardware
+from AMD, Intel, and NVIDIA via standard driver updates.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

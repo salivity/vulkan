@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Compute vs Graphics Pipeline Differences - vulkan</title>
+    <meta name="description" content="Vulkan provides two distinct mechanisms for processing data on the GPU: graphics pipelines and compute pipelines. While the graphics pipeline is a sophisticated, multi-stage construct designed to transform 3D geometry into rendered 2D pixels through fixed">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-compute-vs-graphics-pipeline-differences">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Compute vs Graphics Pipeline Differences - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-compute-vs-graphics-pipeline-differences" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Vulkan provides two distinct mechanisms for processing data on the GPU: graphics pipelines and compute pipelines. While the graphics pipeline is a sophisticated, multi-stage construct designed to transform 3D geometry into rendered 2D pixels through fixed" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-compute-vs-graphics-pipeline-differences">Vulkan Compute
+vs Graphics Pipeline Differences</h1>
+<p>Vulkan provides two distinct mechanisms for processing data on the
+GPU: graphics pipelines and compute pipelines. While the graphics
+pipeline is a sophisticated, multi-stage construct designed to transform
+3D geometry into rendered 2D pixels through fixed-function hardware and
+programmable shaders, the compute pipeline is an ultra-streamlined,
+single-stage framework intended for general-purpose parallel processing.
+Understanding the structural divergences between them is essential for
+optimizing workloads, managing memory barriers, and leveraging
+asynchronous execution in Vulkan applications.</p>
+<h2 id="pipeline-creation-and-state-complexity">Pipeline Creation and
+State Complexity</h2>
+<p>The structural divergence is immediately apparent in how both
+pipelines are instantiated via the Vulkan API:</p>
+<ul>
+<li><strong>Graphics Pipelines
+(<code>VkGraphicsPipelineCreateInfo</code>):</strong> Creating a
+graphics pipeline requires defining an extensive collection of
+fixed-function state structures alongside multiple programmable stages.
+Developers must explicitly configure vertex input bindings, input
+assembly topology, viewports, scissors, rasterization state, multisample
+state, depth and stencil testing, color blend attachments, and dynamic
+state arrays. Even if certain stages are bypassed, the driver expects
+validation and setup across the entire rendering pipeline.</li>
+<li><strong>Compute Pipelines
+(<code>VkComputePipelineCreateInfo</code>):</strong> In contrast,
+compute pipeline creation requires almost no state setup. The creation
+structure requires only a pipeline layout
+(<code>VkPipelineLayout</code>), flags, and a single programmable shader
+stage (<code>VkPipelineShaderStageCreateInfo</code>) set to
+<code>VK_SHADER_STAGE_COMPUTE_BIT</code>. There are zero fixed-function
+states to declare because compute workloads bypass hardware
+rasterization, blending, and primitive assembly altogether.</li>
+</ul>
+<h2 id="programmable-stages-and-execution-topology">Programmable Stages
+and Execution Topology</h2>
+<p>Graphics and compute pipelines structure their execution units around
+fundamentally different concepts:</p>
+<ul>
+<li><strong>Graphics Pipeline:</strong> Execution flows through a
+predefined sequence of stages—Vertex, Tessellation Control, Tessellation
+Evaluation, Geometry, and Fragment. Hardware scheduling is dictated by
+the geometry pipeline; primitives are assembled, culled, clipped, and
+rasterized into fragments based on screen-space coordinates.</li>
+<li><strong>Compute Pipeline:</strong> Execution is consolidated into a
+single compute stage. The execution hierarchy is organized into a
+three-dimensional grid of workgroups, defined inside the shader by
+<code>layout(local_size_x, local_size_y, local_size_z)</code>. When
+executed via <code>vkCmdDispatch</code>, the GPU launches a specified
+number of workgroups across X, Y, and Z dimensions. Threads within a
+workgroup execute concurrently, can synchronize using execution
+barriers, and can share high-speed on-chip memory (<code>shared</code>
+memory in GLSL).</li>
+</ul>
+<h2 id="render-pass-and-framebuffer-independence">Render Pass and
+Framebuffer Independence</h2>
+<p>A foundational difference between the two pipelines lies in their
+dependency on render targets:</p>
+<ul>
+<li><strong>Graphics Pipelines:</strong> Must execute within the context
+of a render pass, either explicitly bound via <code>VkRenderPass</code>
+and <code>VkFramebuffer</code> or implicitly via Vulkan 1.3's dynamic
+rendering (<code>vkCmdBeginRendering</code>). The hardware relies on
+this context to handle subpass dependencies, render target clearing,
+multisample resolves, and attachment load/store operations.</li>
+<li><strong>Compute Pipelines:</strong> Are completely decoupled from
+render passes and framebuffers. They cannot be executed inside an active
+render pass instance. Compute shaders write their results directly into
+memory destinations such as Storage Buffers (SSBOs), Storage Images, or
+Uniform Texel Buffers through random-access writes without utilizing
+hardware attachment operations.</li>
+</ul>
+<h2 id="command-recording-and-queue-submission">Command Recording and
+Queue Submission</h2>
+<p>Vulkan separates graphics and compute execution paths down to the
+hardware queue level:</p>
+<ul>
+<li><strong>Queue Family Compatibility:</strong> Graphics pipelines
+require command buffers submitted to a queue family that includes the
+<code>VK_QUEUE_GRAPHICS_BIT</code>. Compute pipelines can run on
+graphics queues, but they can also execute on dedicated compute queues
+possessing only the <code>VK_QUEUE_COMPUTE_BIT</code>.</li>
+<li><strong>Asynchronous Compute:</strong> Because compute pipelines do
+not interface with fixed-function graphics hardware like the rasterizer
+or output merger, they can run on separate, dedicated compute queues
+parallel to graphics operations. This allows developers to overlap
+compute-heavy algorithms (such as physics, pathfinding, or culling) with
+graphics rendering tasks on the same physical device without pipeline
+stall contention.</li>
+</ul>
+<h2 id="synchronization-and-memory-barriers">Synchronization and Memory
+Barriers</h2>
+<p>Because compute pipelines bypass the conventional render pipeline,
+their synchronization model is distinct:</p>
+<ul>
+<li><strong>Pipeline Stages:</strong> Synchronizing compute workloads
+relies on <code>VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT</code>. In
+contrast, graphics pipelines require synchronization across granular
+stages like <code>VK_PIPELINE_STAGE_VERTEX_SHADER_BIT</code>,
+<code>VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT</code>, or
+<code>VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT</code>.</li>
+<li><strong>Access Masks:</strong> Compute shaders primarily produce and
+consume data through <code>VK_ACCESS_SHADER_READ_BIT</code> and
+<code>VK_ACCESS_SHADER_WRITE_BIT</code>. Graphics pipelines also utilize
+these access masks for uniform or storage resources, but additionally
+mandate target-specific masks like
+<code>VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT</code> and
+<code>VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT</code>.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

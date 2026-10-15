@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Conditional Rendering Without CPU Readbacks - vulkan</title>
+    <meta name="description" content="This article explains how graphics engines use the VKEXTconditionalrendering extension in Vulkan to bypass latency-inducing CPU readbacks of occlusion queries. Traditional occlusion culling requires copying visibility results back to the host, introducing">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-conditional-rendering-without-cpu-readbacks">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Conditional Rendering Without CPU Readbacks - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-conditional-rendering-without-cpu-readbacks" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how graphics engines use the VKEXTconditionalrendering extension in Vulkan to bypass latency-inducing CPU readbacks of occlusion queries. Traditional occlusion culling requires copying visibility results back to the host, introducing" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-conditional-rendering-without-cpu-readbacks">Vulkan
+Conditional Rendering Without CPU Readbacks</h1>
+<p>This article explains how graphics engines use the
+<code>VK_EXT_conditional_rendering</code> extension in Vulkan to bypass
+latency-inducing CPU readbacks of occlusion queries. Traditional
+occlusion culling requires copying visibility results back to the host,
+introducing multi-frame stalls and pipeline bubbles. By configuring and
+binding GPU-side conditional rendering buffers directly into the command
+stream, engines allow the GPU to make autonomous draw-call decisions
+entirely on-chip.</p>
+<h3 id="the-problem-with-traditional-cpu-readbacks">The Problem with
+Traditional CPU Readbacks</h3>
+<p>In a standard occlusion query workflow, the engine renders simplified
+proxy geometry (like bounding boxes) inside <code>vkCmdBeginQuery</code>
+and <code>vkCmdEndQuery</code>. To decide whether the full-detail mesh
+should be drawn, the CPU must read the query result using
+<code>vkGetQueryPoolResults</code>.</p>
+<p>Because the GPU operates asynchronously, reading this data back to
+the host creates a dilemma: either the CPU blocks until the rendering
+finishes (causing massive pipeline stalls), or the engine defers the
+result by one or two frames (introducing visible pop-in artifacts).</p>
+<h3 id="the-architecture-of-vulkan-conditional-rendering">The
+Architecture of Vulkan Conditional Rendering</h3>
+<p>The <code>VK_EXT_conditional_rendering</code> extension resolves this
+latency by keeping the decision pipeline strictly within GPU memory.
+Instead of routing visibility results through host memory, the engine
+writes query outputs directly to a <code>VkBuffer</code>. The GPU's
+command processor then reads this buffer directly to evaluate whether
+subsequent rendering commands should be executed or discarded.</p>
+<h3 id="implementation-workflow">Implementation Workflow</h3>
+<h4 id="1-enabling-the-extension">1. Enabling the Extension</h4>
+<p>During device creation, the engine must enable the
+<code>VK_EXT_conditional_rendering</code> extension and activate the
+<code>conditionalRendering</code> feature inside the
+<code>VkPhysicalDeviceConditionalRenderingFeaturesEXT</code>
+structure.</p>
+<h4 id="2-writing-visibility-results-to-a-buffer">2. Writing Visibility
+Results to a Buffer</h4>
+<p>Engines typically obtain visibility status via occlusion queries or
+compute-based culling passes:</p>
+<ul>
+<li><strong>Occlusion Query Path:</strong> The engine dispatches
+bounding-box occlusion queries to a query pool. Instead of calling
+<code>vkGetQueryPoolResults</code>, it invokes
+<code>vkCmdCopyQueryPoolResults</code> inside the command buffer. This
+command transfers the pass/fail results directly into a designated
+<code>VkBuffer</code> with
+<code>VK_BUFFER_USAGE_CONDITIONAL_RENDERING_BIT_EXT</code>.</li>
+<li><strong>Compute Culling Path:</strong> A GPU compute shader performs
+hierarchical-Z (Hi-Z) or frustum testing and writes a <code>1</code>
+(visible) or <code>0</code> (occluded) directly into the conditional
+buffer.</li>
+</ul>
+<h4 id="3-configuring-the-conditional-rendering-buffer">3. Configuring
+the Conditional Rendering Buffer</h4>
+<p>Before executing the high-detail draw calls, the engine populates a
+<code>VkConditionalRenderingBeginInfoEXT</code> structure:</p>
+<ul>
+<li><strong><code>buffer</code></strong>: The <code>VkBuffer</code>
+handle holding the visibility flags.</li>
+<li><strong><code>offset</code></strong>: The byte offset pointing to
+the specific 32-bit integer allocated for this specific draw call or
+object.</li>
+<li><strong><code>flags</code></strong>: Determines evaluation rules. By
+default, a non-zero value in the buffer renders the geometry, while zero
+discards it. If inverted logic is needed (e.g., zero indicates pass),
+<code>VK_CONDITIONAL_RENDERING_INVERTED_BIT_EXT</code> is set.</li>
+</ul>
+<h4 id="4-encapsulating-commands">4. Encapsulating Commands</h4>
+<p>The engine wraps the rendering commands between conditional scope
+markers:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>VkConditionalRenderingBeginInfoEXT condInfo <span class="op">=</span> <span class="op">{};</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>condInfo<span class="op">.</span>sType <span class="op">=</span> VK_STRUCTURE_TYPE_CONDITIONAL_RENDERING_BEGIN_INFO_EXT<span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>condInfo<span class="op">.</span>buffer <span class="op">=</span> visibilityBuffer<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>condInfo<span class="op">.</span>offset <span class="op">=</span> objectOffset<span class="op">;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>condInfo<span class="op">.</span>flags <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> <span class="co">// Non-zero = execute</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>vkCmdBeginConditionalRenderingEXT<span class="op">(</span>commandBuffer<span class="op">,</span> <span class="op">&amp;</span>condInfo<span class="op">);</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="co">// These commands are evaluated on the GPU timeline</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>vkCmdBindPipeline<span class="op">(</span>commandBuffer<span class="op">,</span> VK_PIPELINE_BIND_POINT_GRAPHICS<span class="op">,</span> meshPipeline<span class="op">);</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>vkCmdBindVertexBuffers<span class="op">(</span>commandBuffer<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">1</span><span class="op">,</span> <span class="op">&amp;</span>vertexBuffer<span class="op">,</span> <span class="op">&amp;</span>offset<span class="op">);</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>vkCmdDrawIndexed<span class="op">(</span>commandBuffer<span class="op">,</span> indexCount<span class="op">,</span> <span class="dv">1</span><span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>vkCmdEndConditionalRenderingEXT<span class="op">(</span>commandBuffer<span class="op">);</span></span></code></pre></div>
+<h3 id="execution-at-the-hardware-level">Execution at the Hardware
+Level</h3>
+<p>When <code>vkCmdBeginConditionalRenderingEXT</code> is active, the
+GPU’s command processor fetches the integer stored at the designated
+buffer memory address. If the condition evaluates to false, the hardware
+skips the wrapped draw calls, state changes, or dispatches directly in
+the frontend command streamer.</p>
+<p>This approach completely eliminates CPU synchronization points,
+eliminates query result latency, and ensures high GPU utilization
+without CPU-side visibility tracking.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

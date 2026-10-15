@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Rendering vs Render Passes in Mobile Vulkan - vulkan</title>
+    <meta name="description" content="Dynamic rendering simplifies the Vulkan graphics pipeline by eliminating the boilerplate of render pass and framebuffer objects, but on mobile tile-based architectures, this ergonomic gain must be weighed against hardware efficiency. Tile-Based Deferred R">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/dynamic-rendering-vs-render-passes-in-mobile-vulkan">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Dynamic Rendering vs Render Passes in Mobile Vulkan - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/dynamic-rendering-vs-render-passes-in-mobile-vulkan" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Dynamic rendering simplifies the Vulkan graphics pipeline by eliminating the boilerplate of render pass and framebuffer objects, but on mobile tile-based architectures, this ergonomic gain must be weighed against hardware efficiency. Tile-Based Deferred R" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamic-rendering-vs-render-passes-in-mobile-vulkan">Dynamic
+Rendering vs Render Passes in Mobile Vulkan</h1>
+<p>Dynamic rendering simplifies the Vulkan graphics pipeline by
+eliminating the boilerplate of render pass and framebuffer objects, but
+on mobile tile-based architectures, this ergonomic gain must be weighed
+against hardware efficiency. Tile-Based Deferred Rendering (TBDR) GPUs
+rely heavily on explicit metadata to keep frame attachments inside
+high-speed, on-chip tile memory. While legacy render passes natively
+provide this information up front to minimize power-hungry DRAM traffic,
+dynamic rendering requires newer extensions and disciplined handling to
+avoid performance regressions on mobile devices.</p>
+<h2 id="the-architectural-reality-of-mobile-gpus">The Architectural
+Reality of Mobile GPUs</h2>
+<p>Mobile GPUs—such as Arm Mali, Qualcomm Adreno, and Imagination
+PowerVR—employ Tile-Based (or Tile-Based Deferred) Rendering. Rather
+than writing pixels directly to system memory (DRAM), these GPUs divide
+the screen into small tiles (often 16x16 or 32x32 pixels) and process
+rendering commands within fast, on-chip local tile memory (SRAM).</p>
+<p>Reading from and writing to main memory costs substantial memory
+bandwidth and battery life. Consequently, optimal mobile rendering
+depends on two principles: keeping intermediate data entirely inside
+tile memory, and discarding transient data before flushing results back
+to DRAM.</p>
+<h2 id="trade-off-1-subpass-merging-and-g-buffer-bandwidth">Trade-Off 1:
+Subpass Merging and G-Buffer Bandwidth</h2>
+<p>The most critical architectural advantage of legacy render passes
+(<code>VkRenderPass</code>) is native subpass merging. In multi-pass
+workflows such as deferred shading or depth pre-passes:</p>
+<ul>
+<li><strong>Legacy Render Passes:</strong> You define subpasses and
+subpass dependencies declaratively. The GPU processes multiple subpasses
+consecutively for each tile. G-buffer attachments are allocated with
+<code>VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT</code> and
+<code>VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT</code>, read via input
+attachments, and discarded using
+<code>VK_ATTACHMENT_STORE_OP_DONT_CARE</code>. The G-buffer never leaves
+on-chip SRAM, consuming zero DRAM bandwidth.</li>
+<li><strong>Dynamic Rendering:</strong> By default, dynamic rendering
+(<code>vkCmdBeginRendering</code>) treats each rendering block as an
+independent pass. Unless explicitly supported and written with
+<code>VK_KHR_dynamic_rendering_local_read</code>, intermediate
+attachments must be flushed to external DRAM and reloaded in a
+subsequent pass, crippling mobile performance and inflating power
+consumption.</li>
+</ul>
+<h2 id="trade-off-2-driver-scheduling-and-dependency-graphs">Trade-Off
+2: Driver Scheduling and Dependency Graphs</h2>
+<ul>
+<li><strong>Legacy Render Passes:</strong> Because the entire sequence
+of subpasses, attachment layouts, and dependencies is baked into
+immutable <code>VkRenderPass</code> objects, the mobile driver
+understands the entire frame lifecycle ahead of time. This allows the
+driver to generate optimal hardware tiling commands, schedule render
+phases, and optimize barrier placement before execution.</li>
+<li><strong>Dynamic Rendering:</strong> Transitions and synchronization
+rely directly on modern synchronization
+(<code>vkCmdPipelineBarrier2</code>). The driver has less holistic
+foreknowledge and must deduce tiling boundaries on the fly. On mature
+desktop drivers, this incurs negligible overhead, but mobile drivers may
+inject defensive pipeline stalls or full tile flushes if barriers are
+broad.</li>
+</ul>
+<h2 id="trade-off-3-memoryless-and-transient-attachments">Trade-Off 3:
+Memoryless and Transient Attachments</h2>
+<p>TBDR hardware allows memoryless allocations where physical RAM pages
+are only allocated if tile memory spills.</p>
+<ul>
+<li><strong>Legacy Systems:</strong> Pairing transient attachments with
+clear/don't care store operations is straightforward and reliably
+supported across every Vulkan-compliant mobile chip since Vulkan
+1.0.</li>
+<li><strong>Dynamic Systems:</strong> Dynamic rendering supports
+<code>loadOp</code> and <code>storeOp</code> via
+<code>VkRenderingAttachmentInfo</code>, meaning single-pass
+depth/stencil or MSAA resolve can still use transient attachments
+effectively. However, chained passes that consume transient data require
+developers to carefully manage image layouts and tile lifetimes to
+prevent the driver from falling back to dedicated system
+allocations.</li>
+</ul>
+<h2 id="trade-off-4-developer-ergonomics-and-pipeline-state">Trade-Off
+4: Developer Ergonomics and Pipeline State</h2>
+<ul>
+<li><strong>Legacy Render Passes:</strong> Creating and maintaining
+render passes is notoriously verbose. Pipelines are strictly coupled to
+compatible render passes, resulting in pipeline state explosion and
+significant refactoring friction when adding post-processing effects or
+changing target formats.</li>
+<li><strong>Dynamic Rendering:</strong> Dramatically streamlines
+codebases. Pipelines are bound strictly to attachment formats
+(<code>VkPipelineRenderingCreateInfo</code>), matching modern APIs like
+DirectX 12 and Metal. Engine logic becomes cleaner, cross-platform
+maintenance costs decrease, and runtime composition of passes becomes
+trivial.</li>
+</ul>
+<h2 id="summary-checklist-for-mobile-targeting">Summary Checklist for
+Mobile Targeting</h2>
+<ol type="1">
+<li><strong>Forward/Forward+ Rendering with Single Passes:</strong>
+Dynamic rendering is generally safe and recommended on mobile, provided
+<code>loadOp</code> and <code>storeOp</code> are configured properly to
+clear and discard tile contents cleanly.</li>
+<li><strong>Deferred Shading and Multi-Subpass Pipelines:</strong>
+Legacy render passes remain the superior, zero-risk choice for TBDR
+hardware until <code>VK_KHR_dynamic_rendering_local_read</code> is
+universally supported and optimized across Android device drivers.</li>
+<li><strong>API Portability:</strong> If modern API consistency across
+platforms is the primary priority, dynamic rendering can be used
+alongside strict validation and GPU profiling to ensure passes are not
+inadvertently flushing tile memory to DRAM.</li>
+</ol></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

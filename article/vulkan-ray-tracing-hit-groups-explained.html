@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Ray Tracing Hit Groups Explained - vulkan</title>
+    <meta name="description" content="In the Vulkan graphics and compute API, ray tracing hit groups are fundamental structures within the ray tracing pipeline (VKKHRraytracingpipeline) that manage how rays interact with scene geometry. A hit group is an organized collection of shaders execut">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-ray-tracing-hit-groups-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Ray Tracing Hit Groups Explained - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-ray-tracing-hit-groups-explained" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In the Vulkan graphics and compute API, ray tracing hit groups are fundamental structures within the ray tracing pipeline (VKKHRraytracingpipeline) that manage how rays interact with scene geometry. A hit group is an organized collection of shaders execut" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-ray-tracing-hit-groups-explained">Vulkan Ray Tracing Hit
+Groups Explained</h1>
+<p>In the Vulkan graphics and compute API, ray tracing hit groups are
+fundamental structures within the ray tracing pipeline
+(<code>VK_KHR_ray_tracing_pipeline</code>) that manage how rays interact
+with scene geometry. A hit group is an organized collection of shaders
+executed when a ray intersects a primitive. Understanding hit groups is
+essential for handling rendering tasks such as surface shading,
+alpha-tested transparency, and custom procedural geometry efficiently on
+the GPU.</p>
+<h3 id="what-is-a-hit-group">What Is a Hit Group?</h3>
+<p>A hit group bundles together the shaders responsible for processing
+ray-primitive intersections. When defining a ray tracing pipeline via
+<code>VkRayTracingPipelineCreateInfoKHR</code>, individual shaders are
+indexed and grouped together using
+<code>VkRayTracingShaderGroupCreateInfoKHR</code>.</p>
+<p>During ray traversal, when the hardware determines that a ray
+intersects a bounding box or a triangle, it looks up the corresponding
+hit group in the Shader Binding Table (SBT). The hit group then dictates
+which intersection, filtering, and shading logic to execute.</p>
+<p>Hit groups are classified into two primary types based on primitive
+geometry:</p>
+<ul>
+<li><strong>Triangle Hit Groups:</strong> Used for standard triangular
+meshes, where primitive intersection is handled automatically by ray
+tracing hardware or fixed-function units.</li>
+<li><strong>Procedural Hit Groups:</strong> Used for user-defined,
+non-triangular shapes (such as spheres, hair strands, or metaballs)
+bounded by Axis-Aligned Bounding Boxes (AABBs), requiring custom
+intersection math.</li>
+</ul>
+<h3 id="shader-stages-encompassed-by-hit-groups">Shader Stages
+Encompassed by Hit Groups</h3>
+<p>A Vulkan hit group encompasses up to three distinct shader
+stages:</p>
+<h4 id="1-intersection-shader-vk_shader_stage_intersection_bit_khr">1.
+Intersection Shader
+(<code>VK_SHADER_STAGE_INTERSECTION_BIT_KHR</code>)</h4>
+<p>The intersection shader is utilized exclusively in procedural hit
+groups. When a ray enters an AABB bounding volume, this shader runs to
+compute whether the ray actually intersects the underlying procedural
+geometry. If a hit is confirmed, the shader reports the hit distance and
+hit attributes back to the traversal engine using the
+<code>reportIntersectionEXT</code> function. For standard triangle
+geometry, an intersection shader is not used because the intersection
+calculation is performed by built-in hardware tests.</p>
+<h4 id="2-any-hit-shader-vk_shader_stage_any_hit_bit_khr">2. Any-Hit
+Shader (<code>VK_SHADER_STAGE_ANY_HIT_BIT_KHR</code>)</h4>
+<p>The any-hit shader is an optional stage executed each time a
+potential intersection occurs along the ray. It executes before a hit is
+confirmed as the closest intersection. Its primary role is to filter
+intersections—such as discarding hits for transparent or cut-out
+materials (e.g., foliage or chain-link fences based on alpha textures).
+The shader can call <code>ignoreIntersectionEXT</code> to discard the
+hit and continue ray traversal, or <code>terminateRayEXT</code> to stop
+further traversal early (often used for ambient occlusion or shadow ray
+testing).</p>
+<h4 id="3-closest-hit-shader-vk_shader_stage_closest_hit_bit_khr">3.
+Closest Hit Shader
+(<code>VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR</code>)</h4>
+<p>The closest hit shader executes once ray traversal has completed and
+the single closest valid intersection along the ray interval has been
+determined. This stage typically handles material evaluations, lighting
+calculations, texture sampling, and the generation of secondary rays
+(such as reflection, refraction, or indirect illumination rays) via the
+<code>traceRayEXT</code> function. It receives payload data passed down
+from the ray generation or previous closest hit stage and writes the
+final computed color or shading attributes back into that payload.</p>
+<h3 id="execution-flow-in-the-pipeline">Execution Flow in the
+Pipeline</h3>
+<p>When a ray is cast, these stages interact in a defined sequence:</p>
+<ol type="1">
+<li><strong>Detection:</strong> The hardware identifies an intersection
+(via the fixed-function unit for triangles or the <strong>Intersection
+Shader</strong> for procedural AABBs).</li>
+<li><strong>Evaluation:</strong> If a candidate hit is found, the
+<strong>Any-Hit Shader</strong> runs to validate or ignore the hit.</li>
+<li><strong>Resolution:</strong> Traversal continues until all
+primitives are tested. Once the nearest valid hit point is resolved, the
+<strong>Closest Hit Shader</strong> executes to perform final
+shading.</li>
+</ol></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

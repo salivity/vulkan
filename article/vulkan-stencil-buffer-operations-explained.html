@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Stencil Buffer Operations Explained - vulkan</title>
+    <meta name="description" content="This article provides an overview of how Vulkan evaluates depth-stencil states, detailing the execution pipeline of stencil testing, how stencil operations interact with depth test results, and the exact mechanics of operations such as keep, replace, and">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-stencil-buffer-operations-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Stencil Buffer Operations Explained - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-stencil-buffer-operations-explained" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article provides an overview of how Vulkan evaluates depth-stencil states, detailing the execution pipeline of stencil testing, how stencil operations interact with depth test results, and the exact mechanics of operations such as keep, replace, and" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-stencil-buffer-operations-explained">Vulkan Stencil
+Buffer Operations Explained</h1>
+<p>This article provides an overview of how Vulkan evaluates
+depth-stencil states, detailing the execution pipeline of stencil
+testing, how stencil operations interact with depth test results, and
+the exact mechanics of operations such as keep, replace, and increment
+within the <code>VkPipelineDepthStencilStateCreateInfo</code>
+configuration.</p>
+<h2 id="the-stencil-evaluation-pipeline">The Stencil Evaluation
+Pipeline</h2>
+<p>In Vulkan, stencil testing occurs during the per-fragment operations
+stage of the graphics pipeline, tightly coupled with depth testing. When
+a fragment is generated, its stencil evaluation is governed by comparing
+a reference value to the value already stored in the framebuffer's
+stencil attachment.</p>
+<p>The evaluation relies on a three-stage outcome condition:</p>
+<ol type="1">
+<li><strong>Stencil Fail</strong>: The stencil test itself fails.</li>
+<li><strong>Stencil Pass, Depth Fail</strong>: The stencil test passes,
+but the subsequent depth test fails.</li>
+<li><strong>Depth-Stencil Pass</strong>: Both the stencil test and the
+depth test pass (or depth testing is disabled).</li>
+</ol>
+<p>Vulkan evaluates these conditions independently for front-facing and
+back-facing polygons using separate <code>VkStencilOpState</code>
+structures (<code>front</code> and <code>back</code>) defined within
+<code>VkPipelineDepthStencilStateCreateInfo</code>.</p>
+<h2 id="stencil-comparison-logic">Stencil Comparison Logic</h2>
+<p>Before an operation is executed, Vulkan determines whether the
+stencil test passes using the configured <code>VkCompareOp</code> (such
+as <code>VK_COMPARE_OP_LESS</code>, <code>VK_COMPARE_OP_EQUAL</code>, or
+<code>VK_COMPARE_OP_ALWAYS</code>). The comparison is evaluated as:</p>
+<p><span class="math display">\[\text{Result} = (\text{Reference} \
+\&amp; \ \text{compareMask}) \ \mathbf{compareOp} \ (\text{BufferValue}
+\ \&amp; \ \text{compareMask})\]</span></p>
+<ul>
+<li><strong>Reference</strong>: A dynamic or static scalar value
+provided to the pipeline or set via
+<code>vkCmdSetStencilReference</code>.</li>
+<li><strong>compareMask</strong>: An integer bitmask
+(<code>VkStencilOpState::compareMask</code>) that isolates specific bits
+for comparison.</li>
+<li><strong>BufferValue</strong>: The current value residing in the
+bound stencil buffer at the fragment's coordinates.</li>
+</ul>
+<p>If this condition evaluates to true, the fragment proceeds to the
+depth test. If false, processing immediately halts for depth, and the
+pipeline executes the operation assigned to <code>failOp</code>.</p>
+<h2 id="how-stencil-operations-modify-state">How Stencil Operations
+Modify State</h2>
+<p>Once the pipeline resolves whether the fragment caused a stencil
+failure, a depth failure, or a total pass, it applies the corresponding
+<code>VkStencilOp</code> to update the buffer. Any write to the buffer
+is further masked by <code>writeMask</code>
+(<code>BufferValue = (BufferValue &amp; ~writeMask) | (NewValue &amp; writeMask)</code>).</p>
+<h3 id="vk_stencil_op_keep">VK_STENCIL_OP_KEEP</h3>
+<p><code>VK_STENCIL_OP_KEEP</code> leaves the current stencil buffer
+value unchanged. It is typically used for <code>failOp</code> or
+<code>depthFailOp</code> when you only want to record fragments that
+pass all tests, or for <code>passOp</code> when the stencil buffer is
+acting strictly as a read-only mask (such as masking UI elements or
+portal views).</p>
+<h3 id="vk_stencil_op_replace">VK_STENCIL_OP_REPLACE</h3>
+<p><code>VK_STENCIL_OP_REPLACE</code> writes the current reference value
+into the stencil buffer, subject to the <code>writeMask</code>. If
+applied on <code>passOp</code>, every fragment that clears both depth
+and stencil hurdles updates the buffer to the active reference value.
+This is widely used in object-outlining algorithms and shadow volume
+generation to mark object footprints.</p>
+<h3
+id="vk_stencil_op_increment_and_clamp">VK_STENCIL_OP_INCREMENT_AND_CLAMP</h3>
+<p><code>VK_STENCIL_OP_INCREMENT_AND_CLAMP</code> increments the
+existing stencil buffer value by 1. If the value has reached the maximum
+representable unsigned value determined by the stencil attachment format
+(e.g., 255 for <code>VK_FORMAT_D32_SFLOAT_S8_UINT</code>), the value
+stays clamped at that maximum. This is essential for counting
+algorithms, such as order-independent transparency or multi-pass
+coverage algorithms, where wrapping around to zero would invalidate the
+count.</p>
+<h3
+id="vk_stencil_op_increment_and_wrap">VK_STENCIL_OP_INCREMENT_AND_WRAP</h3>
+<p><code>VK_STENCIL_OP_INCREMENT_AND_WRAP</code> increments the current
+stencil value by 1, but wraps the value to zero if incremented past the
+maximum representable value. This operation is common in stencil shadow
+volumes (specifically the "depth-fail" or Carmack's Reverse technique),
+where winding numbers require standard modular arithmetic.</p>
+<h3 id="other-supporting-operations">Other Supporting Operations</h3>
+<ul>
+<li><strong>VK_STENCIL_OP_ZERO</strong>: Explicitly sets the stencil
+buffer value to zero.</li>
+<li><strong>VK_STENCIL_OP_INVERT</strong>: Bitwise inverts all bits in
+the stencil buffer value.</li>
+<li><strong>VK_STENCIL_OP_DECREMENT_AND_CLAMP</strong>: Decrements the
+value by 1, stopping at zero.</li>
+<li><strong>VK_STENCIL_OP_DECREMENT_AND_WRAP</strong>: Decrements the
+value by 1, wrapping to the maximum possible value if decremented below
+zero.</li>
+</ul>
+<h2 id="interaction-with-the-depth-buffer">Interaction with the Depth
+Buffer</h2>
+<p>The evaluation order creates dependencies between depth and stencil
+buffers:</p>
+<ul>
+<li>If <code>depthTestEnable</code> is set to <code>VK_FALSE</code> in
+<code>VkPipelineDepthStencilStateCreateInfo</code>, the depth test is
+skipped entirely, meaning a passing stencil test automatically triggers
+the <code>passOp</code>.</li>
+<li>If early fragment tests are enabled by the shader execution mode,
+the depth-stencil evaluation occurs before the fragment shader executes,
+preserving memory bandwidth if the fragment fails the tests.</li>
+<li>When <code>depthFailOp</code> is invoked, it indicates the geometry
+was physically visible according to the stencil mask but occluded by
+existing geometry in the depth buffer, allowing specialized algorithms
+to count occluded surfaces without rendering colors.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

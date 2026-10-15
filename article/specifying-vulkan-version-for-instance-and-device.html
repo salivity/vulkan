@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Specifying Vulkan Version for Instance and Device - vulkan</title>
+    <meta name="description" content="Setting the target Vulkan core version is a critical initial step when building a Vulkan application, ensuring that the runtime environment, driver, and GPU support the features your application relies on. This article covers how to determine the highest">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/specifying-vulkan-version-for-instance-and-device">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Specifying Vulkan Version for Instance and Device - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/specifying-vulkan-version-for-instance-and-device" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Setting the target Vulkan core version is a critical initial step when building a Vulkan application, ensuring that the runtime environment, driver, and GPU support the features your application relies on. This article covers how to determine the highest" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="specifying-vulkan-version-for-instance-and-device">Specifying
+Vulkan Version for Instance and Device</h1>
+<p>Setting the target Vulkan core version is a critical initial step
+when building a Vulkan application, ensuring that the runtime
+environment, driver, and GPU support the features your application
+relies on. This article covers how to determine the highest available
+instance version, how to specify your requested core version during
+instance initialization using <code>VkApplicationInfo</code>, how to
+validate physical device support, and how to enable version-specific
+core functionality when creating a logical device.</p>
+<h3 id="querying-supported-instance-versions">Querying Supported
+Instance Versions</h3>
+<p>Before requesting a specific version, you should determine the
+maximum version supported by the system's Vulkan loader and drivers.
+Starting in Vulkan 1.1, the runtime provides
+<code>vkEnumerateInstanceVersion</code> to check this:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">uint32_t</span> supportedApiVersion <span class="op">=</span> VK_API_VERSION_1_0<span class="op">;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="op">(</span>vkEnumerateInstanceVersion <span class="op">!=</span> NULL<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    vkEnumerateInstanceVersion<span class="op">(&amp;</span>supportedApiVersion<span class="op">);</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>If <code>vkEnumerateInstanceVersion</code> returns a version lower
+than your required core version, the host system cannot satisfy your
+application's requirements.</p>
+<h3 id="specifying-the-version-during-instance-creation">Specifying the
+Version During Instance Creation</h3>
+<p>To request a core version for your Vulkan instance, populate a
+<code>VkApplicationInfo</code> structure and assign the desired version
+to the <code>apiVersion</code> member using the
+<code>VK_MAKE_API_VERSION</code> macro or predefined aliases such as
+<code>VK_API_VERSION_1_3</code>.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>VkApplicationInfo appInfo <span class="op">=</span> <span class="op">{};</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>appInfo<span class="op">.</span>sType <span class="op">=</span> VK_STRUCTURE_TYPE_APPLICATION_INFO<span class="op">;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>appInfo<span class="op">.</span>pApplicationName <span class="op">=</span> <span class="st">&quot;Vulkan Application&quot;</span><span class="op">;</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>appInfo<span class="op">.</span>applicationVersion <span class="op">=</span> VK_MAKE_VERSION<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>appInfo<span class="op">.</span>pEngineName <span class="op">=</span> <span class="st">&quot;Custom Engine&quot;</span><span class="op">;</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>appInfo<span class="op">.</span>engineVersion <span class="op">=</span> VK_MAKE_VERSION<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>appInfo<span class="op">.</span>apiVersion <span class="op">=</span> VK_API_VERSION_1_3<span class="op">;</span> <span class="co">// Desired core version</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>VkInstanceCreateInfo createInfo <span class="op">=</span> <span class="op">{};</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>createInfo<span class="op">.</span>sType <span class="op">=</span> VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO<span class="op">;</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>createInfo<span class="op">.</span>pApplicationInfo <span class="op">=</span> <span class="op">&amp;</span>appInfo<span class="op">;</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a><span class="co">// Specify extensions and layers as needed...</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>VkInstance instance<span class="op">;</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>VkResult result <span class="op">=</span> vkCreateInstance<span class="op">(&amp;</span>createInfo<span class="op">,</span> NULL<span class="op">,</span> <span class="op">&amp;</span>instance<span class="op">);</span></span></code></pre></div>
+<p>The <code>apiVersion</code> specified here defines the API version
+boundary for the instance. Vulkan will return an error (such as
+<code>VK_ERROR_INCOMPATIBLE_DRIVER</code>) if the driver cannot support
+the version specified in <code>appInfo.apiVersion</code>.</p>
+<h3 id="validating-physical-device-version-support">Validating Physical
+Device Version Support</h3>
+<p>An instance capable of Vulkan 1.3 does not guarantee that every
+attached GPU supports that same version. During physical device
+selection, inspect the device's properties:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>VkPhysicalDeviceProperties properties<span class="op">;</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>vkGetPhysicalDeviceProperties<span class="op">(</span>physicalDevice<span class="op">,</span> <span class="op">&amp;</span>properties<span class="op">);</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="op">(</span>properties<span class="op">.</span>apiVersion <span class="op">&lt;</span> VK_API_VERSION_1_3<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    <span class="co">// This GPU does not meet the core version requirement</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>Compare <code>properties.apiVersion</code> against your target
+version to filter out incompatible hardware before proceeding to logical
+device creation.</p>
+<h3 id="enabling-core-features-at-device-creation">Enabling Core
+Features at Device Creation</h3>
+<p>The logical device creation structure,
+<code>VkDeviceCreateInfo</code>, does not contain an
+<code>apiVersion</code> field. Instead, core API features introduced in
+versions such as 1.1, 1.2, and 1.3 are enabled by attaching specific
+feature structures to the <code>pNext</code> chain of
+<code>VkDeviceCreateInfo</code>.</p>
+<p>To enable features introduced in Vulkan 1.3, configure a
+<code>VkPhysicalDeviceVulkan13Features</code> struct:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>VkPhysicalDeviceVulkan13Features vulkan13Features <span class="op">=</span> <span class="op">{};</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>vulkan13Features<span class="op">.</span>sType <span class="op">=</span> VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES<span class="op">;</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>vulkan13Features<span class="op">.</span>dynamicRendering <span class="op">=</span> VK_TRUE<span class="op">;</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>vulkan13Features<span class="op">.</span>synchronization2 <span class="op">=</span> VK_TRUE<span class="op">;</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>VkDeviceCreateInfo deviceCreateInfo <span class="op">=</span> <span class="op">{};</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>deviceCreateInfo<span class="op">.</span>sType <span class="op">=</span> VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO<span class="op">;</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>deviceCreateInfo<span class="op">.</span>pNext <span class="op">=</span> <span class="op">&amp;</span>vulkan13Features<span class="op">;</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="co">// Populate queue create infos and required device extensions...</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>VkDevice device<span class="op">;</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>VkResult deviceResult <span class="op">=</span> vkCreateDevice<span class="op">(</span>physicalDevice<span class="op">,</span> <span class="op">&amp;</span>deviceCreateInfo<span class="op">,</span> NULL<span class="op">,</span> <span class="op">&amp;</span>device<span class="op">);</span></span></code></pre></div>
+<p>By chaining the appropriate version-specific feature structures
+(e.g., <code>VkPhysicalDeviceVulkan11Features</code>,
+<code>VkPhysicalDeviceVulkan12Features</code>,
+<code>VkPhysicalDeviceVulkan13Features</code>) or utilizing
+<code>VkPhysicalDeviceFeatures2</code>, you explicitly activate the core
+capabilities standardized within that Vulkan release.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

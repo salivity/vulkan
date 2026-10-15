@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>What Is Depth Clamping in Vulkan? - vulkan</title>
+    <meta name="description" content="This article provides an overview of depth clamping in the Vulkan graphics API, contrasting it with standard frustum clipping, detailing its underlying pipeline mechanics, and explaining how it prevents geometry beyond the near and far planes from being d">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/what-is-depth-clamping-in-vulkan">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="What Is Depth Clamping in Vulkan? - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/what-is-depth-clamping-in-vulkan" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article provides an overview of depth clamping in the Vulkan graphics API, contrasting it with standard frustum clipping, detailing its underlying pipeline mechanics, and explaining how it prevents geometry beyond the near and far planes from being d" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="what-is-depth-clamping-in-vulkan">What Is Depth Clamping in
+Vulkan?</h1>
+<p>This article provides an overview of depth clamping in the Vulkan
+graphics API, contrasting it with standard frustum clipping, detailing
+its underlying pipeline mechanics, and explaining how it prevents
+geometry beyond the near and far planes from being discarded.</p>
+<h2 id="standard-depth-clipping-vs-depth-clamping">Standard Depth
+Clipping vs. Depth Clamping</h2>
+<p>In standard Vulkan rasterization, geometry is transformed into clip
+space. Any primitive or portion of a primitive that falls outside the
+canonical view volume—specifically where <span class="math inline">\(Z
+&lt; 0\)</span> (near plane) or <span class="math inline">\(Z &gt;
+1\)</span> (far plane) in Vulkan's depth convention—is discarded during
+primitive clipping. This prevents fragments outside the viewing frustum
+from reaching the fragment shader or depth buffer.</p>
+<p>Depth clamping modifies this behavior. Instead of clipping the
+geometry against the near and far planes, Vulkan allows primitives to
+pass through rasterization intact. The resulting fragments generated
+beyond these planes have their depth values clamped to the viewport’s
+defined range, typically <span class="math inline">\([0.0,
+1.0]\)</span>. The <span class="math inline">\(X\)</span> and <span
+class="math inline">\(Y\)</span> clipping planes remain fully active,
+meaning geometry extending past the screen edges is still clipped
+normally.</p>
+<h2 id="how-depth-clamping-works-in-the-vulkan-pipeline">How Depth
+Clamping Works in the Vulkan Pipeline</h2>
+<p>When depth clamping is active, the graphics pipeline alters the
+fixed-function clipping and rasterization stages:</p>
+<ol type="1">
+<li><strong>Clip Stage Bypass:</strong> The hardware suppresses the
+polygon clipping operations normally triggered by the near and far <span
+class="math inline">\(Z\)</span> planes. Polygons overlapping these
+boundaries are not subdivided or discarded.</li>
+<li><strong>Fragment Generation:</strong> Rasterization processes the
+full primitive, interpolating vertex attributes including depth across
+the entire surface.</li>
+<li><strong>Fragment Depth Clamping:</strong> Prior to the depth test
+and depth write stages, the fragment’s calculated depth value (<span
+class="math inline">\(z_f\)</span>) is clamped to the viewport
+boundaries: <span class="math display">\[\text{clamped\_depth} =
+\min(\max(z_f, \text{minDepth}), \text{maxDepth})\]</span> Here,
+<code>minDepth</code> and <code>maxDepth</code> are specified in the
+<code>VkViewport</code> structure.</li>
+</ol>
+<p>Because the depth test operates on this clamped value, the fragment
+is treated as if it sits directly on the near or far boundary.</p>
+<h2 id="enabling-depth-clamping-in-vulkan">Enabling Depth Clamping in
+Vulkan</h2>
+<p>To use depth clamping in a Vulkan application, two configuration
+steps are required:</p>
+<h3 id="1-device-feature-enablement">1. Device Feature Enablement</h3>
+<p>Depth clamping is an optional hardware feature. When creating the
+logical device (<code>vkCreateDevice</code>), the
+<code>depthClamp</code> boolean in <code>VkPhysicalDeviceFeatures</code>
+must be set to <code>VK_TRUE</code>. You can verify support beforehand
+using <code>vkGetPhysicalDeviceFeatures</code>.</p>
+<h3 id="2-pipeline-configuration">2. Pipeline Configuration</h3>
+<p>In the graphics pipeline creation, depth clamping is controlled
+within the <code>VkPipelineRasterizationStateCreateInfo</code>
+structure:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>VkPipelineRasterizationStateCreateInfo rasterizer<span class="op">{};</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>rasterizer<span class="op">.</span>sType <span class="op">=</span> VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO<span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>rasterizer<span class="op">.</span>depthClampEnable <span class="op">=</span> VK_TRUE<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="co">// Other rasterization parameters...</span></span></code></pre></div>
+<p>Setting <code>depthClampEnable</code> to <code>VK_TRUE</code>
+activates clamping for both the near and far planes simultaneously.</p>
+<h2 id="common-use-cases">Common Use Cases</h2>
+<h3 id="shadow-map-generation">Shadow Map Generation</h3>
+<p>The most common application of depth clamping is directional shadow
+mapping (e.g., Cascaded Shadow Maps). If an object between the light
+source and the camera extends behind the light's near plane, standard
+clipping removes the geometry, causing missing shadows (light bleeding).
+Enabling depth clamping forces those occluders to render directly at the
+near plane (<span class="math inline">\(Z = 0\)</span>), preserving
+correct shadow projection.</p>
+<h3 id="preventing-near-plane-visual-artifacts">Preventing Near-Plane
+Visual Artifacts</h3>
+<p>Depth clamping can be used to prevent camera-space clipping
+artifacts, such as rendering cockpit interiors, first-person character
+weapons, or volumetric light shafts where near-plane cuts would reveal
+unnatural cross-sections of 3D meshes.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

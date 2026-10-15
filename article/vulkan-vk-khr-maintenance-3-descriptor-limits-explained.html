@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan VK_KHR_maintenance3 Descriptor Limits Explained - vulkan</title>
+    <meta name="description" content="The VKKHRmaintenance3 extension addresses critical limitations in Vulkan&#39;s resource binding model by introducing precise controls and queries for descriptor allocations. Prior to this extension, developers lacked a standard mechanism to determine aggregat">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-vk-khr-maintenance-3-descriptor-limits-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan VK_KHR_maintenance3 Descriptor Limits Explained - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-vk-khr-maintenance-3-descriptor-limits-explained" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The VKKHRmaintenance3 extension addresses critical limitations in Vulkan&#39;s resource binding model by introducing precise controls and queries for descriptor allocations. Prior to this extension, developers lacked a standard mechanism to determine aggregat" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-vk_khr_maintenance3-descriptor-limits-explained">Vulkan
+VK_KHR_maintenance3 Descriptor Limits Explained</h1>
+<p>The <code>VK_KHR_maintenance3</code> extension addresses critical
+limitations in Vulkan's resource binding model by introducing precise
+controls and queries for descriptor allocations. Prior to this
+extension, developers lacked a standard mechanism to determine aggregate
+descriptor limits within a single set or verify if a complex descriptor
+set layout was natively supported before creation. Promoted to core in
+Vulkan 1.1, <code>VK_KHR_maintenance3</code> resolved these ambiguities
+by adding the <code>maxPerSetDescriptors</code> limit and the
+<code>vkGetDescriptorSetLayoutSupport</code> query function.</p>
+<h3 id="the-aggregate-descriptor-problem">The Aggregate Descriptor
+Problem</h3>
+<p>Early versions of the Vulkan API specified limits strictly on a
+per-type basis, such as <code>maxDescriptorSetUniformBuffers</code> or
+<code>maxDescriptorSetSampledImages</code>. However, underlying GPU
+hardware often manages descriptors out of a unified register pool or
+bounded memory buffer. As a result, an application could stay within the
+individual limits for every descriptor type, yet still exceed the
+hardware's internal capacity when combining them into a single
+<code>VkDescriptorSetLayout</code>. This caused unexpected device-loss
+errors or layout creation failures that developers could neither predict
+nor query reliably.</p>
+<h3 id="addition-of-maxpersetdescriptors">Addition of
+maxPerSetDescriptors</h3>
+<p>To expose the physical hardware constraints on descriptor
+aggregation, <code>VK_KHR_maintenance3</code> introduced
+<code>VkPhysicalDeviceMaintenance3Properties</code>. This structure
+contains the field:</p>
+<ul>
+<li><strong><code>maxPerSetDescriptors</code></strong>: A
+<code>uint32_t</code> specifying the maximum total number of descriptors
+of all types allowed across all bindings in a single descriptor set
+layout.</li>
+</ul>
+<p>This aggregate cap ensures that drivers can reject layouts that
+exceed hardware capabilities right at initialization. Implementations
+guarantee this value is at least 1024, providing a reliable baseline for
+applications packing varied resource types into unified sets.</p>
+<h3 id="layout-feasibility-query-vkgetdescriptorsetlayoutsupport">Layout
+Feasibility Query: vkGetDescriptorSetLayoutSupport</h3>
+<p>Alongside static property queries, <code>VK_KHR_maintenance3</code>
+introduced dynamic layout inspection via the API command:</p>
+<ul>
+<li><strong><code>vkGetDescriptorSetLayoutSupport</code></strong> (or
+<code>vkGetDescriptorSetLayoutSupportKHR</code>)</li>
+</ul>
+<p>Instead of requiring developers to speculatively create a
+<code>VkDescriptorSetLayout</code> and handle potential
+<code>VK_ERROR_OUT_OF_HOST_MEMORY</code> or
+<code>VK_ERROR_OUT_OF_DEVICE_MEMORY</code> failures, this command
+queries the driver directly. It accepts a
+<code>VkDescriptorSetLayoutCreateInfo</code> pointer and populates a
+<code>VkDescriptorSetLayoutSupport</code> structure with a boolean
+field, <code>supported</code>.</p>
+<p>The driver evaluates the complete configuration—evaluating
+variable-count descriptor bindings, immutable samplers, aggregate
+descriptor quantities, and per-type limits simultaneously. If
+<code>supported</code> returns <code>VK_TRUE</code>, the application is
+guaranteed that an identical layout creation call will not fail due to
+hardware descriptor constraints.</p>
+<h3 id="practical-impact-on-vulkan-applications">Practical Impact on
+Vulkan Applications</h3>
+<ol type="1">
+<li><strong>Deterministic Resource Allocation:</strong> Developers can
+design scalable descriptor set allocation strategies that automatically
+partition bindings across multiple sets if
+<code>maxPerSetDescriptors</code> is exceeded.</li>
+<li><strong>Elimination of Speculative Creation:</strong> Game engines
+and graphics frameworks avoid runtime overhead and error-handling code
+paths caused by trial-and-error layout instantiation.</li>
+<li><strong>Cross-Vendor Portability:</strong> Because these
+capabilities became mandatory in Vulkan 1.1 core, portable rendering
+engines can uniformly rely on descriptor query validation across desktop
+and mobile hardware architectures.</li>
+</ol></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

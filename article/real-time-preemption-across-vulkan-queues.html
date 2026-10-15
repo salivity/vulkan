@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-Time Preemption Across Vulkan Queues - vulkan</title>
+    <meta name="description" content="Vulkan provides robust support for concurrent workloads through multiple queue families and priority abstractions, but it cannot strictly guarantee hard real-time preemption across different queues. While extensions and priority levels allow developers to">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/real-time-preemption-across-vulkan-queues">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Real-Time Preemption Across Vulkan Queues - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/real-time-preemption-across-vulkan-queues" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Vulkan provides robust support for concurrent workloads through multiple queue families and priority abstractions, but it cannot strictly guarantee hard real-time preemption across different queues. While extensions and priority levels allow developers to" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="real-time-preemption-across-vulkan-queues">Real-Time Preemption
+Across Vulkan Queues</h1>
+<p>Vulkan provides robust support for concurrent workloads through
+multiple queue families and priority abstractions, but it cannot
+strictly guarantee hard real-time preemption across different queues.
+While extensions and priority levels allow developers to hint at
+execution urgency, the underlying hardware scheduling, pipeline
+architectures, and specification definitions prevent deterministic,
+microsecond-level interruption of running workloads. Understanding this
+behavior requires examining how Vulkan defines queues, how modern GPUs
+implement preemption, and the role of OS-level scheduling.</p>
+<h3 id="the-vulkan-queue-and-priority-model">The Vulkan Queue and
+Priority Model</h3>
+<p>In Vulkan, command buffers are submitted to queues
+(<code>VkQueue</code>) representing underlying execution channels on the
+device. Vulkan supports relative queue priorities via the
+<code>pQueuePriorities</code> parameter in
+<code>VkDeviceQueueCreateInfo</code>, assigning values from 0.0 (lowest)
+to 1.0 (highest). Additionally, extensions such as
+<code>VK_KHR_global_priority</code> expose system-level priority bands
+(Low, Medium, High, Realtime).</p>
+<p>However, the core Vulkan specification explicitly defines these
+priority values as execution hints rather than preemptive guarantees.
+The specification does not mandate that a higher-priority submission
+immediately halts or interrupts in-flight commands on a lower-priority
+queue. It only suggests that the implementation should favor the
+execution of higher-priority work when resources become available.</p>
+<h3 id="hardware-preemption-granularity">Hardware Preemption
+Granularity</h3>
+<p>True real-time preemption requires the ability to interrupt a running
+task deterministically at any point in execution and quickly switch
+context to a critical task. Modern GPU architectures generally do not
+support arbitrary, instruction-level preemption across all pipeline
+stages due to the massive amount of state data held in register files
+and shared memory.</p>
+<p>Instead, preemption typically operates at coarse granularity:</p>
+<ul>
+<li><strong>Command buffer boundaries:</strong> The scheduler waits for
+a full command buffer or sub-pass to finish before context
+switching.</li>
+<li><strong>Draw or dispatch boundaries:</strong> The GPU switches tasks
+between individual draw calls or compute dispatches.</li>
+<li><strong>Triangle or wave/warp boundaries:</strong> Compute units
+finish their current thread groups or primitives before switching to
+another queue's tasks.</li>
+</ul>
+<p>Because compute shaders or long-running render passes can tie up
+Execution Units (EUs) or Streaming Multiprocessors (SMs) for
+unpredictable durations, a newly submitted command on a higher-priority
+queue must often wait for running warps to retire naturally, introducing
+variable latency that violates strict real-time criteria.</p>
+<h3 id="resource-contention-and-hardware-queue-mapping">Resource
+Contention and Hardware Queue Mapping</h3>
+<p>Vulkan queues are logical abstractions that do not always map 1:1 to
+independent hardware command processors or isolated compute units. Even
+when an application utilizes distinct queues (such as a compute queue
+alongside a graphics queue), those queues frequently compete for the
+same execution hardware, memory caches, and memory bandwidth.</p>
+<p>Unless the GPU hardware supports dedicated spatial partitioning—where
+specific execution engines are completely isolated from one another—work
+executing from one queue will contend with work from another. This
+contention can stall a higher-priority task even if the hardware
+scheduler supports mid-dispatch context switching.</p>
+<h3 id="operating-system-and-driver-scheduling">Operating System and
+Driver Scheduling</h3>
+<p>Vulkan command submission operates above driver and kernel
+schedulers, such as WDDM on Windows or DRM/KMS on Linux. The OS graphics
+driver controls how command streams are scheduled onto hardware ring
+buffers.</p>
+<p>While OS-level schedulers can preempt GPU contexts (for example, to
+prevent Desktop Window Manager timeouts or to prioritize interactive
+windows), these operations prioritize system responsiveness rather than
+deterministic real-time deadlines. Context switches at this level incur
+non-deterministic latency penalties as pipeline state, caches, and
+registers are saved and restored.</p>
+<h3
+id="real-time-alternatives-vulkan-sc-and-spatial-partitioning">Real-Time
+Alternatives: Vulkan SC and Spatial Partitioning</h3>
+<p>For systems requiring strict determinism, standard Vulkan is
+typically not used. The Khronos Group developed <strong>Vulkan
+SC</strong> (Safety Critical) to address high-reliability environments
+such as automotive displays and avionics.</p>
+<p>Even in safety-critical contexts, determinism is rarely achieved
+through aggressive cross-queue preemption. Instead, architectures rely
+on:</p>
+<ul>
+<li><strong>Spatial Hardware Partitioning:</strong> Splitting GPU
+hardware into physically isolated partitions running independent
+tasks.</li>
+<li><strong>Time-Triggered Execution:</strong> Scheduling tasks into
+strictly allocated, non-overlapping time slices.</li>
+<li><strong>Bounded Execution Shaders:</strong> Restricting shader
+length and complexity to ensure any pipeline state drains within a
+guaranteed worst-case execution time (WCET).</li>
+</ul>
+<p>Standard Vulkan does not strictly guarantee real-time preemption
+across queues. High-priority queues provide reduced latency through
+best-effort scheduling, but deterministic preemption remains constrained
+by hardware context-switching granularity and platform scheduler
+limitations.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

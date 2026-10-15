@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How Vulkan Multiview Reduces CPU Draw Calls - vulkan</title>
+    <meta name="description" content="Vulkan’s multiview feature drastically reduces CPU overhead by enabling a single draw command to broadcast across multiple framebuffer layers simultaneously. Typically used in stereoscopic virtual reality rendering, cascaded shadow maps, and environment c">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/how-vulkan-multiview-reduces-cpu-draw-calls">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How Vulkan Multiview Reduces CPU Draw Calls - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/how-vulkan-multiview-reduces-cpu-draw-calls" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Vulkan’s multiview feature drastically reduces CPU overhead by enabling a single draw command to broadcast across multiple framebuffer layers simultaneously. Typically used in stereoscopic virtual reality rendering, cascaded shadow maps, and environment c" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-vulkan-multiview-reduces-cpu-draw-calls">How Vulkan
+Multiview Reduces CPU Draw Calls</h1>
+<p>Vulkan’s multiview feature drastically reduces CPU overhead by
+enabling a single draw command to broadcast across multiple framebuffer
+layers simultaneously. Typically used in stereoscopic virtual reality
+rendering, cascaded shadow maps, and environment cubemaps, this
+capability removes the need for the CPU to record and submit separate
+draw calls for each viewpoint. By offloading primitive replication and
+view-dependent indexing directly to the GPU hardware, applications
+achieve significant performance gains on the host processor.</p>
+<h3 id="the-traditional-multi-view-bottleneck">The Traditional
+Multi-View Bottleneck</h3>
+<p>In conventional rendering workflows, displaying a scene from multiple
+perspectives requires the CPU to iterate through the entire render loop
+for each view. For instance, in stereoscopic VR, the CPU must traverse
+the scene graph, evaluate culling, bind pipeline states, and issue
+<code>vkCmdDraw</code> calls once for the left eye and again for the
+right eye.</p>
+<p>This approach doubles the CPU workload, saturating command buffers
+with redundant state transitions, driver validation checks, and dispatch
+submissions. When rendering to six cube map faces or multiple shadow
+cascades, this overhead scales linearly, often creating a critical CPU
+bottleneck that starves the GPU.</p>
+<h3 id="the-multiview-mechanism">The Multiview Mechanism</h3>
+<p>Vulkan solves this redundancy through the multiview extension
+(<code>VK_KHR_multiview</code>, which is core in Vulkan 1.1). Instead of
+repeating commands, the developer configures a render pass with a
+bitmask—termed the <code>viewMask</code>—via
+<code>VkRenderPassMultiviewCreateInfo</code>. Each bit in this mask
+corresponds to a specific layer in an array-based framebuffer
+attachment.</p>
+<p>When the CPU submits a single draw call within a multiview render
+pass:</p>
+<ol type="1">
+<li><strong>Single Submission:</strong> The host CPU records and issues
+<code>vkCmdDraw</code> or <code>vkCmdDrawIndexed</code> only once.</li>
+<li><strong>Hardware Broadcasting:</strong> The GPU’s primitive
+distribution hardware intercepts the draw command and automatically
+broadcasts the incoming geometry across all active views designated by
+the subpass view mask.</li>
+<li><strong>Layer Targeting:</strong> The rasterizer routes the
+generated fragments directly to their respective 2D texture array layers
+or render target slices without requiring separate framebuffer
+bindings.</li>
+</ol>
+<h3 id="shader-execution-and-gl_viewindex">Shader Execution and
+<code>gl_ViewIndex</code></h3>
+<p>To handle view-specific differences—such as unique camera positions
+or projection matrices—Vulkan exposes the built-in shader variable
+<code>gl_ViewIndex</code> (or <code>ViewIndex</code> in SPIR-V).</p>
+<p>Using <code>gl_ViewIndex</code>, a single vertex shader dynamically
+indexes into an array of uniform data (such as view-projection matrices)
+directly on the GPU:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">binding</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="kw">uniform</span> CameraData <span class="op">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">mat4</span> viewProjection<span class="op">[</span><span class="dv">2</span><span class="op">];</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="op">}</span> camera<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    <span class="bu">gl_Position</span> <span class="op">=</span> camera<span class="op">.</span><span class="fu">viewProjection</span><span class="op">[</span>gl_ViewIndex<span class="op">]</span> <span class="op">*</span> <span class="dt">vec4</span><span class="op">(</span>inPosition<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>Because view differentiation occurs internally on the GPU, the CPU
+does not need to rebind descriptors, update push constants, or switch
+shader pipelines between views.</p>
+<h3 id="quantifiable-reduction-in-cpu-submission-rates">Quantifiable
+Reduction in CPU Submission Rates</h3>
+<p>By shifting view replication to the GPU rasterization pipeline,
+multiview achieves a near-linear reduction in CPU draw call
+submissions:</p>
+<ul>
+<li><strong>Stereoscopic VR:</strong> Draw call submissions, command
+recording operations, and API overhead are halved (a 2:1
+reduction).</li>
+<li><strong>Cascaded Shadow Maps:</strong> For three or four cascades
+rendered via multiview, draw call counts decrease by 66% to 75%.</li>
+<li><strong>Cubemaps:</strong> Updating six faces concurrently achieves
+up to a 6:1 reduction in draw call volume.</li>
+</ul>
+<p>Beyond simply cutting the raw number of <code>vkCmdDraw</code> calls,
+multiview minimizes pipeline state switches, pipeline barrier
+synchronization, and secondary command buffer overhead. This frees
+substantial CPU frame time for physics, game logic, and spatial tracking
+while keeping the GPU fully fed with continuous, streamlined
+workloads.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

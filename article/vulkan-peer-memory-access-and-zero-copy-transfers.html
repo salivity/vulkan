@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Peer Memory Access and Zero-Copy Transfers - vulkan</title>
+    <meta name="description" content="Peer memory access in Vulkan serves as the foundational mechanism that allows multiple physical GPUs within a unified device group to directly read from and write to one another&#39;s local device memory. By utilizing hardware interconnects such as PCIe with">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-peer-memory-access-and-zero-copy-transfers">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Peer Memory Access and Zero-Copy Transfers - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-peer-memory-access-and-zero-copy-transfers" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Peer memory access in Vulkan serves as the foundational mechanism that allows multiple physical GPUs within a unified device group to directly read from and write to one another&#39;s local device memory. By utilizing hardware interconnects such as PCIe with" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-peer-memory-access-and-zero-copy-transfers">Vulkan Peer
+Memory Access and Zero-Copy Transfers</h1>
+<p>Peer memory access in Vulkan serves as the foundational mechanism
+that allows multiple physical GPUs within a unified device group to
+directly read from and write to one another's local device memory. By
+utilizing hardware interconnects such as PCIe with Resizable BAR or
+proprietary links like NVLink, peer memory access bypasses host system
+RAM entirely. This article explores how Vulkan leverages device groups
+and peer memory features to eliminate intermediate CPU staging buffers,
+streamline cross-device synchronization, and achieve true zero-copy data
+transfers for high-performance multi-GPU compute and graphics
+workloads.</p>
+<h3 id="understanding-peer-memory-access-in-vulkan">Understanding Peer
+Memory Access in Vulkan</h3>
+<p>In standard multi-GPU configurations, transferring data from GPU A to
+GPU B traditionally requires a multi-step staging pipeline: the source
+GPU copies data to host-visible system memory (RAM), the CPU coordinates
+the transfer, and the destination GPU pulls the data from system RAM
+into its local VRAM. This process consumes host memory bandwidth,
+introduces CPU scheduling overhead, and dramatically increases
+end-to-end transfer latency.</p>
+<p>Vulkan eliminates this bottleneck through device groups, introduced
+in the core API via the <code>VK_KHR_device_group</code> extension.
+Within a <code>VkDeviceGroup</code>, multiple physical devices are bound
+to a single logical device (<code>VkDevice</code>). When physical
+devices reside within the same group, Vulkan can expose peer memory
+functionality, allowing the memory controller of one GPU to issue read
+and write requests directly across the interconnect into the physical
+memory pages of another GPU.</p>
+<h3 id="how-peer-memory-enables-zero-copy-execution">How Peer Memory
+Enables Zero-Copy Execution</h3>
+<p>Zero-copy transfers mean that data is transferred or consumed
+directly between the producer and consumer without redundant duplicate
+allocations or host-memory intermediaries. Peer memory access
+facilitates zero-copy workflows in two primary ways:</p>
+<ol type="1">
+<li><p><strong>Direct Peer-to-Peer (P2P) Direct Memory Access
+(DMA):</strong> Using commands like <code>vkCmdCopyBuffer</code> or
+<code>vkCmdCopyImage</code>, the hardware executes direct DMA operations
+across the bus. GPU B pulls directly from the memory addresses assigned
+to GPU A's allocation, executing the transfer at the full bandwidth of
+the physical interconnect.</p></li>
+<li><p><strong>Direct Cross-GPU Shader Access (Generic Access):</strong>
+Beyond explicit copies, peer memory access enables shaders running on
+one GPU to sample directly from images or read from buffers allocated on
+a peer GPU. When hardware supports generic peer addressing, the concept
+of a copy operation is eliminated entirely: the workload consumes the
+remote data inline as if it were local memory, albeit with
+interconnect-specific latency characteristics.</p></li>
+</ol>
+<h3 id="querying-peer-memory-capabilities">Querying Peer Memory
+Capabilities</h3>
+<p>Not all hardware or interconnect setups support identical peer
+operations. Vulkan provides explicit control by requiring developers to
+query peer capabilities via
+<code>vkGetDeviceGroupPeerMemoryFeatures</code> (or its KHR equivalent).
+This function returns a bitmask of
+<code>VkPeerMemoryFeatureFlagBits</code> for a given memory heap between
+source and destination device indices:</p>
+<ul>
+<li><code>VK_PEER_MEMORY_FEATURE_COPY_SRC_BIT</code>: The local memory
+can be used as a source for direct copies targeting a peer device.</li>
+<li><code>VK_PEER_MEMORY_FEATURE_COPY_DST_BIT</code>: The local memory
+can act as a direct destination for copies originating from a peer
+device.</li>
+<li><code>VK_PEER_MEMORY_FEATURE_GENERIC_SRC_BIT</code>: Shaders on the
+destination device can directly read this memory using shader resource
+bindings without an explicit copy.</li>
+<li><code>VK_PEER_MEMORY_FEATURE_GENERIC_DST_BIT</code>: Shaders on the
+destination device can perform direct writes or atomic operations on
+this memory.</li>
+</ul>
+<p>If <code>VK_PEER_MEMORY_FEATURE_GENERIC_SRC_BIT</code> is present,
+developers achieve the highest tier of zero-copy capability, removing
+transfer commands from the command buffer entirely.</p>
+<h3 id="memory-allocation-and-device-masks">Memory Allocation and Device
+Masks</h3>
+<p>When allocating memory in a device group using
+<code>vkAllocateMemory</code>, the
+<code>VkMemoryAllocateFlagsInfo</code> structure allows the developer to
+specify a <code>deviceMask</code>. This bitmask dictates which physical
+GPUs allocate backing memory for the resource.</p>
+<p>For a zero-copy design, an application typically sets the device mask
+to allocate memory physically on only the producing GPU. The consuming
+GPU then maps that identical memory handle into its address space. When
+binding resources with <code>VkBindBufferMemoryDeviceGroupInfo</code> or
+<code>VkBindImageMemoryDeviceGroupInfo</code>, the application defines
+how the resource indices map across the physical hardware, allowing one
+device's memory footprint to be referenced by pipelines executing on
+another.</p>
+<h3 id="synchronization-requirements">Synchronization Requirements</h3>
+<p>Because peer transfers bypass the host entirely, the CPU cannot
+implicitly manage dependencies. Applications must coordinate cross-GPU
+dependencies explicitly through Vulkan synchronization primitives:</p>
+<ul>
+<li><strong>Execution and Memory Barriers:</strong> Standard pipeline
+barriers (<code>vkCmdPipelineBarrier</code>) must account for
+cross-engine access when memory is written by one GPU and subsequently
+read by another.</li>
+<li><strong>Semaphores across Device Groups:</strong> Vulkan allows
+timeline and binary semaphores to be signaled by one physical device and
+waited on by another within the same logical device using
+<code>VkDeviceGroupSubmitInfo</code>. This guarantees that peer memory
+is not modified by the producing device while the consuming device's
+shaders are actively reading it across the bus.</li>
+</ul>
+<p>By combining granular capability queries, direct hardware
+interconnects, and strict synchronization primitives, peer memory access
+in Vulkan turns multi-GPU scaling from a bandwidth-constrained
+bottleneck into a low-latency, unified computing architecture.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Monolithic Graphics Pipeline Explained - vulkan</title>
+    <meta name="description" content="In the Vulkan graphics API, a monolithic graphics pipeline object (VkPipeline) consolidates the entire rendering state—including programmable shader stages and fixed-function hardware configurations—into a single, immutable GPU-compiled construct. This ar">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-monolithic-graphics-pipeline-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Monolithic Graphics Pipeline Explained - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-monolithic-graphics-pipeline-explained" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In the Vulkan graphics API, a monolithic graphics pipeline object (VkPipeline) consolidates the entire rendering state—including programmable shader stages and fixed-function hardware configurations—into a single, immutable GPU-compiled construct. This ar" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-monolithic-graphics-pipeline-explained">Vulkan Monolithic
+Graphics Pipeline Explained</h1>
+<p>In the Vulkan graphics API, a monolithic graphics pipeline object
+(<code>VkPipeline</code>) consolidates the entire rendering
+state—including programmable shader stages and fixed-function hardware
+configurations—into a single, immutable GPU-compiled construct. This
+article examines the core components that constitute a monolithic
+pipeline, how they interact, and the architectural principles behind
+baking state ahead of time to eliminate runtime driver overhead.</p>
+<h3 id="the-concept-of-a-monolithic-pipeline">The Concept of a
+Monolithic Pipeline</h3>
+<p>Unlike legacy graphics APIs that permit arbitrary, modular state
+changes on the fly, Vulkan originally mandated that virtually all state
+governing draw operations be packaged together. A monolithic graphics
+pipeline defines both the programmable execution path and the exact
+fixed-function configuration for drawing primitives. By aggregating this
+information into a single <code>VkPipeline</code> object via
+<code>vkCreateGraphicsPipelines</code>, the GPU driver can perform
+cross-stage optimizations, resolve hardware register layouts, and
+eliminate runtime validation overhead before draw commands are
+issued.</p>
+<h3 id="essential-components-of-the-pipeline">Essential Components of
+the Pipeline</h3>
+<p>A monolithic graphics pipeline is assembled using the
+<code>VkGraphicsPipelineCreateInfo</code> structure, which links
+together several distinct state categories:</p>
+<h4 id="1-programmable-shader-stages">1. Programmable Shader Stages</h4>
+<p>The pipeline requires definitions for the active programmable stages
+via <code>VkPipelineShaderStageCreateInfo</code>. These include SPIR-V
+modules representing the vertex stage, fragment stage, and optionally
+geometry, tessellation control, tessellation evaluation, or task and
+mesh shaders. The pipeline object links these stages together, allowing
+the compiler to optimize data sharing between adjacent stages.</p>
+<h4 id="2-fixed-function-vertex-and-primitive-processing">2.
+Fixed-Function Vertex and Primitive Processing</h4>
+<ul>
+<li><strong>Vertex Input State
+(<code>VkPipelineVertexInputStateCreateInfo</code>):</strong> Specifies
+the format, stride, and attribute locations of the vertex data fed into
+the vertex shader.</li>
+<li><strong>Input Assembly State
+(<code>VkPipelineInputAssemblyStateCreateInfo</code>):</strong>
+Determines primitive topology (such as triangle lists, strips, or lines)
+and enables primitive restart.</li>
+<li><strong>Tessellation State
+(<code>VkPipelineTessellationStateCreateInfo</code>):</strong> Defines
+the number of control points per patch when tessellation is
+enabled.</li>
+</ul>
+<h4 id="3-viewport-and-rasterization-state">3. Viewport and
+Rasterization State</h4>
+<ul>
+<li><strong>Viewport State
+(<code>VkPipelineViewportStateCreateInfo</code>):</strong> Specifies the
+dimensions and depth bounds of the viewport and scissor rectangles.</li>
+<li><strong>Rasterization State
+(<code>VkPipelineRasterizationStateCreateInfo</code>):</strong>
+Configures how primitives turn into fragments. This includes polygon
+mode (fill, wireframe, or point), culling modes (front, back, none),
+winding order (clockwise or counter-clockwise), depth clipping, and
+depth bias settings.</li>
+</ul>
+<h4 id="4-fragment-and-per-sample-operations">4. Fragment and Per-Sample
+Operations</h4>
+<ul>
+<li><strong>Multisample State
+(<code>VkPipelineMultisampleStateCreateInfo</code>):</strong> Configures
+rasterization sample counts for multisample anti-aliasing (MSAA), sample
+shading, and alpha-to-coverage operations.</li>
+<li><strong>Depth and Stencil State
+(<code>VkPipelineDepthStencilStateCreateInfo</code>):</strong> Dictates
+how depth testing, depth writing, stencil tests, and stencil operations
+behave against the bound depth-stencil attachment.</li>
+<li><strong>Color Blend State
+(<code>VkPipelineColorBlendStateCreateInfo</code>):</strong> Controls
+how fragment shader outputs combine with the existing contents of the
+frame buffer. This defines per-attachment blend operations (additive,
+alpha, multiply), blend factors, write masks, and optional logical
+operations.</li>
+</ul>
+<h4 id="5-pipeline-layout-and-resource-interface">5. Pipeline Layout and
+Resource Interface</h4>
+<p>A <code>VkPipelineLayout</code> must be bound to the pipeline. It
+defines the interface through which shaders access resources, including
+descriptor set layouts (uniform buffers, storage buffers, samplers,
+textures) and push constant ranges. The pipeline relies on this layout
+to establish memory offsets and binding locations for all shader
+stages.</p>
+<h4 id="6-render-pass-compatibility">6. Render Pass Compatibility</h4>
+<p>The pipeline must be compiled against a compatible
+<code>VkRenderPass</code> and specific subpass index (or use dynamic
+rendering structures defined in Vulkan 1.3). The pipeline records the
+format, sample count, and usage flags of color, depth, and stencil
+attachments to ensure the generated machine code correctly matches the
+target memory formats.</p>
+<h4 id="7-dynamic-state">7. Dynamic State</h4>
+<p>While the pipeline is inherently immutable, developers can designate
+specific states as dynamic using
+<code>VkPipelineDynamicStateCreateInfo</code>. Common dynamic states
+include viewports, scissors, blend constants, and line widths. These
+designated states are omitted from the baked pipeline object and are
+instead specified inside command buffers at draw time using dedicated
+commands (such as <code>vkCmdSetViewport</code>), balancing optimization
+with flexibility.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

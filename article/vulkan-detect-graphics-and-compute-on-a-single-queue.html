@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan: Detect Graphics and Compute on a Single Queue - vulkan</title>
+    <meta name="description" content="This article explains how an application can determine whether a single queue family supports both graphics and compute operations concurrently in Vulkan. By querying the physical device&#39;s queue family properties, applications can inspect capability flags">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-detect-graphics-and-compute-on-a-single-queue">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan: Detect Graphics and Compute on a Single Queue - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-detect-graphics-and-compute-on-a-single-queue" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how an application can determine whether a single queue family supports both graphics and compute operations concurrently in Vulkan. By querying the physical device&#39;s queue family properties, applications can inspect capability flags" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-detect-graphics-and-compute-on-a-single-queue">Vulkan:
+Detect Graphics and Compute on a Single Queue</h1>
+<p>This article explains how an application can determine whether a
+single queue family supports both graphics and compute operations
+concurrently in Vulkan. By querying the physical device's queue family
+properties, applications can inspect capability flags and implement
+appropriate synchronization to allow compute and graphics workloads to
+overlap on the same queue.</p>
+<h3 id="querying-queue-family-properties">Querying Queue Family
+Properties</h3>
+<p>To detect support for both graphics and compute operations on a
+single queue, you must query the available queue families on the target
+physical device using
+<code>vkGetPhysicalDeviceQueueFamilyProperties</code>.</p>
+<p>The process involves two calls to
+<code>vkGetPhysicalDeviceQueueFamilyProperties</code>:</p>
+<ol type="1">
+<li>Pass <code>NULL</code> for the <code>pQueueFamilyProperties</code>
+parameter to obtain the count of available queue families.</li>
+<li>Allocate an array of <code>VkQueueFamilyProperties</code> structures
+and call the function again to populate the details.</li>
+</ol>
+<h3 id="inspecting-queue-capability-flags">Inspecting Queue Capability
+Flags</h3>
+<p>Each <code>VkQueueFamilyProperties</code> struct contains a
+<code>queueFlags</code> field, which is a bitmask of
+<code>VkQueueFlagBits</code>. To determine if a queue supports both
+domains, perform a bitwise AND check against both
+<code>VK_QUEUE_GRAPHICS_BIT</code> and
+<code>VK_QUEUE_COMPUTE_BIT</code>:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">uint32_t</span> queueFamilyCount <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>vkGetPhysicalDeviceQueueFamilyProperties<span class="op">(</span>physicalDevice<span class="op">,</span> <span class="op">&amp;</span>queueFamilyCount<span class="op">,</span> NULL<span class="op">);</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>VkQueueFamilyProperties<span class="op">*</span> queueFamilies <span class="op">=</span> malloc<span class="op">(</span>queueFamilyCount <span class="op">*</span> <span class="kw">sizeof</span><span class="op">(</span>VkQueueFamilyProperties<span class="op">));</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>vkGetPhysicalDeviceQueueFamilyProperties<span class="op">(</span>physicalDevice<span class="op">,</span> <span class="op">&amp;</span>queueFamilyCount<span class="op">,</span> queueFamilies<span class="op">);</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> combinedQueueFamilyIndex <span class="op">=</span> <span class="op">-</span><span class="dv">1</span><span class="op">;</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="op">(</span><span class="dt">uint32_t</span> i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> queueFamilyCount<span class="op">;</span> i<span class="op">++)</span> <span class="op">{</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    VkQueueFlags flags <span class="op">=</span> queueFamilies<span class="op">[</span>i<span class="op">].</span>queueFlags<span class="op">;</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">((</span>flags <span class="op">&amp;</span> VK_QUEUE_GRAPHICS_BIT<span class="op">)</span> <span class="op">&amp;&amp;</span> <span class="op">(</span>flags <span class="op">&amp;</span> VK_QUEUE_COMPUTE_BIT<span class="op">))</span> <span class="op">{</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>        combinedQueueFamilyIndex <span class="op">=</span> i<span class="op">;</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>        <span class="cf">break</span><span class="op">;</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>free<span class="op">(</span>queueFamilies<span class="op">);</span></span></code></pre></div>
+<p>According to the Vulkan specification, any implementation that
+supports graphics operations must expose at least one queue family that
+supports both graphics and compute operations. Therefore, any device
+capable of graphics will always expose at least one queue family where
+both flags are set.</p>
+<h3 id="understanding-concurrency-on-a-single-queue">Understanding
+Concurrency on a Single Queue</h3>
+<p>While checking flags confirms that a queue accepts both types of
+commands, enabling concurrent execution on a single queue depends on
+workload structure and synchronization:</p>
+<ul>
+<li><strong>In-Order Submission vs. Out-of-Order Execution:</strong>
+Commands submitted to a single <code>VkQueue</code> start in the order
+they are submitted, but the GPU executes stages independently. Unless
+restricted by pipeline barriers, compute and graphics work can overlap
+on hardware compute units.</li>
+<li><strong>Pipeline Barriers:</strong> To allow concurrency, avoid
+coarse barriers like <code>VK_PIPELINE_STAGE_ALL_COMMANDS_BIT</code> or
+<code>VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT</code>
+between unrelated graphics and compute passes. Tailor
+<code>VkMemoryBarrier</code> or <code>VkImageMemoryBarrier</code> to
+only the specific stages and resources requiring synchronization.</li>
+<li><strong>Independent Submissions:</strong> Compute and graphics
+commands can be recorded into separate <code>VkCommandBuffer</code>
+instances and submitted in a single <code>VkSubmitInfo</code> batch. The
+GPU driver can interleave these tasks if execution dependencies do not
+force a sequential stall.</li>
+</ul>
+<p>If hardware-level asynchronous compute (simultaneous execution
+independent of graphics pipeline stalls) is required, applications
+should also check if the device exposes a separate compute-only queue
+family alongside the combined graphics and compute queue family.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Tier 2 Variable Rate Shading Hardware - vulkan</title>
+    <meta name="description" content="Variable Rate Shading (VRS) allows developers to decouple rendering resolution from shading rate, dynamically adjusting pixel shader workloads across a frame to boost performance without degrading perceptual visual fidelity. In the Vulkan API, Tier 2 VRS">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-tier-2-variable-rate-shading-hardware">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Tier 2 Variable Rate Shading Hardware - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-tier-2-variable-rate-shading-hardware" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Variable Rate Shading (VRS) allows developers to decouple rendering resolution from shading rate, dynamically adjusting pixel shader workloads across a frame to boost performance without degrading perceptual visual fidelity. In the Vulkan API, Tier 2 VRS" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-tier-2-variable-rate-shading-hardware">Vulkan Tier 2
+Variable Rate Shading Hardware</h1>
+<p>Variable Rate Shading (VRS) allows developers to decouple rendering
+resolution from shading rate, dynamically adjusting pixel shader
+workloads across a frame to boost performance without degrading
+perceptual visual fidelity. In the Vulkan API, Tier 2 VRS features—such
+as screen-space shading rate images and per-primitive shading rates—are
+exposed primarily through the <code>VK_KHR_fragment_shading_rate</code>
+extension. This article breaks down the native hardware GPU
+microarchitectures across desktop and mobile platforms that support Tier
+2 Variable Rate Shading in Vulkan.</p>
+<h3 id="what-constitutes-tier-2-vrs-in-vulkan">What Constitutes Tier 2
+VRS in Vulkan</h3>
+<p>While "Tier 1" and "Tier 2" are terms originating from Direct3D 12,
+the Vulkan equivalent is determined by feature flags within the
+<code>VK_KHR_fragment_shading_rate</code> extension (and historically
+<code>VK_NV_shading_rate_image</code>).</p>
+<p>Tier 1 only supports per-draw shading rates. Tier 2 adds:</p>
+<ul>
+<li><strong>Per-primitive shading rates:</strong> Triangles can carry
+shading rate attributes assigned in vertex, geometry, or mesh
+shaders.</li>
+<li><strong>Shading rate images (attachments):</strong> A screen-space
+texture or surface defines shading rates per tile (e.g., 8x8 or 16x16
+pixel regions).</li>
+<li><strong>Combiners:</strong> Rules to merge primitive, image, and
+pipeline shading rates (e.g., taking the minimum, maximum, or
+overriding).</li>
+</ul>
+<h3 id="nvidia-architectures">NVIDIA Architectures</h3>
+<p>NVIDIA introduced hardware-accelerated Variable Rate Shading with its
+Turing architecture, and all subsequent desktop and data center
+architectures natively support Tier 2 capabilities in Vulkan:</p>
+<ul>
+<li><strong>Turing (RTX 20-Series, GTX 16-Series):</strong> The first to
+implement hardware VRS tiles (via NVIDIA-specific extensions and later
+standardized Vulkan extensions).</li>
+<li><strong>Ampere (RTX 30-Series):</strong> Full native Tier 2 support,
+retaining 16x16 tile sizing for shading rate attachments.</li>
+<li><strong>Ada Lovelace (RTX 40-Series):</strong> Continues Tier 2
+feature support with enhanced scheduling and ray tracing
+integration.</li>
+<li><strong>Blackwell (RTX 50-Series / Data Center):</strong> Retains
+full native support for Tier 2 Vulkan fragment shading rate
+features.</li>
+</ul>
+<h3 id="amd-architectures">AMD Architectures</h3>
+<p>AMD introduced native Tier 2 Variable Rate Shading starting with its
+RDNA 2 architecture:</p>
+<ul>
+<li><strong>RDNA 2 (Radeon RX 6000 Series, Consoles):</strong> Supports
+screen-space shading rate images (8x8 tile size), per-draw, and
+per-primitive rates via Vulkan. Powers the custom silicon inside the
+PlayStation 5, Xbox Series X/S, and Steam Deck.</li>
+<li><strong>RDNA 3 (Radeon RX 7000 Series):</strong> Retains complete
+Tier 2 hardware compatibility with improved coarse shading
+efficiency.</li>
+<li><strong>RDNA 3.5 (Radeon 800M Series / Strix Point):</strong>
+Continues full Tier 2 Vulkan support for modern integrated systems.</li>
+</ul>
+<h3 id="intel-architectures">Intel Architectures</h3>
+<p>Intel implemented native Tier 2 Variable Rate Shading starting with
+its discrete performance graphics lineup:</p>
+<ul>
+<li><strong>Xe-HPG (Intel Arc Alchemist / A-Series):</strong> Fully
+supports Tier 2 VRS in Vulkan, including shading rate attachments and
+combiner operations.</li>
+<li><strong>Xe2 (Intel Arc Battlemage / Lunar Lake):</strong> Retains
+native Tier 2 fragment shading rate capabilities across both discrete
+cards and low-power integrated chips.</li>
+</ul>
+<p><em>Note: Intel's earlier integrated Xe-LP (Gen12) architecture
+supports Tier 1 VRS capabilities in Vulkan, but lacks the hardware
+pipeline required for native Tier 2 shading rate images and
+combiners.</em></p>
+<h3 id="mobile-and-embedded-architectures">Mobile and Embedded
+Architectures</h3>
+<p>Tier 2 VRS is critical for mobile platforms seeking to optimize power
+consumption and thermal limits:</p>
+<ul>
+<li><strong>Qualcomm Adreno:</strong> Supported starting with the
+<strong>Adreno 660</strong> (Snapdragon 888) and continued across the
+<strong>Adreno 700 series</strong> (Snapdragon 8 Gen 1, Gen 2, Gen 3,
+and Snapdragon X Elite). Qualcomm supports screen-space shading rate
+textures and per-primitive controls via Vulkan.</li>
+<li><strong>ARM Immortalis:</strong> Supported beginning with the
+<strong>Immortalis-G715</strong> and newer (such as Immortalis-G720 and
+Immortalis-G925). These GPUs feature native hardware micro-tile VRS with
+full shading rate image attachment support.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

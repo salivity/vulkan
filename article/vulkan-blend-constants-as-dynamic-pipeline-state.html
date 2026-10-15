@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Blend Constants as Dynamic Pipeline State - vulkan</title>
+    <meta name="description" content="In the Vulkan graphics API, dynamic blend constants allow developers to alter the RGBA color values used during color blending operations at runtime without having to recreate the graphics pipeline. By declaring blend constants as dynamic state, applicati">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-blend-constants-as-dynamic-pipeline-state">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Blend Constants as Dynamic Pipeline State - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-blend-constants-as-dynamic-pipeline-state" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In the Vulkan graphics API, dynamic blend constants allow developers to alter the RGBA color values used during color blending operations at runtime without having to recreate the graphics pipeline. By declaring blend constants as dynamic state, applicati" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-blend-constants-as-dynamic-pipeline-state">Vulkan Blend
+Constants as Dynamic Pipeline State</h1>
+<p>In the Vulkan graphics API, dynamic blend constants allow developers
+to alter the RGBA color values used during color blending operations at
+runtime without having to recreate the graphics pipeline. By declaring
+blend constants as dynamic state, applications avoid costly pipeline
+state object (PSO) recompilations and significantly reduce memory
+overhead, managing blend factors dynamically through command buffer
+recording.</p>
+<h3 id="static-vs-dynamic-blend-constants">Static vs. Dynamic Blend
+Constants</h3>
+<p>When constructing a standard graphics pipeline via
+<code>VkGraphicsPipelineCreateInfo</code>, the color blending state is
+defined by the <code>VkPipelineColorBlendStateCreateInfo</code>
+structure. By default, this structure bakes the blend constants—a
+four-float array representing RGBA values—directly into the immutable
+pipeline state. If a scene requires multiple objects to be blended with
+varying constant colors or alpha factors, relying solely on static state
+requires creating and managing separate pipeline objects for each
+distinct blend color.</p>
+<p>Dynamic state decouples these mutable values from the immutable
+pipeline object. This allows a single pipeline to be reused across draw
+calls with different tinting, fading, or compositing calculations.</p>
+<h3 id="enabling-dynamic-blend-constants">Enabling Dynamic Blend
+Constants</h3>
+<p>To configure blend constants dynamically, include
+<code>VK_DYNAMIC_STATE_BLEND_CONSTANTS</code> in the dynamic state list
+during pipeline creation:</p>
+<ol type="1">
+<li>Define a <code>VkDynamicState</code> array containing
+<code>VK_DYNAMIC_STATE_BLEND_CONSTANTS</code>.</li>
+<li>Populate a <code>VkPipelineDynamicStateCreateInfo</code> structure
+with this array.</li>
+<li>Assign this structure to the <code>pDynamicState</code> field of
+your <code>VkGraphicsPipelineCreateInfo</code>.</li>
+</ol>
+<p>When this flag is active, Vulkan ignores the
+<code>blendConstants</code> array provided in
+<code>VkPipelineColorBlendStateCreateInfo</code>, leaving the value
+uninitialized until explicitly set in a command buffer.</p>
+<h3 id="updating-state-at-runtime">Updating State at Runtime</h3>
+<p>Once enabled, the blend constants are bound directly within an active
+command buffer using the command:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> vkCmdSetBlendConstants<span class="op">(</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    VkCommandBuffer commandBuffer<span class="op">,</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">const</span> <span class="dt">float</span> blendConstants<span class="op">[</span><span class="dv">4</span><span class="op">]</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="op">);</span></span></code></pre></div>
+<p>The <code>blendConstants</code> parameter is an array of four
+floating-point values representing red, green, blue, and alpha
+components, typically clamped between <code>0.0f</code> and
+<code>1.0f</code>.</p>
+<p>This function must be recorded prior to any draw call that relies on
+the dynamic blend constants. Because dynamic states are recorded
+directly into the command buffer stream, calling
+<code>vkCmdSetBlendConstants</code> has minimal CPU overhead and zero
+pipeline creation cost.</p>
+<h3 id="blending-behavior-and-state-persistence">Blending Behavior and
+State Persistence</h3>
+<p>Dynamic blend constants specifically influence attachments where the
+<code>VkPipelineColorBlendAttachmentState</code> uses any of the
+following factors for color or alpha blending:</p>
+<ul>
+<li><code>VK_BLEND_FACTOR_CONSTANT_COLOR</code></li>
+<li><code>VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR</code></li>
+<li><code>VK_BLEND_FACTOR_CONSTANT_ALPHA</code></li>
+<li><code>VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA</code></li>
+</ul>
+<p>If an attachment does not use one of these constant factors, updating
+the dynamic blend constants has no visual effect on that attachment's
+output.</p>
+<p>Within the command buffer, the dynamic blend constants act as
+persistent state. Once set via <code>vkCmdSetBlendConstants</code>, the
+values remain active for all subsequent draw calls using pipelines that
+expect dynamic blend constants until a new call to
+<code>vkCmdSetBlendConstants</code> modifies them, or the command buffer
+ends. However, the state does not carry over between different command
+buffers, requiring explicit initialization in each command buffer where
+dynamic blending is used.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

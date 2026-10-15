@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CUDA and Vulkan Interoperability: External Memory Sharing - vulkan</title>
+    <meta name="description" content="External memory sharing enables high-performance interoperability between CUDA and Vulkan by allowing both APIs to access the exact same physical GPU allocations without routing data through host system memory. Traditionally, passing computational outputs">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/cuda-and-vulkan-interoperability-external-memory-sharing">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="CUDA and Vulkan Interoperability: External Memory Sharing - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/cuda-and-vulkan-interoperability-external-memory-sharing" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="External memory sharing enables high-performance interoperability between CUDA and Vulkan by allowing both APIs to access the exact same physical GPU allocations without routing data through host system memory. Traditionally, passing computational outputs" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="cuda-and-vulkan-interoperability-external-memory-sharing">CUDA
+and Vulkan Interoperability: External Memory Sharing</h1>
+<p>External memory sharing enables high-performance interoperability
+between CUDA and Vulkan by allowing both APIs to access the exact same
+physical GPU allocations without routing data through host system
+memory. Traditionally, passing computational outputs from CUDA to a
+graphics API like Vulkan required costly device-to-host and
+host-to-device memory copies. By utilizing OS-level handles and
+dedicated API extensions, developers can create seamless zero-copy
+pipelines where CUDA performs heavy compute, AI inference, or physics
+simulations, and Vulkan immediately renders the results with minimal
+latency.</p>
+<h3 id="the-mechanism-of-shared-allocations">The Mechanism of Shared
+Allocations</h3>
+<p>At the core of this interoperability is the ability to export and
+import dedicated GPU memory objects. The process relies on
+platform-specific operating system primitives:</p>
+<ol type="1">
+<li><strong>POSIX File Descriptors (Linux):</strong> Memory is bound to
+an integer file descriptor representing the GPU buffer.</li>
+<li><strong>NT Handles (Windows):</strong> Memory is referenced via
+standard Windows security handles.</li>
+</ol>
+<p>In Vulkan, memory is allocated using the
+<code>VK_KHR_external_memory</code> extension (or core functionality in
+modern Vulkan versions). When allocating memory with
+<code>vkAllocateMemory</code>, the developer specifies an export handle
+type via <code>VkExportMemoryAllocateInfo</code>. This flags the memory
+chunk as exportable to other device drivers or APIs running on the same
+hardware.</p>
+<p>Once allocated, Vulkan exports the memory handle using
+platform-specific extensions such as
+<code>VK_KHR_external_memory_fd</code> for Linux or
+<code>VK_KHR_external_memory_win32</code> for Windows.</p>
+<h3 id="importing-memory-into-cuda">Importing Memory into CUDA</h3>
+<p>On the CUDA side, the developer utilizes the CUDA External Resource
+Interoperability API. CUDA does not allocate new device memory for the
+incoming data; instead, it creates a virtual mapping over the existing
+Vulkan buffer:</p>
+<ul>
+<li>The exported OS handle is passed into CUDA using the
+<code>cudaImportExternalMemory</code> function, configured via the
+<code>cudaExternalMemoryHandleDesc</code> structure.</li>
+<li>After importing, CUDA maps the external allocation into its address
+space as either a linear pointer via
+<code>cudaExternalMemoryGetMappedBuffer</code> or a CUDA array via
+<code>cudaExternalMemoryGetMappedMipmappedArray</code>.</li>
+</ul>
+<p>CUDA kernels can now directly read from and write to the same
+physical memory addresses that Vulkan references, eliminating redundant
+data transfer overhead entirely.</p>
+<h3 id="cross-api-synchronization">Cross-API Synchronization</h3>
+<p>Sharing memory is only functional if concurrent operations are
+properly coordinated to avoid race conditions. Vulkan and CUDA operate
+on separate command queues and execution models, making API-level
+synchronization mandatory.</p>
+<p>Synchronization is achieved through external semaphores:</p>
+<ul>
+<li><strong>Vulkan Setup:</strong> Vulkan exports timeline or binary
+semaphores using the <code>VK_KHR_external_semaphore</code> extension
+alongside OS-specific helpers (<code>VK_KHR_external_semaphore_fd</code>
+or <code>VK_KHR_external_semaphore_win32</code>).</li>
+<li><strong>CUDA Import:</strong> CUDA imports these synchronization
+primitives via <code>cudaImportExternalSemaphore</code>.</li>
+<li><strong>Execution Flow:</strong> Vulkan signals an external
+semaphore upon completing a rendering pass, prompting CUDA to wait via
+<code>cudaWaitExternalSemaphoresAsync</code>. Once CUDA finishes
+processing the shared buffer, it signals another external semaphore
+using <code>cudaSignalExternalSemaphoresAsync</code>, which unblocks
+subsequent Vulkan queue submissions.</li>
+</ul>
+<h3 id="practical-impact">Practical Impact</h3>
+<p>By pairing shared external memory allocations with shared semaphores,
+CUDA and Vulkan operate as complementary components of a unified GPU
+pipeline. Applications like real-time neural rendering, machine learning
+post-processing, and interactive physical simulations gain dramatic
+performance improvements through zero-copy data persistence and
+deterministic cross-API queue scheduling.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

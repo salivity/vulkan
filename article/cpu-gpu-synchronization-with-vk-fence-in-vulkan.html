@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CPU-GPU Synchronization with VkFence in Vulkan - vulkan</title>
+    <meta name="description" content="This article explains how the VkFence primitive facilitates coarse-grained synchronization between the host CPU and the GPU in the Vulkan API. It details the operational lifecycle of a fence, how state transitions bridge execution timelines across hardwar">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/cpu-gpu-synchronization-with-vk-fence-in-vulkan">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="CPU-GPU Synchronization with VkFence in Vulkan - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/cpu-gpu-synchronization-with-vk-fence-in-vulkan" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how the VkFence primitive facilitates coarse-grained synchronization between the host CPU and the GPU in the Vulkan API. It details the operational lifecycle of a fence, how state transitions bridge execution timelines across hardwar" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="cpu-gpu-synchronization-with-vkfence-in-vulkan">CPU-GPU
+Synchronization with VkFence in Vulkan</h1>
+<p>This article explains how the <code>VkFence</code> primitive
+facilitates coarse-grained synchronization between the host CPU and the
+GPU in the Vulkan API. It details the operational lifecycle of a fence,
+how state transitions bridge execution timelines across hardware
+boundaries, why this mechanism is classified as coarse-grained, and how
+it is applied in real-world rendering loops to manage resources safely
+without causing pipeline stalls.</p>
+<h3 id="the-role-of-vkfence">The Role of VkFence</h3>
+<p>Vulkan explicitly separates CPU host operations from GPU device
+execution. Commands recorded by the CPU and submitted to a
+<code>VkQueue</code> run asynchronously on the GPU. A
+<code>VkFence</code> is an execution synchronization primitive designed
+specifically to communicate state from the GPU back to the CPU. It
+enables the host to query or wait until the device has finished
+processing a particular batch of work.</p>
+<h3 id="lifecycle-and-mechanics">Lifecycle and Mechanics</h3>
+<p>A <code>VkFence</code> exists in one of two states:
+<strong>signaled</strong> or <strong>unsignaled</strong>.</p>
+<ol type="1">
+<li><strong>Creation and Initialization</strong>: A fence is created
+using <code>vkCreateFence</code>. It can be initialized in either an
+unsignaled or signaled state via <code>VkFenceCreateFlags</code> (e.g.,
+<code>VK_FENCE_CREATE_SIGNALED_BIT</code>, which is commonly used to
+avoid deadlocks on the first frame of a render loop).</li>
+<li><strong>GPU Signaling</strong>: The fence is passed into a
+submission call, such as <code>vkQueueSubmit</code>. The GPU updates the
+fence's status to signaled only after all work submitted in that
+specific call has completed execution.</li>
+<li><strong>CPU Waiting and Polling</strong>:
+<ul>
+<li><strong>Blocking Wait</strong>: The CPU invokes
+<code>vkWaitForFences</code>, specifying a timeout and an array of
+fences. The calling host thread blocks until the specified fences
+transition to the signaled state.</li>
+<li><strong>Non-blocking Query</strong>: The CPU invokes
+<code>vkGetFenceStatus</code> to poll the current state without blocking
+the host thread.</li>
+</ul></li>
+<li><strong>Manual Reset</strong>: Unlike some synchronization
+primitives, fences do not automatically return to an unsignaled state.
+The CPU must explicitly call <code>vkResetFences</code> before the fence
+can be reused in a subsequent queue submission.</li>
+</ol>
+<h3 id="why-vkfence-is-coarse-grained">Why VkFence Is
+Coarse-Grained</h3>
+<p>Synchronization mechanisms in Vulkan are categorized by their
+granularity and the boundaries they cross:</p>
+<ul>
+<li><strong>Pipeline Barriers and Events</strong>: Fine-grained,
+GPU-internal synchronization operating at the level of specific pipeline
+stages and memory access scopes.</li>
+<li><strong>VkSemaphore</strong>: Coarse-to-fine synchronization
+operating strictly on the GPU to coordinate work between different
+queues or queue submissions.</li>
+<li><strong>VkFence</strong>: Coarse-grained synchronization spanning
+the CPU-GPU boundary.</li>
+</ul>
+<p>A fence is coarse-grained because it operates at the granularity of
+an entire submission batch (<code>vkQueueSubmit</code>). It does not
+report the progress of individual draw calls, dispatches, or pipeline
+stages. The signal indicates only that the entire batch of commands
+associated with that submission has retired and that all memory side
+effects associated with them are visible and complete.</p>
+<h3 id="practical-application-managing-in-flight-resources">Practical
+Application: Managing In-Flight Resources</h3>
+<p>The primary use case for <code>VkFence</code> is managing per-frame
+resources (such as command buffers, uniform buffers, and descriptor
+sets) across multiple frames in flight:</p>
+<ul>
+<li><strong>Preventing Buffer Overwrites</strong>: When using double or
+triple buffering, the CPU must ensure that the GPU has finished reading
+a frame's uniform or staging buffer before the CPU overwrites it with
+data for a new frame.</li>
+<li><strong>Command Buffer Reuse</strong>: A
+<code>VkCommandBuffer</code> cannot be reset or recorded to while it is
+in the pending execution state on the GPU. A fence tied to the
+submission guarantees the command buffer has finished executing,
+allowing the CPU to safely call <code>vkResetCommandBuffer</code> or
+reuse the parent <code>VkCommandPool</code>.</li>
+<li><strong>Frame Pacing</strong>: Fences prevent the CPU from
+submitting work faster than the GPU can process it, keeping CPU-side
+frame production synchronized with GPU-side rendering capacity.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

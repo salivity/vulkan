@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Line Stippling in Modern Legacy Extensions - vulkan</title>
+    <meta name="description" content="Line stippling in modern Vulkan is achieved through dedicated rasterization extensions that restore classic fixed-function dash-and-dot line rendering without forcing developers to implement complex shader-based workarounds. While core Vulkan intentionall">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-line-stippling-in-modern-legacy-extensions">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Line Stippling in Modern Legacy Extensions - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-line-stippling-in-modern-legacy-extensions" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Line stippling in modern Vulkan is achieved through dedicated rasterization extensions that restore classic fixed-function dash-and-dot line rendering without forcing developers to implement complex shader-based workarounds. While core Vulkan intentionall" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-line-stippling-in-modern-legacy-extensions">Vulkan Line
+Stippling in Modern Legacy Extensions</h1>
+<p>Line stippling in modern Vulkan is achieved through dedicated
+rasterization extensions that restore classic fixed-function
+dash-and-dot line rendering without forcing developers to implement
+complex shader-based workarounds. While core Vulkan intentionally
+stripped away legacy graphics constructs to maximize hardware
+efficiency, professional CAD software, legacy ports, and translation
+layers like Wine and Zink required hardware-accelerated stippling. This
+article explores how modern extensions, primarily
+<code>VK_EXT_line_rasterization</code> and
+<code>VK_KHR_line_rasterization</code>, expose line stippling parameters
+to the rasterizer, how the underlying hardware evaluates stipple
+patterns, and how dynamic states manage pattern state changes.</p>
+<p>In traditional APIs like OpenGL, line stippling was enabled globally
+via <code>glLineStipple</code>, allowing a 16-bit integer bitmask and a
+repeat factor to determine which fragments along a primitive were
+discarded. Vulkan initially omitted this functionality entirely,
+expecting developers to calculate line distance in vertex shaders and
+discard fragments in fragment shaders. However, emulating this behavior
+across wide lines, line strips, and varied line-rasterization algorithms
+introduces overhead and subtle visual divergences.</p>
+<p>To bridge this gap cleanly, Vulkan introduced the
+<code>VK_EXT_line_rasterization</code> extension (later promoted to
+<code>VK_KHR_line_rasterization</code>). This extension integrates line
+stippling directly into the fixed-function rasterization stage. It is
+configured by attaching a
+<code>VkPipelineRasterizationLineStateCreateInfoKHR</code> structure to
+the <code>pNext</code> chain of the standard
+<code>VkPipelineRasterizationStateCreateInfo</code> during graphics
+pipeline creation.</p>
+<p>The operation of line stippling relies on three primary variables:
+<code>stippleFactor</code>, <code>stipplePattern</code>, and an internal
+hardware counter:</p>
+<ul>
+<li><strong>Stipple Pattern:</strong> A 16-bit unsigned integer bitmask
+where each bit represents a segment of the line. A bit value of
+<code>1</code> indicates that the corresponding fragment should be
+drawn, whereas <code>0</code> specifies that the fragment should be
+discarded prior to fragment shader execution.</li>
+<li><strong>Stipple Factor:</strong> An integer multiplier ranging from
+1 to 256 that defines how many consecutive fragments each bit in the
+pattern represents before moving to the next bit.</li>
+<li><strong>Fragment Position Calculation:</strong> As the rasterizer
+steps along a line primitive, it tracks the fragment offset using a
+counter. The active bit in the pattern is evaluated using the formula:
+<code>BitIndex = (Counter / StippleFactor) % 16</code>. If the evaluated
+bit is zero, the fragment is killed immediately, saving fragment shader
+cycles.</li>
+</ul>
+<p>Managing pattern continuity across joined segments is a critical
+aspect of the extension's behavior. In typical implementations, the
+stipple counter resets to zero at the start of each standalone line
+segment (within <code>VK_PRIMITIVE_TOPOLOGY_LINE_LIST</code>). For
+continuous strips (<code>VK_PRIMITIVE_TOPOLOGY_LINE_STRIP</code>),
+implementations can maintain the counter across vertices, preventing the
+pattern from artificially restarting at shared vertices. Modern drivers
+support distinct line rasterization modes alongside stippling, including
+Bresenham-style lines, rectangular lines, and smooth/antialiased lines,
+allowing applications to mimic specific legacy graphics hardware
+behaviors closely.</p>
+<p>Because CAD and modeling tools frequently alter pattern scales and
+types during rendering passes, rebuilding a Vulkan pipeline for every
+stipple variation would be computationally prohibitive. The extension
+addresses this through dynamic state management via
+<code>VK_DYNAMIC_STATE_LINE_STIPPLE_KHR</code>. When enabled,
+applications can bypass static pipeline state constraints and update
+stippling attributes dynamically on a command buffer using the
+<code>vkCmdSetLineStippleKHR</code> call, altering the factor and
+pattern inline without incurring pipeline cache misses or state
+stalls.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

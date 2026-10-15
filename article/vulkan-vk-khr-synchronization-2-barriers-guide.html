@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan VK_KHR_synchronization2 Barriers Guide - vulkan</title>
+    <meta name="description" content="The VKKHRsynchronization2 extension—promoted to core in Vulkan 1.3—overhauls the original Vulkan synchronization model to eliminate verbosity, fix bitmask exhaustion, and prevent common synchronization bugs. This article explains how the extension resolve">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-vk-khr-synchronization-2-barriers-guide">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan VK_KHR_synchronization2 Barriers Guide - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-vk-khr-synchronization-2-barriers-guide" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The VKKHRsynchronization2 extension—promoted to core in Vulkan 1.3—overhauls the original Vulkan synchronization model to eliminate verbosity, fix bitmask exhaustion, and prevent common synchronization bugs. This article explains how the extension resolve" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-vk_khr_synchronization2-barriers-guide">Vulkan
+VK_KHR_synchronization2 Barriers Guide</h1>
+<p>The <code>VK_KHR_synchronization2</code> extension—promoted to core
+in Vulkan 1.3—overhauls the original Vulkan synchronization model to
+eliminate verbosity, fix bitmask exhaustion, and prevent common
+synchronization bugs. This article explains how the extension resolves
+the architectural shortcomings of Vulkan 1.0 barriers by restructuring
+pipeline stages and access flags into clean 64-bit definitions,
+decoupling global parameters into self-contained structs, and
+streamlining barrier submission commands for better developer
+readability and GPU execution precision.</p>
+<h3 id="the-limitations-of-original-vulkan-synchronization">The
+Limitations of Original Vulkan Synchronization</h3>
+<p>In the original Vulkan 1.0 synchronization model, pipeline stages and
+access flags were constrained to 32-bit bitmasks
+(<code>VkPipelineStageFlagBits</code> and
+<code>VkAccessFlagBits</code>). As the API evolved to support newer
+hardware capabilities like ray tracing and mesh shaders, these 32-bit
+registers exhausted their available bits, leading to overloaded flag
+definitions and awkward aliases.</p>
+<p>Furthermore, <code>vkCmdPipelineBarrier</code> separated stage masks
+from access masks. Developers had to specify a global
+<code>srcStageMask</code> and <code>dstStageMask</code> at the function
+level, while individual memory, buffer, and image barriers contained
+only access masks. This created two major issues:</p>
+<ol type="1">
+<li><strong>Ambiguity:</strong> It was easy to specify access flags that
+did not match the global stage masks, leading to silent synchronization
+bugs or unnecessary pipeline stalls.</li>
+<li><strong>Poor Readability:</strong> When issuing multiple barriers in
+a single call, all stages had to be grouped into a single combined mask.
+This made it nearly impossible to determine which stage produced which
+resource access without cross-referencing documentation.</li>
+</ol>
+<h3 id="64-bit-flag-precision-and-logical-separation">64-Bit Flag
+Precision and Logical Separation</h3>
+<p><code>VK_KHR_synchronization2</code> expands flag storage by
+introducing 64-bit enumerations:
+<code>VkPipelineStageFlagBits2KHR</code> and
+<code>VkAccessFlagBits2KHR</code>. This expansion allows Vulkan to
+define precise, fine-grained stages and access flags without risk of
+running out of bit space.</p>
+<p>The extension introduces clearer, dedicated access types. For
+instance, rather than sharing generic flags like
+<code>VK_ACCESS_COLOR_ATTACHMENT_READ_BIT</code>, the new API
+distinguishes read and write operations explicitly and provides targeted
+flags for modern operations such as ray tracing acceleration structure
+builds, optical flow, and fragment shading rate attachments. This
+fine-grained control ensures drivers insert only the exact hardware
+memory barriers and cache flushes required, avoiding
+over-synchronization.</p>
+<h3 id="localized-barrier-declarations">Localized Barrier
+Declarations</h3>
+<p>The most significant readability improvement comes from reorganizing
+how barrier dependencies are grouped. Instead of declaring stages
+globally, <code>VK_KHR_synchronization2</code> places the execution
+dependency directly inside each individual barrier struct:</p>
+<ul>
+<li><code>VkMemoryBarrier2</code></li>
+<li><code>VkBufferMemoryBarrier2</code></li>
+<li><code>VkImageMemoryBarrier2</code></li>
+</ul>
+<p>Each barrier struct now contains its own <code>srcStageMask</code>,
+<code>srcAccessMask</code>, <code>dstStageMask</code>, and
+<code>dstAccessMask</code>. This self-contained design pairs each
+resource directly with its specific lifecycle transition:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>VkImageMemoryBarrier2 imageBarrier <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span>sType <span class="op">=</span> VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2<span class="op">,</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span>srcStageMask <span class="op">=</span> VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT<span class="op">,</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span>srcAccessMask <span class="op">=</span> VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT<span class="op">,</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span>dstStageMask <span class="op">=</span> VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT<span class="op">,</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span>dstAccessMask <span class="op">=</span> VK_ACCESS_2_SHADER_READ_BIT<span class="op">,</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span>oldLayout <span class="op">=</span> VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL<span class="op">,</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span>newLayout <span class="op">=</span> VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL<span class="op">,</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Resource-specific handles and subresource ranges follow...</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
+<p>By defining the stage and access masks side-by-side inside the
+barrier, developers can immediately verify that the source access is
+valid for the source stage. This localized encapsulation makes code
+reviews simpler and modularizes barrier creation within rendering
+passes.</p>
+<h3 id="streamlined-command-invocations">Streamlined Command
+Invocations</h3>
+<p>To issue synchronization commands, the extension encapsulates all
+barrier types into a unified container structure:
+<code>VkDependencyInfo</code>. This struct bundles memory, buffer, and
+image barrier arrays together into a single object.</p>
+<p>Commands such as <code>vkCmdPipelineBarrier2</code> and
+<code>vkCmdSetEvent2</code> take a direct pointer to
+<code>VkDependencyInfo</code>. This eliminates the long parameter lists
+of the legacy commands and simplifies abstraction layers in render
+engines. Drivers also gain a cleaner picture of the developer's exact
+intent, enabling optimized scheduling and pipeline execution.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

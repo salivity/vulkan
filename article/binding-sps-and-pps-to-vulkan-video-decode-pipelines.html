@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Binding SPS and PPS to Vulkan Video Decode Pipelines - vulkan</title>
+    <meta name="description" content="Vulkan Video leverages the VKKHRvideoqueue and codec-specific decode extensions, such as VKKHRvideodecodeh264 and VKKHRvideodecodeh265, to integrate hardware-accelerated video decoding directly into the Vulkan ecosystem. A critical phase of the decode pip">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/binding-sps-and-pps-to-vulkan-video-decode-pipelines">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Binding SPS and PPS to Vulkan Video Decode Pipelines - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/binding-sps-and-pps-to-vulkan-video-decode-pipelines" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Vulkan Video leverages the VKKHRvideoqueue and codec-specific decode extensions, such as VKKHRvideodecodeh264 and VKKHRvideodecodeh265, to integrate hardware-accelerated video decoding directly into the Vulkan ecosystem. A critical phase of the decode pip" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="binding-sps-and-pps-to-vulkan-video-decode-pipelines">Binding
+SPS and PPS to Vulkan Video Decode Pipelines</h1>
+<p>Vulkan Video leverages the <code>VK_KHR_video_queue</code> and
+codec-specific decode extensions, such as
+<code>VK_KHR_video_decode_h264</code> and
+<code>VK_KHR_video_decode_h265</code>, to integrate hardware-accelerated
+video decoding directly into the Vulkan ecosystem. A critical phase of
+the decode pipeline is handling codec-specific configuration
+metadata—specifically Sequence Parameter Sets (SPS) and Picture
+Parameter Sets (PPS). This article explains how host applications parse
+these parameter sets from a compressed bitstream, package them into
+standard Vulkan video structures, store them inside a dedicated session
+parameters object, and bind them to command buffers during decode
+execution.</p>
+<h3 id="the-role-of-vkvideosessionparameterskhr">The Role of
+<code>VkVideoSessionParametersKHR</code></h3>
+<p>In the Vulkan Video API, state management is separated into two
+tiers: the long-lived execution context (<code>VkVideoSessionKHR</code>)
+and the dynamic state configuration
+(<code>VkVideoSessionParametersKHR</code>). Sequence Parameter Sets and
+Picture Parameter Sets are not bound directly as raw byte buffers at
+draw or dispatch time; instead, they are converted into host-accessible
+structures and registered within a
+<code>VkVideoSessionParametersKHR</code> object.</p>
+<p>This object acts as an on-device dictionary or parameter cache that
+stores active SPS and PPS entries by their standard bitstream
+identifiers (such as <code>seq_parameter_set_id</code> and
+<code>pic_parameter_set_id</code>).</p>
+<h3 id="parsing-and-structuring-parameter-sets">Parsing and Structuring
+Parameter Sets</h3>
+<p>Before parameter sets reach the Vulkan API, the application must
+extract the network abstraction layer (NAL) units from the bitstream
+using a demuxer or bitstream parser. Once extracted, the application
+maps the parsed bitstream headers into Vulkan's standardized Video API
+types defined in the
+<code>&lt;vk_video/vulkan_video_codecs_common.h&gt;</code> and
+codec-specific headers (e.g.,
+<code>&lt;vk_video/vulkan_video_codec_h264std.h&gt;</code>).</p>
+<p>For H.264, these parameter sets are mapped into standard
+structures:</p>
+<ul>
+<li><code>StdVideoH264SequenceParameterSet</code></li>
+<li><code>StdVideoH264PictureParameterSet</code></li>
+</ul>
+<p>For H.265 (HEVC), the pipeline also incorporates Video Parameter
+Sets:</p>
+<ul>
+<li><code>StdVideoH265VideoParameterSet</code></li>
+<li><code>StdVideoH265SequenceParameterSet</code></li>
+<li><code>StdVideoH265PictureParameterSet</code></li>
+</ul>
+<h3 id="registering-sps-and-pps-with-session-parameters">Registering SPS
+and PPS with Session Parameters</h3>
+<p>Once populated, the standard structs are passed into the pipeline
+during the creation or update of the session parameter object:</p>
+<ol type="1">
+<li><strong>Initial Creation</strong>: When calling
+<code>vkCreateVideoSessionParametersKHR</code>, the application chains a
+codec-specific creation structure via the <code>pNext</code> pointer of
+<code>VkVideoSessionParametersCreateInfoKHR</code>. For example, with
+H.264, the application attaches a
+<code>VkVideoDecodeH264SessionParametersCreateInfoKHR</code> struct.
+This struct contains arrays of
+<code>StdVideoH264SequenceParameterSet</code> and
+<code>StdVideoH264PictureParameterSet</code>, along with counts
+indicating how many parameter sets are being initialized.</li>
+<li><strong>Dynamic Updates</strong>: If the stream introduces new SPS
+or PPS configurations mid-playback, recreating the session is
+unnecessary. The application can invoke
+<code>vkUpdateVideoSessionParametersKHR</code> using a
+<code>VkVideoDecodeH264SessionParametersAddInfoKHR</code> structure (or
+its H.265 equivalent) to append or replace parameter sets without
+disrupting the hardware session.</li>
+</ol>
+<h3 id="binding-to-the-command-buffer">Binding to the Command
+Buffer</h3>
+<p>Parameter sets are applied to decode commands across two levels
+inside a recording command buffer:</p>
+<h4 id="1-session-level-binding-via-vkcmdbeginvideocodingkhr">1.
+Session-Level Binding via <code>vkCmdBeginVideoCodingKHR</code></h4>
+<p>The decoding scope is initiated by calling
+<code>vkCmdBeginVideoCodingKHR</code>. The accompanying
+<code>VkVideoBeginCodingInfoKHR</code> struct includes the handle to the
+<code>VkVideoSessionParametersKHR</code> object in its
+<code>videoSessionParameters</code> field. This binds the dictionary
+containing all registered SPS and PPS structures to the current command
+scope.</p>
+<h4 id="2-per-picture-invocation-via-vkcmddecodevideokhr">2. Per-Picture
+Invocation via <code>vkCmdDecodeVideoKHR</code></h4>
+<p>When invoking <code>vkCmdDecodeVideoKHR</code>, the application
+passes a <code>VkVideoDecodeInfoKHR</code> struct containing
+codec-specific picture parameters in its <code>pNext</code> chain (such
+as <code>VkVideoDecodeH264PictureInfoKHR</code>).</p>
+<p>Rather than sending the full parameter set data again, this structure
+merely references the ID of the desired parameter set (e.g., matching
+the <code>pic_parameter_set_id</code> inside the picture header). The
+hardware decoder uses this ID to query the previously bound
+<code>VkVideoSessionParametersKHR</code> object, retrieve the
+corresponding PPS (which in turn references its parent SPS), and
+configure the decoding hardware for that specific frame slice.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zero-Copy Camera Ingestion via Vulkan External Memory - vulkan</title>
+    <meta name="description" content="Ingesting high-resolution camera frames with ultra-low latency requires bypassing costly CPU-to-GPU memory copies. Vulkan achieves zero-copy ingestion by using external memory extensions to import raw, physically backed memory allocations—produced by came">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/zero-copy-camera-ingestion-via-vulkan-external-memory">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Zero-Copy Camera Ingestion via Vulkan External Memory - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/zero-copy-camera-ingestion-via-vulkan-external-memory" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Ingesting high-resolution camera frames with ultra-low latency requires bypassing costly CPU-to-GPU memory copies. Vulkan achieves zero-copy ingestion by using external memory extensions to import raw, physically backed memory allocations—produced by came" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="zero-copy-camera-ingestion-via-vulkan-external-memory">Zero-Copy
+Camera Ingestion via Vulkan External Memory</h1>
+<p>Ingesting high-resolution camera frames with ultra-low latency
+requires bypassing costly CPU-to-GPU memory copies. Vulkan achieves
+zero-copy ingestion by using external memory extensions to import raw,
+physically backed memory allocations—produced by camera subsystems or
+hardware image signal processors (ISPs)—directly into GPU-accessible
+<code>VkDeviceMemory</code>. This mechanism enables the GPU to
+immediately read, process, or render video frames without allocating
+redundant buffers or performing data duplication across system
+buses.</p>
+<h3 id="the-foundation-platform-specific-memory-sharing">The Foundation:
+Platform-Specific Memory Sharing</h3>
+<p>The camera subsystem or video capture driver (such as Video4Linux2 on
+Linux or <code>AHardwareBuffer</code> on Android) allocates contiguous
+physical memory pages via direct memory access (DMA) buffers. Instead of
+moving pixel data into user space and then re-uploading it to graphics
+memory, the driver exports a platform-native handle that references the
+underlying physical pages.</p>
+<p>On Linux-based systems, this handle is typically a POSIX file
+descriptor (<code>DMA-BUF fd</code>). On Android, it is an
+<code>AHardwareBuffer</code>, while Windows systems use shared
+<code>NT</code> or <code>KMT</code> handles.</p>
+<h3 id="essential-vulkan-extensions">Essential Vulkan Extensions</h3>
+<p>To consume these native handles, Vulkan relies on a family of
+external memory extensions:</p>
+<ul>
+<li><strong>Core External Memory (<code>VK_KHR_external_memory</code> /
+Vulkan 1.1+):</strong> Provides the foundational API structures to
+export and import memory references.</li>
+<li><strong>Platform Transport Extensions:</strong> Interfaces that
+translate native platform handles into Vulkan objects, notably
+<code>VK_KHR_external_memory_fd</code> for DMA-BUFs and
+<code>VK_ANDROID_external_memory_android_hardware_buffer</code> for
+Android.</li>
+<li><strong>Color Conversion
+(<code>VK_KHR_sampler_ycbcr_conversion</code>):</strong> Essential for
+camera ingestion, as camera sensors routinely output in planar or
+semi-planar YUV formats (such as NV12 or YUV420) rather than standard
+RGB.</li>
+</ul>
+<h3 id="the-zero-copy-ingestion-workflow">The Zero-Copy Ingestion
+Workflow</h3>
+<h4 id="1-compatibility-and-format-verification">1. Compatibility and
+Format Verification</h4>
+<p>Before allocating resources, the application must query the physical
+device using <code>vkGetPhysicalDeviceImageFormatProperties2</code>
+combined with <code>VkPhysicalDeviceExternalImageFormatInfo</code>. This
+query verifies that the device supports importing the specific external
+handle type for the target image configuration (dimensions, tiling, and
+pixel format).</p>
+<h4 id="2-image-creation-with-external-flags">2. Image Creation with
+External Flags</h4>
+<p>The application creates a <code>VkImage</code> that mirrors the
+camera frame attributes (resolution, format, usage flags). A
+<code>VkExternalMemoryImageCreateInfo</code> structure is chained to the
+<code>pNext</code> pointer of <code>VkImageCreateInfo</code>, explicitly
+declaring the handle types that will back the image.</p>
+<h4 id="3-importing-the-handle-into-vkdevicememory">3. Importing the
+Handle into VkDeviceMemory</h4>
+<p>To map the camera frame's physical memory into the Vulkan device
+context, the application calls <code>vkAllocateMemory</code>. Instead of
+allocating fresh VRAM, the call imports the native handle using an
+extension-specific structure in the <code>VkMemoryAllocateInfo</code>
+chain:</p>
+<ul>
+<li>For Linux DMA-BUFs, <code>VkImportMemoryFdInfoKHR</code> contains
+the file descriptor and handle type
+(<code>VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT</code>).</li>
+<li>For Android, <code>VkImportAndroidHardwareBufferInfoANDROID</code>
+provides the pointer to the native <code>AHardwareBuffer</code>.</li>
+</ul>
+<p>When <code>vkAllocateMemory</code> completes, the returned
+<code>VkDeviceMemory</code> points directly to the physical storage
+populated by the camera ISP.</p>
+<h4 id="4-binding-memory">4. Binding Memory</h4>
+<p>The imported <code>VkDeviceMemory</code> is linked to the previously
+created <code>VkImage</code> using <code>vkBindImageMemory</code> (or
+<code>vkBindImageMemory2</code>). From this point onward, any read or
+compute operation dispatched against the <code>VkImage</code> addresses
+the raw memory written by the camera.</p>
+<h3 id="synchronization-and-multi-planar-formats">Synchronization and
+Multi-Planar Formats</h3>
+<p>Zero-copy ingestion shifts the synchronization responsibility
+entirely to the application:</p>
+<ul>
+<li><strong>External Synchronization:</strong> The GPU must not read
+from the buffer while the camera ISP is still writing. This is handled
+using external synchronization extensions (e.g.,
+<code>VK_KHR_external_semaphore_fd</code>), where camera hardware
+signals a fence or timeline semaphore upon frame completion, unblocking
+the downstream Vulkan command queue.</li>
+<li><strong>YUV Sampler Conversion:</strong> Most camera sensors output
+in semi-planar formats (such as NV12), where luminance (Y) and
+chrominance (UV) reside in separate memory planes. Vulkan resolves this
+natively via <code>VkSamplerYcbcrConversion</code>, allowing fragment
+shaders or compute kernels to sample the imported image as standard RGB
+coordinates without requiring an explicit intermediate conversion
+pass.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

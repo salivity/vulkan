@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Non-Coherent Atom Size in Vulkan Explained - vulkan</title>
+    <meta name="description" content="In the Vulkan graphics and compute API, managing non-coherent host memory requires an understanding of how CPU caches synchronize with the GPU. This article explains what the nonCoherentAtomSize limit represents, how non-coherent host memory functions, an">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/non-coherent-atom-size-in-vulkan-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Non-Coherent Atom Size in Vulkan Explained - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/non-coherent-atom-size-in-vulkan-explained" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In the Vulkan graphics and compute API, managing non-coherent host memory requires an understanding of how CPU caches synchronize with the GPU. This article explains what the nonCoherentAtomSize limit represents, how non-coherent host memory functions, an" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="non-coherent-atom-size-in-vulkan-explained">Non-Coherent Atom
+Size in Vulkan Explained</h1>
+<p>In the Vulkan graphics and compute API, managing non-coherent host
+memory requires an understanding of how CPU caches synchronize with the
+GPU. This article explains what the <code>nonCoherentAtomSize</code>
+limit represents, how non-coherent host memory functions, and why Vulkan
+strictly requires memory flush and invalidate operations to align to
+this specific hardware-defined boundary.</p>
+<h3 id="host-coherent-vs-non-coherent-memory">Host-Coherent vs.
+Non-Coherent Memory</h3>
+<p>When allocating host-visible memory in Vulkan using
+<code>VkMemoryPropertyFlags</code>, developers typically choose between
+two primary synchronization behaviors:</p>
+<ul>
+<li><strong>Host-Coherent Memory
+(<code>VK_MEMORY_PROPERTY_HOST_COHERENT_BIT</code>):</strong> Writes
+made by the CPU automatically become visible to the GPU, and vice versa,
+without explicit software intervention.</li>
+<li><strong>Non-Coherent Memory (Absence of
+<code>VK_MEMORY_PROPERTY_HOST_COHERENT_BIT</code>):</strong> Writes made
+by the CPU reside in the CPU's local caches and are not automatically
+guaranteed to be visible to the GPU. Similarly, writes from the GPU are
+not automatically reflected in the CPU's cache.</li>
+</ul>
+<p>To make host writes visible to the GPU on non-coherent memory, you
+must call <code>vkFlushMappedMemoryRanges</code>. To make GPU writes
+visible to the host, you must call
+<code>vkInvalidateMappedMemoryRanges</code>.</p>
+<h3 id="what-is-noncoherentatomsize">What Is
+<code>nonCoherentAtomSize</code>?</h3>
+<p>The <code>nonCoherentAtomSize</code> is a hardware property defined
+inside <code>VkPhysicalDeviceLimits</code>. It represents the minimum
+granularity, in bytes, at which host-accessible memory operations
+(flushes and invalidations) can be performed.</p>
+<p>At a hardware level, CPUs and memory controllers do not synchronize
+memory on a single-byte basis. Instead, they operate on cache lines or
+memory transaction blocks—commonly 64 or 128 bytes. The
+<code>nonCoherentAtomSize</code> reflects this underlying hardware
+granularity.</p>
+<h3 id="alignment-requirements">Alignment Requirements</h3>
+<p>The Vulkan specification mandates strict alignment rules for
+<code>VkMappedMemoryRange</code>:</p>
+<ol type="1">
+<li><strong>Offset Alignment:</strong> The <code>offset</code> member
+must be an integer multiple of
+<code>VkPhysicalDeviceLimits::nonCoherentAtomSize</code>.</li>
+<li><strong>Size Alignment:</strong> The <code>size</code> member must
+either be an integer multiple of <code>nonCoherentAtomSize</code> or
+extend specifically to the end of the mapped memory range (or
+<code>VK_WHOLE_SIZE</code>).</li>
+</ol>
+<h3 id="why-flush-ranges-must-be-aligned">Why Flush Ranges Must Be
+Aligned</h3>
+<p>The necessity of aligning flush and invalidate ranges to
+<code>nonCoherentAtomSize</code> stems from how cache architectures
+operate and the risks associated with partial-line operations:</p>
+<h4 id="1-prevention-of-data-corruption-and-false-sharing">1. Prevention
+of Data Corruption and False Sharing</h4>
+<p>Because CPU caches operate on entire cache lines, evicting (flushing)
+or discarding (invalidating) a region smaller than a cache line affects
+all bytes within that line.</p>
+<ul>
+<li><strong>Invalidation Risk:</strong> If you attempt to invalidate a
+16-byte region in the middle of a 64-byte cache line, the CPU cache
+controller must invalidate the full 64-byte line. If other parts of that
+cache line contain dirty, unwritten CPU data, that valid CPU data is
+permanently lost.</li>
+<li><strong>Flush Risk:</strong> Flushing a partial line forces the
+entire cache line to be written back to main memory. If adjacent data in
+that cache line was being modified independently by another device or
+thread, the flush may overwrite newer data with stale data.</li>
+</ul>
+<h4 id="2-hardware-and-driver-simplicity">2. Hardware and Driver
+Simplicity</h4>
+<p>Enforcing strict boundaries in the specification shifts the
+responsibility of safe boundary management to the application. This
+eliminates the need for the Vulkan driver to perform expensive
+read-modify-write operations or software padding when synchronizing CPU
+and GPU caches, maximizing performance and reducing driver overhead.</p>
+<h4 id="3-cross-platform-determinism">3. Cross-Platform Determinism</h4>
+<p>Different hardware architectures use different cache structures. For
+example, desktop CPUs typically feature 64-byte cache lines, while
+mobile chipsets or integrated architectures may feature 128-byte or
+larger cache granularities. By exposing <code>nonCoherentAtomSize</code>
+and enforcing alignment rules, Vulkan ensures portable, predictable
+memory synchronization across all compliant devices.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

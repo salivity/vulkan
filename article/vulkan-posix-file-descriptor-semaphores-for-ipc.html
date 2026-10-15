@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan POSIX File Descriptor Semaphores for IPC - vulkan</title>
+    <meta name="description" content="POSIX file descriptor semaphores in Vulkan bridge native Unix-like operating system handles with GPU hardware synchronization, enabling independent processes to safely coordinate rendering operations on shared GPU resources. By exporting and importing syn">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-posix-file-descriptor-semaphores-for-ipc">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan POSIX File Descriptor Semaphores for IPC - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-posix-file-descriptor-semaphores-for-ipc" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="POSIX file descriptor semaphores in Vulkan bridge native Unix-like operating system handles with GPU hardware synchronization, enabling independent processes to safely coordinate rendering operations on shared GPU resources. By exporting and importing syn" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-posix-file-descriptor-semaphores-for-ipc">Vulkan POSIX
+File Descriptor Semaphores for IPC</h1>
+<p>POSIX file descriptor semaphores in Vulkan bridge native Unix-like
+operating system handles with GPU hardware synchronization, enabling
+independent processes to safely coordinate rendering operations on
+shared GPU resources. By exporting and importing synchronization
+payloads across processes using standard Unix domain sockets, separate
+rendering pipelines can sequence work on the GPU without costly CPU-side
+stalls or out-of-order execution bugs.</p>
+<h2 id="what-are-posix-file-descriptor-semaphores">What Are POSIX File
+Descriptor Semaphores?</h2>
+<p>In Vulkan, synchronization is primarily managed via binary and
+timeline semaphores (<code>VkSemaphore</code>). Standard semaphores
+exist entirely within the context of a single <code>VkDevice</code> and
+process. POSIX file descriptor semaphores extend these primitives by
+leveraging the <code>VK_KHR_external_semaphore</code> and
+<code>VK_KHR_external_semaphore_fd</code> extensions.</p>
+<p>These extensions enable a Vulkan driver to associate the internal GPU
+sync point (such as a Linux sync file or drm_syncobj) with a standard
+POSIX file descriptor (<code>int</code>). Once represented as a file
+descriptor, the semaphore payload can cross process boundaries using
+standard Linux Inter-Process Communication (IPC) mechanisms.</p>
+<h2 id="the-need-for-inter-process-synchronization">The Need for
+Inter-Process Synchronization</h2>
+<p>Complex graphics architectures—such as Wayland compositors,
+multi-process web browsers like Chromium, and OpenXR runtimes—isolate
+user-facing logic, rendering engines, and final display composition into
+distinct operating system processes.</p>
+<p>While shared textures and buffers can be mapped into multiple
+processes via external memory extensions
+(<code>VK_KHR_external_memory_fd</code>), memory sharing alone does not
+guarantee execution order. If Process A renders into an off-screen
+buffer and Process B composites that buffer onto the screen, Process B
+must not read the buffer before Process A completes its rendering
+passes. POSIX file descriptor semaphores provide the low-level signal
+mechanism required to enforce this sequence directly on the GPU
+timeline.</p>
+<h2 id="how-inter-process-synchronization-works-in-vulkan">How
+Inter-Process Synchronization Works in Vulkan</h2>
+<p>The synchronization lifecycle involves four fundamental steps:
+configuration, export, IPC transmission, and importing.</p>
+<h3 id="1-creation-and-export">1. Creation and Export</h3>
+<p>The producer process creates a semaphore configured with an
+exportable handle type:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>VkExportSemaphoreCreateInfo exportInfo <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span>sType <span class="op">=</span> VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO<span class="op">,</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span>handleTypes <span class="op">=</span> VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>VkSemaphoreCreateInfo semaphoreInfo <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span>sType <span class="op">=</span> VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO<span class="op">,</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span>pNext <span class="op">=</span> <span class="op">&amp;</span>exportInfo</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>VkSemaphore producerSemaphore<span class="op">;</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>vkCreateSemaphore<span class="op">(</span>device<span class="op">,</span> <span class="op">&amp;</span>semaphoreInfo<span class="op">,</span> NULL<span class="op">,</span> <span class="op">&amp;</span>producerSemaphore<span class="op">);</span></span></code></pre></div>
+<p>After submitting a command buffer that will signal this semaphore,
+the producer extracts the file descriptor using
+<code>vkGetSemaphoreFdKHR</code>:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> fd <span class="op">=</span> <span class="op">-</span><span class="dv">1</span><span class="op">;</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>VkSemaphoreGetFdInfoKHR getFdInfo <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span>sType <span class="op">=</span> VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR<span class="op">,</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span>semaphore <span class="op">=</span> producerSemaphore<span class="op">,</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span>handleType <span class="op">=</span> VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>vkGetSemaphoreFdKHR<span class="op">(</span>device<span class="op">,</span> <span class="op">&amp;</span>getFdInfo<span class="op">,</span> <span class="op">&amp;</span>fd<span class="op">);</span></span></code></pre></div>
+<h3 id="2-file-descriptor-transfer">2. File Descriptor Transfer</h3>
+<p>File descriptors cannot be shared simply by passing their integer
+values, as file descriptor tables are local to each process. The
+producer transmits the descriptor across a UNIX domain socket using
+<code>sendmsg()</code> with an <code>SCM_RIGHTS</code> control message.
+The kernel duplicates the underlying open file description into the
+consumer process's descriptor table.</p>
+<h3 id="3-importing-the-file-descriptor">3. Importing the File
+Descriptor</h3>
+<p>The consumer process receives the file descriptor via
+<code>recvmsg()</code> and imports it into a locally allocated
+<code>VkSemaphore</code> using <code>vkImportSemaphoreFdKHR</code>:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>VkImportSemaphoreFdInfoKHR importInfo <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span>sType <span class="op">=</span> VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FD_INFO_KHR<span class="op">,</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span>semaphore <span class="op">=</span> consumerSemaphore<span class="op">,</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span>flags <span class="op">=</span> <span class="dv">0</span><span class="op">,</span> <span class="co">// Or VK_SEMAPHORE_IMPORT_TEMPORARY_BIT</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span>handleType <span class="op">=</span> VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT<span class="op">,</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span>fd <span class="op">=</span> receivedFd</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>vkImportSemaphoreFdKHR<span class="op">(</span>device<span class="op">,</span> <span class="op">&amp;</span>importInfo<span class="op">);</span></span></code></pre></div>
+<h3 id="4-gpu-side-waiting">4. GPU-Side Waiting</h3>
+<p>The consumer process binds the imported semaphore to the
+<code>pWaitSemaphores</code> array of its own <code>VkSubmitInfo</code>
+or <code>VkPresentInfoKHR</code>. The GPU driver holds back the
+consumer's queue execution until the producer's GPU hardware operations
+signal the underlying sync primitive. Neither process blocks the CPU
+during this exchange.</p>
+<h2 id="handle-types-opaque-fd-vs-sync-fd">Handle Types: Opaque FD vs.
+Sync FD</h2>
+<p>Vulkan supports different handle abstractions through
+<code>VkExternalSemaphoreHandleTypeFlagBits</code>:</p>
+<ul>
+<li><strong><code>VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT</code></strong>:
+Represents driver-specific synchronization primitives (commonly Linux
+<code>drm_syncobj</code>). This handle represents the semaphore entity
+itself and can often be signaled and waited on repeatedly, depending on
+whether it is imported permanently or temporarily.</li>
+<li><strong><code>VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT</code></strong>:
+Maps directly to a Linux sync file descriptor (<code>/dev/sync</code>).
+A sync file descriptor is a single-shot, write-once synchronization
+fence. Exporting a sync FD transfers the current pending payload of the
+semaphore, and importing it is typically treated as a temporary payload
+transfer.</li>
+</ul>
+<p>Choosing between opaque descriptors and sync file descriptors depends
+on whether the system requires persistent sync pipelines (common in
+compositors using sync objects) or explicit, per-frame synchronization
+tracking (common in Android and Linux explicit sync workflows).</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

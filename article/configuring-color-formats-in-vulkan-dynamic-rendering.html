@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuring Color Formats in Vulkan Dynamic Rendering - vulkan</title>
+    <meta name="description" content="This article explains how Vulkan&#39;s dynamic rendering feature simplifies pipeline creation by configuring attachment color formats directly, eliminating the need for traditional render pass and framebuffer objects. Introduced in Vulkan 1.3 via the VKKHRdyn">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/configuring-color-formats-in-vulkan-dynamic-rendering">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Configuring Color Formats in Vulkan Dynamic Rendering - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/configuring-color-formats-in-vulkan-dynamic-rendering" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how Vulkan&#39;s dynamic rendering feature simplifies pipeline creation by configuring attachment color formats directly, eliminating the need for traditional render pass and framebuffer objects. Introduced in Vulkan 1.3 via the VKKHRdyn" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="configuring-color-formats-in-vulkan-dynamic-rendering">Configuring
+Color Formats in Vulkan Dynamic Rendering</h1>
+<p>This article explains how Vulkan's dynamic rendering feature
+simplifies pipeline creation by configuring attachment color formats
+directly, eliminating the need for traditional render pass and
+framebuffer objects. Introduced in Vulkan 1.3 via the
+<code>VK_KHR_dynamic_rendering</code> extension, this approach allows
+developers to declare color, depth, and stencil attachment formats at
+the pipeline creation stage using dedicated structures in the pipeline's
+extension chain. Below is a direct breakdown of how dynamic rendering
+configures attachment color formats dynamically during pipeline setup
+and matches them at draw time.</p>
+<h3 id="the-shift-from-traditional-render-passes">The Shift from
+Traditional Render Passes</h3>
+<p>In legacy Vulkan, creating a graphics pipeline strictly required a
+valid <code>VkRenderPass</code> handle. This render pass defined the
+format, sample count, load/store operations, and layout transitions for
+every attachment across multiple subpasses, tightly coupling the
+pipeline to a specific render pass compatibility class. Framebuffers
+(<code>VkFramebuffer</code>) were then bound at runtime to provide the
+actual image views matching that render pass.</p>
+<p>Dynamic rendering removes the requirement for both
+<code>VkRenderPass</code> and <code>VkFramebuffer</code>. Instead,
+pipeline creation requires only the attachment formats that the pipeline
+expects to output to, deferring the attachment of actual image memory
+until command buffer recording.</p>
+<h3
+id="configuring-formats-with-vkpipelinerenderingcreateinfo">Configuring
+Formats with <code>VkPipelineRenderingCreateInfo</code></h3>
+<p>To configure attachment formats dynamically during pipeline setup,
+you set the <code>renderPass</code> member of
+<code>VkGraphicsPipelineCreateInfo</code> to <code>VK_NULL_HANDLE</code>
+and extend the structure using its <code>pNext</code> chain with
+<code>VkPipelineRenderingCreateInfo</code>.</p>
+<p>The <code>VkPipelineRenderingCreateInfo</code> structure explicitly
+specifies the expected formats:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">typedef</span> <span class="kw">struct</span> VkPipelineRenderingCreateInfo <span class="op">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    VkStructureType    sType<span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">const</span> <span class="dt">void</span><span class="op">*</span>        pNext<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint32_t</span>           viewMask<span class="op">;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint32_t</span>           colorAttachmentCount<span class="op">;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">const</span> VkFormat<span class="op">*</span>    pColorAttachmentFormats<span class="op">;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    VkFormat           depthAttachmentFormat<span class="op">;</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    VkFormat           stencilAttachmentFormat<span class="op">;</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="op">}</span> VkPipelineRenderingCreateInfo<span class="op">;</span></span></code></pre></div>
+<p>When defining the pipeline:</p>
+<ol type="1">
+<li><strong>Set the Type:</strong> Assign <code>sType</code> to
+<code>VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO</code>.</li>
+<li><strong>Define Color Count:</strong> Set
+<code>colorAttachmentCount</code> to the number of color outputs
+targeted by your fragment shader.</li>
+<li><strong>Supply Format Array:</strong> Point
+<code>pColorAttachmentFormats</code> to an array of
+<code>VkFormat</code> enums (e.g., <code>VK_FORMAT_R8G8B8A8_SRGB</code>,
+<code>VK_FORMAT_B8G8R8A8_UNORM</code>). Each index in the array maps
+directly to the corresponding fragment shader output location
+(<code>layout(location = i)</code>).</li>
+<li><strong>Unused Attachments:</strong> If a specific output location
+is not used by an attachment, pass <code>VK_FORMAT_UNDEFINED</code> at
+that array index.</li>
+<li><strong>Chain to Pipeline Info:</strong> Assign the address of your
+<code>VkPipelineRenderingCreateInfo</code> struct to the
+<code>pNext</code> pointer of
+<code>VkGraphicsPipelineCreateInfo</code>.</li>
+</ol>
+<h3 id="runtime-execution-with-vkcmdbeginrendering">Runtime Execution
+with <code>vkCmdBeginRendering</code></h3>
+<p>Because the pipeline only knows the format signatures defined in
+<code>VkPipelineRenderingCreateInfo</code>, the actual rendering targets
+are provided at runtime inside the command buffer using
+<code>vkCmdBeginRendering</code>.</p>
+<p>This command consumes a <code>VkRenderingInfo</code> struct, which
+contains an array of <code>VkRenderingAttachmentInfo</code> structures
+defining the bound <code>VkImageView</code>, load/store operations, and
+clear values. The format of each <code>VkImageView</code> bound at
+<code>vkCmdBeginRendering</code> must match the corresponding format
+specified in <code>pColorAttachmentFormats</code> during pipeline
+creation. If the formats do not match, validation layers will report an
+error, and undefined rendering behavior will occur.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

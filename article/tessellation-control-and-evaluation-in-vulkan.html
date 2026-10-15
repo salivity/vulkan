@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tessellation Control and Evaluation in Vulkan - vulkan</title>
+    <meta name="description" content="In the Vulkan graphics pipeline, tessellation is the process of subdividing simple geometric primitives into finer, more detailed meshes directly on the GPU. This functionality is driven primarily by two programmable shader stages—the Tessellation Control">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/tessellation-control-and-evaluation-in-vulkan">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Tessellation Control and Evaluation in Vulkan - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/tessellation-control-and-evaluation-in-vulkan" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In the Vulkan graphics pipeline, tessellation is the process of subdividing simple geometric primitives into finer, more detailed meshes directly on the GPU. This functionality is driven primarily by two programmable shader stages—the Tessellation Control" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="tessellation-control-and-evaluation-in-vulkan">Tessellation
+Control and Evaluation in Vulkan</h1>
+<p>In the Vulkan graphics pipeline, tessellation is the process of
+subdividing simple geometric primitives into finer, more detailed meshes
+directly on the GPU. This functionality is driven primarily by two
+programmable shader stages—the Tessellation Control Shader (TCS) and the
+Tessellation Evaluation Shader (TES)—separated by a fixed-function
+Tessellation Primitive Generator (TPG). Together, these stages enable
+dynamic Level of Detail (LOD), displacement mapping, and smoother
+geometry without burdening CPU-GPU bandwidth.</p>
+<h3 id="the-tessellation-control-shader-tcs">The Tessellation Control
+Shader (TCS)</h3>
+<p>The Tessellation Control Shader corresponds to the
+<code>VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT</code> stage in Vulkan.
+It directly succeeds the Vertex Shader when tessellation is active and
+operates on an input group of vertices known as a "patch."</p>
+<p>The primary responsibilities of the TCS include:</p>
+<ul>
+<li><strong>Determining Tessellation Levels:</strong> The TCS calculates
+and outputs the outer (<code>gl_TessLevelOuter</code>) and inner
+(<code>gl_TessLevelInner</code>) tessellation levels. These factors
+instruct the subsequent hardware stage on how finely the patch should be
+subdivided.</li>
+<li><strong>Transforming Patch Data:</strong> It can read attributes
+from incoming control points and output modified or additional
+per-vertex and per-patch attributes.</li>
+<li><strong>Dynamic Control:</strong> The TCS allows applications to
+compute LOD dynamically based on factors like camera distance,
+screen-space metrics, or surface curvature.</li>
+</ul>
+<p>Passing through the TCS is optional in some graphics APIs, but in
+Vulkan, if tessellation evaluation is used, a TCS must generally be
+present to define the patch topology and levels unless default
+outer/inner levels are provided via pipeline state.</p>
+<h3 id="the-fixed-function-primitive-generator-tpg">The Fixed-Function
+Primitive Generator (TPG)</h3>
+<p>Positioned strictly between the control and evaluation stages is the
+Tessellation Primitive Generator. This is a non-programmable,
+hardware-fixed pipeline stage. It takes the abstract patch type
+(triangles, quads, or isolines) defined in the evaluation shader and the
+tessellation level factors computed by the TCS.</p>
+<p>The primitive generator produces a set of normalized coordinates
+<span class="math inline">\((u, v)\)</span> or <span
+class="math inline">\((u, v, w)\)</span> that represent the newly
+subdivided vertices, along with the connectivity information defining
+the new topology.</p>
+<h3 id="the-tessellation-evaluation-shader-tes">The Tessellation
+Evaluation Shader (TES)</h3>
+<p>The Tessellation Evaluation Shader corresponds to the
+<code>VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT</code> stage in
+Vulkan. It operates on every individual vertex generated by the
+fixed-function primitive generator.</p>
+<p>Key roles of the TES include:</p>
+<ul>
+<li><strong>Vertex Position Calculation:</strong> The TES receives the
+parametric coordinates <span class="math inline">\((u, v)\)</span> or
+<span class="math inline">\((u, v, w)\)</span> from the primitive
+generator and the original patch data from the TCS. It interpolates
+between the original patch vertices to compute the actual 3D position of
+each new vertex.</li>
+<li><strong>Displacement Mapping:</strong> Highly detailed surfaces are
+often generated here by sampling height maps or displacement textures
+and offsetting the new vertex along its surface normal.</li>
+<li><strong>Preparing Output for Further Stages:</strong> Once the
+vertex coordinates and attributes are calculated, the TES outputs the
+final primitives to either the Geometry Shader (if present) or directly
+to the clipping and rasterization stages.</li>
+</ul>
+<h3 id="pipeline-execution-order">Pipeline Execution Order</h3>
+<p>Within the Vulkan rasterization pipeline, the tessellation process
+executes in this explicit sequence:</p>
+<ol type="1">
+<li><strong>Vertex Shader
+(<code>VK_SHADER_STAGE_VERTEX_BIT</code>):</strong> Processes input
+vertices from the vertex buffers.</li>
+<li><strong>Tessellation Control Shader
+(<code>VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT</code>):</strong> Sets
+subdivision levels and processes patch data.</li>
+<li><strong>Primitive Generator (Fixed-Function):</strong> Subdivides
+the domain based on the tessellation factors.</li>
+<li><strong>Tessellation Evaluation Shader
+(<code>VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT</code>):</strong>
+Calculates final vertex positions and attributes on the subdivided
+geometry.</li>
+<li><strong>Geometry / Rasterization Stages:</strong> The resulting
+dense geometry is clipped, projected, rasterized, and shaded by the
+Fragment Shader.</li>
+</ol></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

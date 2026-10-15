@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Sampler YCbCr Conversion for Video and Camera - vulkan</title>
+    <meta name="description" content="In Vulkan, the sampler YCbCr conversion object (VkSamplerYcbcrConversion) is a core feature that enables the GPU to directly read and convert camera streams and decoded video formats into standard RGB color space during texture sampling. Video decoders an">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-sampler-y-cb-cr-conversion-for-video-and-camera">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Sampler YCbCr Conversion for Video and Camera - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-sampler-y-cb-cr-conversion-for-video-and-camera" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Vulkan, the sampler YCbCr conversion object (VkSamplerYcbcrConversion) is a core feature that enables the GPU to directly read and convert camera streams and decoded video formats into standard RGB color space during texture sampling. Video decoders an" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-sampler-ycbcr-conversion-for-video-and-camera">Vulkan
+Sampler YCbCr Conversion for Video and Camera</h1>
+<p>In Vulkan, the sampler YCbCr conversion object
+(<code>VkSamplerYcbcrConversion</code>) is a core feature that enables
+the GPU to directly read and convert camera streams and decoded video
+formats into standard RGB color space during texture sampling. Video
+decoders and camera hardware typically output imagery in subsampled,
+multi-planar YCbCr formats (such as NV12 or YUV420) to save bandwidth.
+By using a sampler YCbCr conversion object, applications bypass the need
+for costly manual software conversions, allowing shaders to sample these
+streams as standard RGBA textures with hardware-accelerated color space
+conversion and chroma filtering.</p>
+<h3 id="bridging-the-gap-between-video-formats-and-shaders">Bridging the
+Gap Between Video Formats and Shaders</h3>
+<p>Cameras and video codecs rarely output data in packed RGB format.
+Instead, they rely on YCbCr representations where luminance (<span
+class="math inline">\(Y\)</span>) and chrominance (<span
+class="math inline">\(Cb\)</span> and <span
+class="math inline">\(Cr\)</span>) are stored in separate channels or
+separate memory planes, often with chrominance downsampled horizontally,
+vertically, or both (e.g., 4:2:2 or 4:2:0).</p>
+<p>Graphics hardware pipelines, conversely, are optimized to process
+linear or sRGB data. Without dedicated conversion mechanisms, an
+application must either execute custom compute/fragment shaders to
+reconstruct and unpack the planes, or rely on CPU-side conversion. The
+<code>VkSamplerYcbcrConversion</code> object integrates directly into
+the Vulkan texture sampling pipeline to automate this transformation
+directly inside fixed-function texture hardware.</p>
+<h3 id="key-roles-of-vksamplerycbcrconversion">Key Roles of
+VkSamplerYcbcrConversion</h3>
+<ol type="1">
+<li><p><strong>Multi-Planar Image Handling</strong> Video feeds are
+frequently stored as multi-planar images (such as
+<code>VK_FORMAT_G8_B8R8_2PLANE_420_UNORM</code>). A YCbCr conversion
+object allows the shader to bind these disjoint memory planes as a
+single <code>VkImageView</code> and sample from it via a single combined
+image sampler. The hardware automatically addresses the distinct planes
+without requiring separate sampler bindings in the shader code.</p></li>
+<li><p><strong>Accurate Color Space and Range Mapping</strong> YCbCr
+signals adhere to different broadcast and recording standards that
+govern how color matrices are applied. The conversion object
+configures:</p>
+<ul>
+<li><strong>Color Model:</strong> Standard definitions like BT.601
+(standard definition), BT.709 (high definition), or BT.2020 (ultra-high
+definition/HDR).</li>
+<li><strong>Numerical Range:</strong> Narrow/studio range
+(headroom/footroom included) or full range.</li>
+<li><strong>Component Swizzle:</strong> Mapping between incoming
+channels and target shader components.</li>
+</ul></li>
+<li><p><strong>Chroma Reconstruction and Filtering</strong> Because
+chroma data in 4:2:0 or 4:2:2 video is subsampled, calculating color
+values at a given pixel coordinate requires interpolating missing chroma
+samples. The YCbCr conversion object defines the spatial positioning of
+the chroma samples relative to the luma samples (cosited vs. midpoint).
+This enables the hardware texture filtering units to apply linear or
+nearest-neighbor filtering seamlessly across planes to reconstruct
+missing color information accurately without visual artifacts.</p></li>
+</ol>
+<h3 id="efficiency-in-video-playback-and-camera-pipelines">Efficiency in
+Video Playback and Camera Pipelines</h3>
+<p>For modern camera feeds (such as Android Camera2 or Linux V4L2) and
+hardware video decoders (such as Vulkan Video or platform decoders
+exported via external memory handles), memory bandwidth is the primary
+bottleneck.</p>
+<p><code>VkSamplerYcbcrConversion</code> enables zero-copy pipelines.
+Decoded frames or camera buffers are imported directly into Vulkan
+memory and sampled immediately in fragment shaders for display,
+post-processing, or UI compositing. This eliminates redundant memory
+passes, reduces shader ALU utilization by offloading matrix math to
+specialized texture mapping units, and minimizes power consumption on
+mobile and embedded devices.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

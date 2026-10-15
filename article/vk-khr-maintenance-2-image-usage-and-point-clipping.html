@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VK_KHR_maintenance2: Image Usage and Point Clipping - vulkan</title>
+    <meta name="description" content="The VKKHRmaintenance2 extension introduced critical quality-of-life improvements to the Vulkan API that addressed limitations in resource handling and primitive rasterization. Among its most notable contributions were the ability to specify separate usage">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vk-khr-maintenance-2-image-usage-and-point-clipping">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="VK_KHR_maintenance2: Image Usage and Point Clipping - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vk-khr-maintenance-2-image-usage-and-point-clipping" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The VKKHRmaintenance2 extension introduced critical quality-of-life improvements to the Vulkan API that addressed limitations in resource handling and primitive rasterization. Among its most notable contributions were the ability to specify separate usage" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="vk_khr_maintenance2-image-usage-and-point-clipping">VK_KHR_maintenance2:
+Image Usage and Point Clipping</h1>
+<p>The <code>VK_KHR_maintenance2</code> extension introduced critical
+quality-of-life improvements to the Vulkan API that addressed
+limitations in resource handling and primitive rasterization. Among its
+most notable contributions were the ability to specify separate usage
+flags for individual image views via
+<code>VkImageViewUsageCreateInfo</code> and the introduction of explicit
+point clipping controls through
+<code>VkPipelineRasterizationPointClippingStateCreateInfo</code>. These
+changes provided developers with fine-grained control over GPU memory
+usage and resolved cross-vendor inconsistencies when clipping point
+primitives, both of which were later integrated directly into the Vulkan
+1.1 core specification.</p>
+<h3 id="granular-image-view-usage-flags">Granular Image View Usage
+Flags</h3>
+<p>Prior to <code>VK_KHR_maintenance2</code>, a <code>VkImageView</code>
+automatically inherited the complete set of
+<code>VkImageUsageFlags</code> defined on its parent
+<code>VkImage</code>. This behavior created significant inefficiencies
+in modern rendering pipelines where a single texture resource might
+serve multiple purposes across different passes, such as being used as a
+storage image, a color attachment, and a sampled texture.</p>
+<p>The extension addressed this by introducing
+<code>VkImageViewUsageCreateInfo</code>, which can be chained into the
+<code>pNext</code> structure of <code>VkImageViewCreateInfo</code>. This
+structure allows developers to define a strict subset of the parent
+image's usage flags for a specific view.</p>
+<p>Restricting usage flags per view enables several key
+optimizations:</p>
+<ul>
+<li><strong>Driver Optimizations:</strong> Graphics drivers can allocate
+more specialized internal states, cache configurations, or compression
+formats tailored solely to the view’s declared usage (e.g., read-only
+sampling) rather than preparing for worst-case access patterns (e.g.,
+arbitrary shader storage writes).</li>
+<li><strong>Descriptor Validation:</strong> Vulkan validation layers and
+hardware runtimes can verify descriptor bindings against the view's
+specific flags rather than the broader image flags, catching accidental
+reads or writes earlier in development.</li>
+<li><strong>Resource Aliasing:</strong> Developers can more safely alias
+and reuse memory for specialized operations without invalidating
+underlying layouts across stages.</li>
+</ul>
+<h3 id="point-clipping-controls">Point Clipping Controls</h3>
+<p>Rendering point primitives
+(<code>VK_PRIMITIVE_TOPOLOGY_POINT_LIST</code>) historically suffered
+from platform-specific discrepancies regarding how hardware clipped
+points that had a point size (<code>gl_PointSize</code>) greater than
+1.0. Drivers varied in whether they clipped a point based on its central
+coordinate or against the perimeter of the rasterized point sprite
+across view-volume boundaries and user clip planes.</p>
+<p><code>VK_KHR_maintenance2</code> resolved this ambiguity by
+introducing
+<code>VkPipelineRasterizationPointClippingStateCreateInfo</code> and the
+<code>VkPointClippingBehavior</code> enumeration. Chaining this
+structure into a graphics pipeline allows developers to explicitly
+select one of two behaviors:</p>
+<ol type="1">
+<li><strong><code>VK_POINT_CLIPPING_BEHAVIOR_ALL_CLIP_PLANES</code>:</strong>
+A point is discarded if its central coordinate lies outside any
+user-defined clip plane or outside any of the viewing volume clip planes
+(normalized device coordinates). If the center is inside, the entire
+point sprite is rasterized, even if parts of its expanded quad cross the
+boundary.</li>
+<li><strong><code>VK_POINT_CLIPPING_BEHAVIOR_USER_CLIP_PLANES_ONLY</code>:</strong>
+Clipping occurs strictly against user-defined clip planes. The
+implementation determines how the point interacts with viewport
+boundaries, providing compatibility with APIs that handle screen-edge
+guardbands differently.</li>
+</ol>
+<p>By standardizing point clipping behavior, the extension guaranteed
+visual parity across different hardware vendors for particle systems,
+point clouds, and UI elements. Both features eliminated driver
+guesswork, minimized state overhead, and laid the groundwork for modern
+Vulkan resource management.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

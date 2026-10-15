@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PanVK: Vulkan Driver for ARM Mali Explained - vulkan</title>
+    <meta name="description" content="PanVK is an open-source Vulkan driver hosted within the Mesa 3D Graphics Library, designed to provide hardware-accelerated 3D graphics and compute capabilities for ARM Mali GPUs. This article explains what PanVK is, how it fits into the modern Linux graph">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/pan-vk-vulkan-driver-for-arm-mali-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="PanVK: Vulkan Driver for ARM Mali Explained - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/pan-vk-vulkan-driver-for-arm-mali-explained" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="PanVK is an open-source Vulkan driver hosted within the Mesa 3D Graphics Library, designed to provide hardware-accelerated 3D graphics and compute capabilities for ARM Mali GPUs. This article explains what PanVK is, how it fits into the modern Linux graph" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="panvk-vulkan-driver-for-arm-mali-explained">PanVK: Vulkan Driver
+for ARM Mali Explained</h1>
+<p>PanVK is an open-source Vulkan driver hosted within the Mesa 3D
+Graphics Library, designed to provide hardware-accelerated 3D graphics
+and compute capabilities for ARM Mali GPUs. This article explains what
+PanVK is, how it fits into the modern Linux graphics stack, and the
+technical mechanics behind how it translates Vulkan API calls into
+native instructions executed by ARM Mali hardware.</p>
+<h3 id="what-is-panvk">What Is PanVK?</h3>
+<p>PanVK is the Vulkan counterpart to Panfrost, Mesa’s open-source
+OpenGL and OpenGL ES driver for ARM Mali GPUs. Developed primarily
+through community reverse-engineering and upstream Linux graphics
+collaboration, PanVK allows Linux systems to run Vulkan applications on
+ARM hardware without relying on ARM's proprietary, closed-source
+user-space driver blobs. It primarily targets ARM's Bifrost (such as
+Mali-G31, G52, G72) and Valhall (such as Mali-G57, G77, G710)
+microarchitectures.</p>
+<h3 id="translating-vulkan-to-arm-mali-hardware">Translating Vulkan to
+ARM Mali Hardware</h3>
+<p>Implementing Vulkan on Mali hardware requires managing memory,
+compiling shaders, and packaging draw commands into proprietary job
+formats that the GPU hardware scheduler understands. PanVK achieves this
+through several core subsystems:</p>
+<h4 id="1-common-vulkan-infrastructure-mesa-vk_runtime">1. Common Vulkan
+Infrastructure (Mesa <code>vk_runtime</code>)</h4>
+<p>Rather than reimplementing common Vulkan state tracking from scratch,
+PanVK utilizes Mesa's shared Vulkan runtime layer. This framework
+manages API entry points, handles dispatch tables, tracks device
+extensions, and validates API object lifetimes. This allows PanVK
+developers to focus strictly on hardware-specific execution details.</p>
+<h4 id="2-shader-compilation-via-nir-and-bi-compiler-backends">2. Shader
+Compilation via NIR and Bi-Compiler Backends</h4>
+<p>Vulkan shaders arrive at the driver in the form of SPIR-V
+intermediate bytecode. PanVK processes these shaders using the following
+pipeline:</p>
+<ul>
+<li><strong>SPIR-V to NIR:</strong> The driver ingests the SPIR-V
+bytecode and converts it into NIR, Mesa's internal, optimization-focused
+intermediate representation.</li>
+<li><strong>Hardware Lowering:</strong> PanVK applies generic and
+Mali-specific NIR optimization passes, mapping abstract operations
+directly to Mali execution paradigms (such as hardware registers,
+texture load/store instructions, and uniform buffer handling).</li>
+<li><strong>Binary Emission:</strong> The driver uses the shared
+Panfrost compiler backend (Bifrost compiler or Valhall compiler) to
+translate the lowered NIR into native machine code targeting the
+execution engines of the Mali GPU.</li>
+</ul>
+<h4 id="3-command-stream-and-descriptor-encoding">3. Command Stream and
+Descriptor Encoding</h4>
+<p>ARM Mali uses a tile-based deferred rendering (TBDR) architecture,
+meaning the screen is split into smaller tiles, and geometry is
+processed before fragment shading occurs. PanVK must organize draw
+operations into structured GPU job chains:</p>
+<ul>
+<li><strong>Job Descriptors:</strong> PanVK writes out the binary data
+structures required by Mali hardware, configuring render passes, scissor
+tests, depth/stencil buffers, and multisampling configurations.</li>
+<li><strong>Pipeline and Descriptor Binding:</strong> Vulkan pipelines
+and descriptor sets are converted into hardware-readable tables that
+link shader code, samplers, textures, and uniform buffers directly in
+GPU-accessible memory.</li>
+</ul>
+<h4 id="4-hardware-scheduling-and-kernel-submission">4. Hardware
+Scheduling and Kernel Submission</h4>
+<p>Mali hardware versions submit work differently, and PanVK interfaces
+with the Linux kernel accordingly:</p>
+<ul>
+<li><strong>Bifrost and Early Valhall (Job Manager):</strong> On
+architectures using the traditional Job Manager interface, PanVK
+structures work into explicit job graphs (e.g., tiling jobs followed by
+fragment jobs). These graphs are submitted to the Linux kernel via the
+<code>panfrost</code> DRM/KMS kernel driver using <code>ioctl</code>
+calls.</li>
+<li><strong>Modern Valhall (Command Stream Frontend - CSF):</strong>
+Modern Mali GPUs abandon the raw Job Manager in favor of a
+microcontroller-driven Command Stream Frontend. For CSF hardware, PanVK
+targets the newer <code>panthor</code> kernel driver, emitting
+ring-buffer-based instruction sequences directly interpreted by the
+GPU's firmware.</li>
+</ul>
+<h3 id="memory-management-and-synchronization">Memory Management and
+Synchronization</h3>
+<p>Vulkan requires explicit memory and synchronization handling. PanVK
+implements Vulkan device memory by managing Direct Rendering Manager
+(DRM) buffer objects (BOs) backed by system RAM, configuring appropriate
+GPU cache attributes, and mapping them to virtual addresses accessible
+by the GPU MMU. Synchronization primitives, such as Vulkan semaphores
+and fences, are mapped directly to kernel sync files and DRM timeline
+synchronization objects, ensuring asynchronous compute and rendering
+workloads run concurrently without data hazards.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

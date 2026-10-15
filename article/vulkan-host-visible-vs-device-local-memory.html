@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Host-Visible vs Device-Local Memory - vulkan</title>
+    <meta name="description" content="In Vulkan, managing memory explicitly is essential for achieving optimal rendering and compute performance. Host-visible memory allows the CPU to directly map, read, and write data, making it suitable for dynamic updates and staging. Conversely, device-lo">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-host-visible-vs-device-local-memory">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Host-Visible vs Device-Local Memory - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-host-visible-vs-device-local-memory" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Vulkan, managing memory explicitly is essential for achieving optimal rendering and compute performance. Host-visible memory allows the CPU to directly map, read, and write data, making it suitable for dynamic updates and staging. Conversely, device-lo" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-host-visible-vs-device-local-memory">Vulkan Host-Visible
+vs Device-Local Memory</h1>
+<p>In Vulkan, managing memory explicitly is essential for achieving
+optimal rendering and compute performance. Host-visible memory allows
+the CPU to directly map, read, and write data, making it suitable for
+dynamic updates and staging. Conversely, device-local memory resides
+directly on or near the GPU, providing the highest possible bandwidth
+and lowest latency for shaders and render pipelines. This article
+explains the architectural differences, performance characteristics, and
+primary use cases for both memory types.</p>
+<h2 id="understanding-vulkan-memory-types">Understanding Vulkan Memory
+Types</h2>
+<p>Vulkan does not hide hardware architecture behind automatic
+allocations. Instead, it exposes physical memory through heaps and
+property flags. When an application queries physical device memory
+properties via <code>vkGetPhysicalDeviceMemoryProperties</code>, Vulkan
+returns several memory types tailored to different hardware setups
+(discrete GPUs, integrated GPUs, and unified memory architectures).</p>
+<p>The two most fundamental property flags are:</p>
+<ul>
+<li><code>VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT</code></li>
+<li><code>VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT</code></li>
+</ul>
+<h2 id="host-visible-memory">Host-Visible Memory</h2>
+<p>Host-visible memory is accessible directly by the CPU (the "host").
+To transfer data to this memory, the application maps the allocation
+into the CPU's virtual address space using <code>vkMapMemory</code>.</p>
+<ul>
+<li><strong>CPU Access:</strong> Direct write and read operations are
+supported via standard pointers (e.g., <code>memcpy</code>).</li>
+<li><strong>Cache Management:</strong> Host-visible memory is often
+paired with <code>VK_MEMORY_PROPERTY_HOST_COHERENT_BIT</code>, which
+guarantees that writes from the CPU are automatically visible to the GPU
+without manual cache flushing. If non-coherent, the application must
+explicitly call <code>vkFlushMappedMemoryRanges</code> after writing and
+<code>vkInvalidateMappedMemoryRanges</code> before reading.</li>
+<li><strong>Performance Profile:</strong> On discrete GPUs, host-visible
+memory typically resides in system RAM or traverses the PCIe bus. As a
+result, reading or writing from GPU shaders is significantly slower
+compared to dedicated VRAM.</li>
+<li><strong>Primary Use Cases:</strong> Staging buffers for asset
+uploading, dynamic uniform buffers that update every frame, and
+transferring compute results back to the CPU.</li>
+</ul>
+<h2 id="device-local-memory">Device-Local Memory</h2>
+<p>Device-local memory is physically optimized for execution on the GPU
+(the "device"). On a discrete graphics card, this corresponds to
+high-bandwidth VRAM (such as GDDR6 or HBM).</p>
+<ul>
+<li><strong>GPU Performance:</strong> Provides the maximum possible
+memory bandwidth and minimal latency, allowing thousands of shader cores
+to sample textures and process vertices concurrently.</li>
+<li><strong>CPU Access:</strong> By default, standard device-local
+memory cannot be mapped or directly accessed by the CPU. The CPU cannot
+write to it using a standard memory pointer.</li>
+<li><strong>Primary Use Cases:</strong> Long-lived GPU resources,
+including render targets, depth-stencil attachments, static mesh
+vertex/index buffers, and textures.</li>
+</ul>
+<h2 id="key-differences">Key Differences</h2>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Feature</th>
+<th style="text-align: left;">Host-Visible Memory</th>
+<th style="text-align: left;">Device-Local Memory</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>CPU Access</strong></td>
+<td style="text-align: left;">Yes (via <code>vkMapMemory</code>)</td>
+<td style="text-align: left;">No (typically inaccessible directly)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>GPU Bandwidth</strong></td>
+<td style="text-align: left;">Low to Moderate (limited by PCIe)</td>
+<td style="text-align: left;">Maximum available on the GPU</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Primary Location</strong></td>
+<td style="text-align: left;">System RAM or mapped PCIe apertures</td>
+<td style="text-align: left;">Dedicated GPU VRAM / On-chip memory</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Optimal For</strong></td>
+<td style="text-align: left;">Data staging, per-frame CPU data
+uploads</td>
+<td style="text-align: left;">Shaders, textures, render targets</td>
+</tr>
+</tbody>
+</table>
+<h2 id="the-staging-buffer-pattern">The Staging Buffer Pattern</h2>
+<p>Because the CPU cannot directly write to device-local memory,
+applications use a staging buffer pattern to load assets into the
+GPU:</p>
+<ol type="1">
+<li>Create a temporary buffer in <strong>host-visible</strong> memory
+(the staging buffer).</li>
+<li>Map the buffer and copy the raw asset data (such as texture pixels
+or vertex arrays) from the CPU into it.</li>
+<li>Create the permanent resource (such as a <code>VkImage</code> or
+vertex <code>VkBuffer</code>) in <strong>device-local</strong>
+memory.</li>
+<li>Record a GPU transfer command (<code>vkCmdCopyBuffer</code> or
+<code>vkCmdCopyBufferToImage</code>) to transfer the data across the bus
+from the staging buffer to the device-local resource.</li>
+<li>Submit the command buffer to a transfer or graphics queue,
+synchronize using a fence or semaphore, and destroy or reuse the staging
+buffer.</li>
+</ol>
+<h2 id="the-hybrid-case-device-local-and-host-visible">The Hybrid Case:
+Device-Local and Host-Visible</h2>
+<p>Modern systems with Resizable BAR (Base Address Register) or AMD
+Smart Access Memory allow a portion—or the entirety—of dedicated VRAM to
+be exposed to the CPU. In Vulkan, this appears as a single memory type
+possessing both <code>VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT</code> and
+<code>VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT</code>.</p>
+<p>When this memory type is available, the CPU can write directly into
+high-speed VRAM, bypassing the need for an intermediate staging buffer
+for dynamic resources like frequently updated transform matrices or
+particle data.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

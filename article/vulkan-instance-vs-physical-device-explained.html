@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Instance vs Physical Device Explained - vulkan</title>
+    <meta name="description" content="In the Vulkan graphics and compute API, understanding the separation between the software environment and the underlying hardware is essential for building an efficient rendering pipeline. At the entry point of this design are the VkInstance and VkPhysica">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-instance-vs-physical-device-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Instance vs Physical Device Explained - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-instance-vs-physical-device-explained" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In the Vulkan graphics and compute API, understanding the separation between the software environment and the underlying hardware is essential for building an efficient rendering pipeline. At the entry point of this design are the VkInstance and VkPhysica" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-instance-vs-physical-device-explained">Vulkan Instance vs
+Physical Device Explained</h1>
+<p>In the Vulkan graphics and compute API, understanding the separation
+between the software environment and the underlying hardware is
+essential for building an efficient rendering pipeline. At the entry
+point of this design are the <code>VkInstance</code> and
+<code>VkPhysicalDevice</code> objects. While both are foundational
+constructs initialized early in a Vulkan program, they serve completely
+distinct purposes: an instance represents the per-application software
+connection to the Vulkan runtime and its global layers, whereas a
+physical device represents an actual hardware component, such as a
+discrete GPU or integrated chip, capable of executing commands.</p>
+<h3 id="the-vulkan-instance-vkinstance">The Vulkan Instance
+(<code>VkInstance</code>)</h3>
+<p>A Vulkan instance is the initialized software context that links an
+application to the Vulkan loader. It is explicitly created by the
+application using the <code>vkCreateInstance</code> function.</p>
+<p>The primary responsibilities of a <code>VkInstance</code>
+include:</p>
+<ul>
+<li><strong>Application Metadata:</strong> Storing application-level
+information, such as the application name, engine name, and target
+Vulkan API version.</li>
+<li><strong>Layer Activation:</strong> Enabling global validation layers
+and debugging utilities (such as the Khronos validation layer) that
+intercept API calls across the entire application.</li>
+<li><strong>Instance Extensions:</strong> Loading platform-level
+extensions, such as surface extensions (<code>VK_KHR_surface</code> and
+platform-specific windowing extensions) required to present rendered
+images to a display.</li>
+</ul>
+<p>The instance has no direct awareness of execution pipelines, shaders,
+or GPU memory. Instead, it serves as the root software container through
+which hardware is discovered.</p>
+<h3 id="the-physical-device-vkphysicaldevice">The Physical Device
+(<code>VkPhysicalDevice</code>)</h3>
+<p>A physical device represents a distinct GPU, integrated graphics
+processor, or CPU-based software rasterizer present in the host
+system.</p>
+<p>Unlike an instance, an application cannot create a physical device
+directly. Instead, an application queries an existing instance using
+<code>vkEnumeratePhysicalDevices</code> to obtain handles to all
+compatible hardware units installed on the machine.</p>
+<p>A <code>VkPhysicalDevice</code> is used primarily as an inspection
+handle to query hardware-specific capabilities:</p>
+<ul>
+<li><strong>Device Properties:</strong> Identifying the GPU vendor,
+driver version, device name, and device type (discrete, integrated,
+virtual, or CPU).</li>
+<li><strong>Features and Limits:</strong> Checking support for
+hardware-specific features (such as geometry shaders, ray tracing, or
+wide lines) and limits (such as maximum texture dimensions and uniform
+buffer sizes).</li>
+<li><strong>Queue Families:</strong> Querying available command queues
+to determine hardware support for graphics, compute, transfer, and
+presentation operations.</li>
+<li><strong>Memory Architecture:</strong> Inspecting available memory
+heaps (device-local VRAM versus host-visible system RAM) and memory
+types.</li>
+</ul>
+<h3 id="key-architectural-distinctions">Key Architectural
+Distinctions</h3>
+<p>The differences between an instance and a physical device can be
+summarized through three main aspects:</p>
+<ul>
+<li><strong>Creation vs. Enumeration:</strong> A <code>VkInstance</code>
+is explicitly constructed by the developer to establish the Vulkan
+software layer. A <code>VkPhysicalDevice</code> cannot be created; it is
+enumerated through the instance based on the physical components
+detected in the system.</li>
+<li><strong>Software State vs. Hardware Properties:</strong> An instance
+governs the application's interaction with the Vulkan driver library,
+handling global debugging layers and windowing interfaces. A physical
+device provides a read-only representation of the hardware's real
+capabilities, memory topologies, and pipeline constraints.</li>
+<li><strong>Relationship to Logical Devices:</strong> The physical
+device acts as an intermediate bridge. Once an application selects a
+suitable <code>VkPhysicalDevice</code> based on its queried
+capabilities, it uses that physical device to create a
+<code>VkDevice</code> (a logical device). The logical device is the
+actual operational interface used to allocate memory, build pipelines,
+and submit rendering commands.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

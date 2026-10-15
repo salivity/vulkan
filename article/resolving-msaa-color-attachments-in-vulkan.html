@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resolving MSAA Color Attachments in Vulkan - vulkan</title>
+    <meta name="description" content="Multisample anti-aliasing (MSAA) renders geometric edges across multiple sub-pixel samples to eliminate aliasing, but displays require a single color value per pixel for presentation. In Vulkan, resolving multisampled color attachments into single-sample">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/resolving-msaa-color-attachments-in-vulkan">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Resolving MSAA Color Attachments in Vulkan - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/resolving-msaa-color-attachments-in-vulkan" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Multisample anti-aliasing (MSAA) renders geometric edges across multiple sub-pixel samples to eliminate aliasing, but displays require a single color value per pixel for presentation. In Vulkan, resolving multisampled color attachments into single-sample" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="resolving-msaa-color-attachments-in-vulkan">Resolving MSAA Color
+Attachments in Vulkan</h1>
+<p>Multisample anti-aliasing (MSAA) renders geometric edges across
+multiple sub-pixel samples to eliminate aliasing, but displays require a
+single color value per pixel for presentation. In Vulkan, resolving
+multisampled color attachments into single-sample outputs typically
+occurs at the end of a render pass subpass using dedicated resolve
+attachments, or through explicit command invocations like
+<code>vkCmdResolveImage</code>. This article explains how Vulkan
+configures, optimizes, and executes this downsampling process across
+hardware architectures.</p>
+<h3 id="the-subpass-resolve-mechanism">The Subpass Resolve
+Mechanism</h3>
+<p>The standard and most efficient way to resolve an MSAA target in
+Vulkan is through the render pass architecture using
+<code>VkSubpassDescription</code>.</p>
+<p>When setting up a subpass:</p>
+<ol type="1">
+<li><strong>Multisample Color Attachment:</strong> An attachment
+reference pointing to an image created with a sample count greater than
+one (e.g., <code>VK_SAMPLE_COUNT_4_BIT</code>) is assigned to the
+<code>pColorAttachments</code> array.</li>
+<li><strong>Single-Sample Resolve Attachment:</strong> An attachment
+reference pointing to an image created with
+<code>VK_SAMPLE_COUNT_1_BIT</code> is assigned to the
+<code>pResolveAttachments</code> array.</li>
+</ol>
+<p>Vulkan establishes a direct one-to-one mapping between the indices of
+<code>pColorAttachments</code> and <code>pResolveAttachments</code>. If
+<code>pResolveAttachments</code> is not null, the GPU automatically
+downsamples the multisample attachment at index <em>i</em> into the
+resolve attachment at index <em>i</em> when the subpass finishes
+execution.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>VkSubpassDescription subpass <span class="op">=</span> <span class="op">{};</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>subpass<span class="op">.</span>pipelineBindPoint <span class="op">=</span> VK_PIPELINE_BIND_POINT_GRAPHICS<span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>subpass<span class="op">.</span>colorAttachmentCount <span class="op">=</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>subpass<span class="op">.</span>pColorAttachments <span class="op">=</span> <span class="op">&amp;</span>colorAttachmentRef<span class="op">;</span>       <span class="co">// 4x MSAA</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>subpass<span class="op">.</span>pResolveAttachments <span class="op">=</span> <span class="op">&amp;</span>resolveAttachmentRef<span class="op">;</span>   <span class="co">// 1x Single-sample</span></span></code></pre></div>
+<h3 id="memory-and-bandwidth-optimization">Memory and Bandwidth
+Optimization</h3>
+<p>During a subpass resolve, the hardware averages the color values of
+all active samples within each pixel using a standard box filter.</p>
+<p>On Tile-Based Deferred Rendering (TBDR) architectures—common in
+mobile GPUs—the multisample color buffer resides entirely in high-speed,
+on-chip tile memory. By configuring the multisampled attachment's
+<code>storeOp</code> to <code>VK_ATTACHMENT_STORE_OP_DONT_CARE</code>
+and marking its backing image with
+<code>VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT</code>, the multisample
+data is discarded immediately after the resolve step. Only the resolved
+single-sample data is written out to main device memory (VRAM). This
+avoids the heavy bandwidth cost of exporting full multisample
+buffers.</p>
+<p>For the resolve attachment itself:</p>
+<ul>
+<li><strong><code>loadOp</code></strong> is set to
+<code>VK_ATTACHMENT_LOAD_OP_DONT_CARE</code>.</li>
+<li><strong><code>storeOp</code></strong> is set to
+<code>VK_ATTACHMENT_STORE_OP_STORE</code> (to preserve the final
+resolved image for presentation or subsequent sampling).</li>
+</ul>
+<h3 id="explicit-resolve-with-vkcmdresolveimage">Explicit Resolve with
+<code>vkCmdResolveImage</code></h3>
+<p>If resolving cannot occur inside a render pass subpass, Vulkan
+provides the <code>vkCmdResolveImage</code> command. This performs a
+standalone resolve operation outside of an active render pass.</p>
+<p>Using this command requires:</p>
+<ul>
+<li>Transitioning the source multisampled image to
+<code>VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL</code>.</li>
+<li>Transitioning the destination single-sample image to
+<code>VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL</code>.</li>
+<li>Specifying corresponding source and destination subresource layers
+and offsets using <code>VkImageResolve</code>.</li>
+</ul>
+<p>While functional, <code>vkCmdResolveImage</code> forces multisample
+data to be written to and read back from device memory, making it
+substantially less efficient than subpass-based resolves on
+architectures that rely on tile caching.</p>
+<h3 id="custom-shader-resolves">Custom Shader Resolves</h3>
+<p>Standard hardware resolve operations apply an unweighted arithmetic
+mean across all samples. If advanced filtering is required—such as
+tone-mapped resolving to prevent high-dynamic-range (HDR) aliasing—the
+multisample texture can be bound to a custom fragment or compute shader.
+By declaring the sampler as <code>sampler2DMS</code> in GLSL and using
+<code>texelFetch</code> to access individual samples explicitly,
+developers can calculate non-uniform or custom weighted averages before
+outputting to a single-sample target.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

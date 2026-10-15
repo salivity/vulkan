@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Understanding VK_KHR_vulkan_memory_model in Vulkan - vulkan</title>
+    <meta name="description" content="The VKKHRvulkanmemorymodel extension introduces a formal, well-defined memory model to Vulkan, establishing precise rules for how threads synchronize, share memory, and observe memory mutations across GPU invocations. Historically, shader languages relied">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/understanding-vk-khr-vulkan-memory-model-in-vulkan">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Understanding VK_KHR_vulkan_memory_model in Vulkan - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/understanding-vk-khr-vulkan-memory-model-in-vulkan" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The VKKHRvulkanmemorymodel extension introduces a formal, well-defined memory model to Vulkan, establishing precise rules for how threads synchronize, share memory, and observe memory mutations across GPU invocations. Historically, shader languages relied" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="understanding-vk_khr_vulkan_memory_model-in-vulkan">Understanding
+VK_KHR_vulkan_memory_model in Vulkan</h1>
+<p>The <code>VK_KHR_vulkan_memory_model</code> extension introduces a
+formal, well-defined memory model to Vulkan, establishing precise rules
+for how threads synchronize, share memory, and observe memory mutations
+across GPU invocations. Historically, shader languages relied on loosely
+defined, platform-dependent memory behaviors inherited from legacy
+graphics APIs. By standardizing memory scopes, ordering semantics, and
+explicit availability and visibility operations, this extension brings
+C++11-style concurrency guarantees to Vulkan compute and graphics
+pipelines, eliminating ambiguity in cross-thread and cross-workgroup
+communication.</p>
+<h3 id="the-need-for-a-formal-memory-model">The Need for a Formal Memory
+Model</h3>
+<p>Prior to the introduction of <code>VK_KHR_vulkan_memory_model</code>,
+Vulkan relied on execution barriers and basic memory barriers that
+lacked the granular memory semantics required for complex lock-free data
+structures. The underlying hardware memory subsystem involves
+hierarchical caches that may not automatically maintain coherency
+between workgroups or subgroups. Without a formal model, compilers could
+reorder memory instructions in ways that introduced subtle concurrency
+bugs, or drivers had to insert heavy-handed, performance-degrading cache
+flushes to guarantee correctness.</p>
+<h3 id="scopes-of-synchronization">Scopes of Synchronization</h3>
+<p>At the core of the Vulkan memory model is the definition of
+<strong>Memory Scopes</strong>. A memory scope defines the set of
+invocations that can observe a synchronized memory operation. The
+extension defines several standard scopes:</p>
+<ul>
+<li><strong>Subgroup:</strong> Synchronizes memory across invocations
+executing within the same hardware SIMD unit or warp.</li>
+<li><strong>Workgroup:</strong> Synchronizes invocations within a single
+compute workgroup.</li>
+<li><strong>Queue Family / Device:</strong> Extends visibility across
+all workgroups running on the same Vulkan device.</li>
+<li><strong>Cross-Device:</strong> Manages coherence across multiple
+physical devices in a device group.</li>
+</ul>
+<p>By applying synchronization operations strictly to the required
+scope, developers can avoid the overhead of system-wide synchronization
+when only local communication is necessary.</p>
+<h3 id="acquire-and-release-semantics">Acquire and Release
+Semantics</h3>
+<p>Borrowing directly from the ISO C++11 concurrency model,
+<code>VK_KHR_vulkan_memory_model</code> adds explicit memory ordering
+semantics to SPIR-V instructions:</p>
+<ul>
+<li><strong>Acquire:</strong> Ensures that subsequent reads and writes
+cannot be reordered before the acquire operation. It guarantees that
+memory made available by a matching release operation becomes visible to
+the acquiring invocation.</li>
+<li><strong>Release:</strong> Ensures that preceding reads and writes
+cannot be reordered after the release operation. It makes all preceding
+writes available to any invocation performing an acquire operation on
+the same location with a compatible scope.</li>
+<li><strong>Acquire-Release:</strong> Combines both semantics, serving
+as a bidirectional synchronization point typically used in
+read-modify-write atomic operations.</li>
+<li><strong>Sequentially Consistent:</strong> Imposes a globally
+consistent ordering on operations, ensuring that all threads observe
+changes in the exact same sequence.</li>
+</ul>
+<h3 id="availability-and-visibility-operations">Availability and
+Visibility Operations</h3>
+<p>Unlike traditional CPU architectures where hardware cache-coherence
+protocols operate continuously in the background, GPUs often require
+explicit software triggers to synchronize cache levels. The extension
+models this using two distinct phases:</p>
+<ol type="1">
+<li><strong>Availability:</strong> Pushes modified data from an
+invocation’s local cache out to a memory domain accessible by the target
+scope.</li>
+<li><strong>Visibility:</strong> Invalidates stale cache lines at the
+receiving invocation's cache, forcing it to fetch the updated values
+from the target domain.</li>
+</ol>
+<p>Under <code>VK_KHR_vulkan_memory_model</code>, synchronization
+instructions (such as <code>OpControlBarrier</code> or atomic memory
+operands) must explicitly state whether they make values available,
+visible, or both, relative to a specific scope. This allows modern GPU
+compilers to emit only the minimal cache-flush and cache-invalidation
+instructions necessary for the workload.</p>
+<h3 id="prevention-of-data-races-and-compiler-optimizations">Prevention
+of Data Races and Compiler Optimizations</h3>
+<p>The extension provides a strict definition of what constitutes a data
+race. If two invocations access the same memory location, at least one
+access is a write, and the accesses are not ordered by a synchronization
+sequence, a data race occurs. In the Vulkan memory model, unsynchronized
+data races produce undefined values rather than undefined behavior for
+the entire program, ensuring memory safety boundaries are
+maintained.</p>
+<p>Furthermore, SPIR-V decorations such as
+<code>NonPrivatePointer</code> are enforced when using this model. A
+pointer must be marked non-private to signal to the shader compiler that
+other invocations might read or write to it concurrently. This prevents
+the compiler from performing aggressive dead-store elimination or
+register caching across barrier boundaries where external threads might
+be actively polling the memory.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

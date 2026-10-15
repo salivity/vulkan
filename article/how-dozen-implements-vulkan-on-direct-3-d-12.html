@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How Dozen Implements Vulkan on Direct3D 12 - vulkan</title>
+    <meta name="description" content="The Dozen project (known as dzn within the Mesa 3D graphics library) is an open-source translation layer that implements the Vulkan API on top of Microsoft&#39;s Direct3D 12 (D3D12). Designed to bring hardware-accelerated Vulkan support to environments where">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/how-dozen-implements-vulkan-on-direct-3-d-12">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How Dozen Implements Vulkan on Direct3D 12 - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/how-dozen-implements-vulkan-on-direct-3-d-12" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The Dozen project (known as dzn within the Mesa 3D graphics library) is an open-source translation layer that implements the Vulkan API on top of Microsoft&#39;s Direct3D 12 (D3D12). Designed to bring hardware-accelerated Vulkan support to environments where" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dozen-implements-vulkan-on-direct3d-12">How Dozen Implements
+Vulkan on Direct3D 12</h1>
+<p>The Dozen project (known as <code>dzn</code> within the Mesa 3D
+graphics library) is an open-source translation layer that implements
+the Vulkan API on top of Microsoft's Direct3D 12 (D3D12). Designed to
+bring hardware-accelerated Vulkan support to environments where only
+D3D12 drivers are available—most notably the Windows Subsystem for Linux
+(WSL) and Windows systems lacking native vendor Vulkan drivers—Dozen
+bridges the structural and conceptual differences between the two modern
+low-level APIs. This article explains the technical mechanisms behind
+Dozen, detailing how it handles shader compilation, memory allocation,
+descriptor binding, pipeline states, and command execution across both
+platforms.</p>
+<h3 id="architecture-within-the-mesa-ecosystem">Architecture within the
+Mesa Ecosystem</h3>
+<p>Dozen is developed as a Vulkan driver inside Mesa, allowing it to
+leverage shared driver infrastructure rather than implementing the
+entire Vulkan specification from scratch. Mesa provides common
+frameworks for API dispatch, state tracking, and format conversions.</p>
+<p>By operating inside Mesa, Dozen interfaces with operating system
+layers via specific backends:</p>
+<ul>
+<li><strong>On Windows:</strong> It links directly to the user-mode
+<code>d3d12.dll</code> and DXGI runtimes.</li>
+<li><strong>On WSL (Windows Subsystem for Linux):</strong> It
+communicates through Microsoft's virtualization layer using a
+virtualized <code>/dev/dxg</code> device. This connects the Linux user
+space directly to the host Windows D3D12 kernel-mode driver
+(<code>dxgkrnl</code>), enabling direct host-GPU acceleration without
+traditional hypervisor graphics overhead.</li>
+</ul>
+<h3 id="shader-translation-via-spir-v-nir-and-dxil">Shader Translation
+via SPIR-V, NIR, and DXIL</h3>
+<p>Vulkan consumes shaders compiled into the SPIR-V intermediate
+representation, whereas Direct3D 12 requires shaders in DirectX
+Intermediate Language (DXIL), an LLVM-based bytecode format.</p>
+<p>Dozen bridges this gap using Mesa’s NIR (New Intermediate
+Representation):</p>
+<ol type="1">
+<li><strong>SPIR-V to NIR:</strong> Ingested SPIR-V binaries are parsed
+and translated into Mesa’s NIR format.</li>
+<li><strong>NIR Lowering Passes:</strong> Dozen applies target-specific
+optimization and transformation passes. This step handles differences in
+coordinate conventions (such as Y-inversion and depth ranges), dynamic
+indexing, and push constant emulation.</li>
+<li><strong>NIR to DXIL:</strong> The driver uses Mesa's dedicated
+<code>nir_to_dxil</code> compiler. This backend converts the optimized
+NIR instructions directly into valid DXIL container blobs, which are
+then passed to the D3D12 API during pipeline creation.</li>
+</ol>
+<h3 id="memory-and-resource-management">Memory and Resource
+Management</h3>
+<p>While both APIs follow an explicit resource management model, their
+allocation paradigms diverge in subtle ways:</p>
+<ul>
+<li><strong>Memory Types:</strong> Vulkan defines explicit memory heaps
+and types with granular property flags
+(<code>VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT</code>,
+<code>VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT</code>, etc.). Dozen inspects
+D3D12 adapter capabilities
+(<code>D3D12_FEATURE_DATA_ARCHITECTURE</code>) and memory segments to
+synthesize compliant Vulkan memory types using D3D12 heap types:
+Default, Upload, and Readback.</li>
+<li><strong>Backing Allocations:</strong> Calls to
+<code>vkAllocateMemory</code> are typically backed by
+<code>ID3D12Heap</code> allocations or committed resources
+(<code>ID3D12Resource</code>).</li>
+<li><strong>Sub-allocation:</strong> For resources bound to imported
+memory or aliased structures, Dozen utilizes D3D12 placed resources
+(<code>CreatePlacedResource</code>), allocating buffers and images
+within pre-allocated <code>ID3D12Heap</code> ranges.</li>
+</ul>
+<h3 id="descriptors-and-pipeline-layouts">Descriptors and Pipeline
+Layouts</h3>
+<p>Vulkan uses descriptor sets and descriptor pools, whereas D3D12
+relies on Root Signatures and descriptor heaps (CBV/SRV/UAV and
+Samplers).</p>
+<ul>
+<li><strong>Root Signatures:</strong> Dozen maps a Vulkan
+<code>VkPipelineLayout</code> directly to an
+<code>ID3D12RootSignature</code>. Descriptor set bindings are mapped to
+D3D12 descriptor tables or root parameters.</li>
+<li><strong>Descriptor Sets:</strong> To support Vulkan’s dynamic
+updates, Dozen allocates descriptors into internal D3D12 descriptor
+heaps. When descriptor sets are updated via
+<code>vkUpdateDescriptorSets</code>, Dozen writes the native D3D12 view
+structures (such as Constant Buffer Views or Shader Resource Views) into
+the corresponding heap locations.</li>
+<li><strong>Push Constants:</strong> Direct3D 12 lacks a 1:1 equivalent
+for Vulkan push constants. Dozen implements these by dedicating 32-bit
+root constants in the root signature to store the push constant payload,
+ensuring low-latency updates during draw calls.</li>
+</ul>
+<h3 id="pipeline-state-translation">Pipeline State Translation</h3>
+<p>Vulkan separates graphics and compute pipelines into
+<code>VkPipeline</code> objects, while D3D12 utilizes monolithic
+<code>ID3D12PipelineState</code> objects (PSOs).</p>
+<p>Because Vulkan allows certain states to be defined dynamically at
+draw time (such as dynamic viewport, scissor, stencil reference, or
+blend constants), Dozen aligns dynamic Vulkan states with the
+corresponding D3D12 dynamic states. For states that are immutable within
+D3D12 PSOs (such as rasterizer states, primitive topology types, and
+render target formats), Dozen constructs the D3D12 pipeline description
+and compiles the underlying PSO during
+<code>vkCreateGraphicsPipelines</code>. If required state data is
+deferred, Dozen compiles and caches PSOs on demand to prevent frame
+stutters during execution.</p>
+<h3 id="command-execution-and-synchronization">Command Execution and
+Synchronization</h3>
+<p>Both APIs rely on recorded command buffers submitted to hardware
+queues, but synchronization semantics differ:</p>
+<ul>
+<li><strong>Command Lists:</strong> A <code>VkCommandBuffer</code>
+corresponds to a D3D12 command list
+(<code>ID3D12GraphicsCommandList</code>) and its associated allocator
+(<code>ID3D12CommandAllocator</code>). When commands are recorded in
+Vulkan, Dozen translates them directly into their D3D12 equivalents
+(e.g., <code>vkCmdDraw</code> maps to <code>DrawInstanced</code>).</li>
+<li><strong>Barriers and Transitions:</strong> Vulkan uses
+<code>vkCmdPipelineBarrier</code> with execution stages and memory
+access masks. Dozen translates these barrier operations into
+<code>D3D12_RESOURCE_BARRIER</code> structures. It tracks current and
+requested resource states, inserting state transitions (such as
+transitioning from <code>D3D12_RESOURCE_STATE_RENDER_TARGET</code> to
+<code>D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE</code>) into the active
+command list.</li>
+<li><strong>Fences and Semaphores:</strong> Vulkan timeline and binary
+semaphores, as well as fences, map to D3D12 monitored fences
+(<code>ID3D12Fence</code>). Submissions to a <code>VkQueue</code>
+translate to calls on an <code>ID3D12CommandQueue</code>, invoking
+<code>Signal</code> and <code>Wait</code> operations to preserve
+cross-queue and host synchronization boundaries.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

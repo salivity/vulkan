@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hardware-Accelerated Ray Tracing in Vulkan - vulkan</title>
+    <meta name="description" content="This article explores how hardware-accelerated ray tracing integrates into the Vulkan API&#39;s core pipeline infrastructure. Vulkan incorporates ray tracing primarily through two mechanisms: the dedicated Ray Tracing Pipeline (VKKHRraytracingpipeline) and Ra">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/hardware-accelerated-ray-tracing-in-vulkan">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Hardware-Accelerated Ray Tracing in Vulkan - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/hardware-accelerated-ray-tracing-in-vulkan" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explores how hardware-accelerated ray tracing integrates into the Vulkan API&#39;s core pipeline infrastructure. Vulkan incorporates ray tracing primarily through two mechanisms: the dedicated Ray Tracing Pipeline (VKKHRraytracingpipeline) and Ra" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="hardware-accelerated-ray-tracing-in-vulkan">Hardware-Accelerated
+Ray Tracing in Vulkan</h1>
+<p>This article explores how hardware-accelerated ray tracing integrates
+into the Vulkan API's core pipeline infrastructure. Vulkan incorporates
+ray tracing primarily through two mechanisms: the dedicated Ray Tracing
+Pipeline (<code>VK_KHR_ray_tracing_pipeline</code>) and Ray Queries
+(<code>VK_KHR_ray_query</code>), both supported by Acceleration
+Structures (<code>VK_KHR_acceleration_structure</code>). By introducing
+specialized shader stages, dedicated memory management paradigms like
+the Shader Binding Table, and direct low-level hooks into GPU
+fixed-function traversal hardware, Vulkan exposes explicit,
+deterministic control over ray tracing workloads alongside its
+traditional rasterization and compute workflows.</p>
+<h3 id="acceleration-structures-bvh-representation">Acceleration
+Structures: BVH Representation</h3>
+<p>Hardware-accelerated ray tracing relies on Bounding Volume
+Hierarchies (BVH) to traverse scenes efficiently. Vulkan divides this
+hierarchy into a two-level acceleration structure managed through the
+<code>VkAccelerationStructureKHR</code> handle:</p>
+<ul>
+<li><strong>Bottom-Level Acceleration Structures (BLAS):</strong>
+Contain actual geometric data (triangles or Axis-Aligned Bounding Boxes
+for custom primitives). These define the local geometry and are
+typically static or updated only when underlying meshes deform.</li>
+<li><strong>Top-Level Acceleration Structures (TLAS):</strong> Contain
+instances of BLAS, complete with transformation matrices, instance
+masks, and shader record offsets. The TLAS defines the global scene
+configuration.</li>
+</ul>
+<p>Applications allocate device memory explicitly to back these
+structures via <code>vkGetAccelerationStructureBuildSizesKHR</code> and
+issue build commands (<code>vkCmdBuildAccelerationStructuresKHR</code>)
+directly into command buffers, leveraging asynchronous compute queues
+and explicit barrier synchronization.</p>
+<h3 id="the-dedicated-ray-tracing-pipeline">The Dedicated Ray Tracing
+Pipeline</h3>
+<p>Vulkan provides a distinct pipeline abstraction for ray tracing
+created via <code>vkCreateRayTracingPipelinesKHR</code>. Unlike raster
+pipelines that process primitives down a fixed vertex-to-fragment flow,
+the ray tracing pipeline is recursive and dynamic, introducing dedicated
+shader stages:</p>
+<ol type="1">
+<li><strong>Ray Generation (<code>raygen</code>):</strong> The entry
+point executed per pixel or work item. It initializes rays and invokes
+traversal via the <code>traceRayEXT</code> SPIR-V instruction.</li>
+<li><strong>Intersection (<code>intersection</code>):</strong> Evaluates
+intersections for non-triangle custom primitives.</li>
+<li><strong>Any-Hit (<code>anyhit</code>):</strong> Executes on every
+candidate intersection to determine whether a hit should be accepted
+(useful for alpha testing/transparency).</li>
+<li><strong>Closest-Hit (<code>closesthit</code>):</strong> Invoked once
+the traversal concludes and the closest valid surface intersection along
+the ray is confirmed. Shading and secondary ray spawning typically
+happen here.</li>
+<li><strong>Miss (<code>miss</code>):</strong> Executes when a ray fails
+to intersect any geometry, commonly used to sample environment maps or
+skyboxes.</li>
+<li><strong>Callable (<code>callable</code>):</strong> Reusable
+execution units that can be dispatched dynamically from other ray
+tracing shaders to execute general logic.</li>
+</ol>
+<h3 id="the-shader-binding-table-sbt">The Shader Binding Table
+(SBT)</h3>
+<p>Because rays dynamically encounter varying geometry and materials,
+the standard static descriptor binding model is insufficient. Vulkan
+solves dynamic material dispatch through the Shader Binding Table
+(SBT).</p>
+<p>The SBT is a user-managed <code>VkBuffer</code> composed of shader
+records. Each record consists of a fixed-size shader identifier (queried
+via <code>vkGetRayTracingShaderGroupHandlesKHR</code>) followed by
+custom application data, such as resource indices, constants, or
+descriptor handles. When an intersection or miss occurs, the GPU
+calculates an offset into the SBT using indices embedded in the TLAS
+instances and geometry parameters, mapping ray-primitive collisions
+directly to specific shader code and resources without CPU-side dispatch
+overhead.</p>
+<h3 id="command-execution-and-hardware-traversal">Command Execution and
+Hardware Traversal</h3>
+<p>To dispatch the ray tracing pipeline, applications record
+<code>vkCmdTraceRaysKHR</code> into a command buffer, specifying grid
+dimensions (width, height, depth) and the memory addresses of the SBT
+regions (Raygen, Miss, Hit, and Callable).</p>
+<p>At the silicon level:</p>
+<ul>
+<li>The <strong>Raygen</strong> stage launches warps/wavefronts across
+standard compute units.</li>
+<li>Calls to <code>traceRayEXT</code> offload ray traversal to dedicated
+hardware units (such as RT Cores). These units asynchronously test rays
+against the BVH nodes and triangle primitives.</li>
+<li>The hardware suspends ray execution, calls <strong>Any-Hit</strong>
+or <strong>Intersection</strong> shaders as needed, and finally
+schedules the appropriate <strong>Closest-Hit</strong> or
+<strong>Miss</strong> shader based on the SBT layout.</li>
+</ul>
+<h3 id="ray-queries-inline-ray-tracing">Ray Queries: Inline Ray
+Tracing</h3>
+<p>In addition to full ray tracing pipelines, Vulkan exposes ray tracing
+inside traditional shader stages (vertex, fragment, compute, mesh) via
+Ray Queries (<code>VK_KHR_ray_query</code>).</p>
+<p>Ray queries do not require specialized shader stages or an SBT.
+Instead, they expose <code>rayQuery*EXT</code> functions directly inside
+standard GLSL or HLSL code, executing traversal loops sequentially
+within the current execution context. This allows developers to add
+selective hardware-accelerated features—such as ambient occlusion,
+shadow testing, or reflection checks—directly into existing
+rasterization fragment shaders or compute-driven post-processing
+passes.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

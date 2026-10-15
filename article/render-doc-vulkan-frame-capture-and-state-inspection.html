@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RenderDoc Vulkan Frame Capture and State Inspection - vulkan</title>
+    <meta name="description" content="RenderDoc is a standalone, open-source frame debugger that provides deep diagnostic capabilities for applications using the Vulkan graphics and compute API. This article examines RenderDoc&#39;s core functionalities for capturing Vulkan frames, inspecting com">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/render-doc-vulkan-frame-capture-and-state-inspection">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="RenderDoc Vulkan Frame Capture and State Inspection - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/render-doc-vulkan-frame-capture-and-state-inspection" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="RenderDoc is a standalone, open-source frame debugger that provides deep diagnostic capabilities for applications using the Vulkan graphics and compute API. This article examines RenderDoc&#39;s core functionalities for capturing Vulkan frames, inspecting com" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="renderdoc-vulkan-frame-capture-and-state-inspection">RenderDoc
+Vulkan Frame Capture and State Inspection</h1>
+<p>RenderDoc is a standalone, open-source frame debugger that provides
+deep diagnostic capabilities for applications using the Vulkan graphics
+and compute API. This article examines RenderDoc's core functionalities
+for capturing Vulkan frames, inspecting complex pipeline and descriptor
+states, analyzing resources, and stepping through shader execution to
+resolve rendering anomalies and synchronization bugs.</p>
+<h3 id="frame-capture-capabilities">Frame Capture Capabilities</h3>
+<p>RenderDoc hooks directly into the Vulkan loader layer chain, allowing
+it to record all API calls, memory transfers, and resource state
+transitions executed within a given frame.</p>
+<ul>
+<li><strong>API Layer Integration:</strong> RenderDoc operates as a
+standard Vulkan validation/utility layer
+(<code>VK_LAYER_RENDERDOC_Capture</code>). This ensures transparent
+interception of core functions, extension calls, and driver interactions
+without requiring engine-level modifications.</li>
+<li><strong>Trigger Methods:</strong> Frame captures can be initiated
+via an in-application overlay hotkey, remotely through the RenderDoc UI
+connected to an active target process, or programmatically using the
+RenderDoc In-Application API (<code>renderdoc_app.h</code>).</li>
+<li><strong>Multi-Queue and Asynchronous Compute Capture:</strong>
+RenderDoc records submissions across multiple <code>VkQueue</code>
+instances, including graphics, compute, and transfer queues. It
+accurately preserves queue synchronizations implemented via
+<code>VkSemaphore</code> and <code>VkFence</code> objects.</li>
+<li><strong>Context and Command Buffer Tracking:</strong> Both primary
+and secondary command buffers (<code>VkCommandBuffer</code>) are
+tracked, detailing how and when draw calls, dispatches, and memory
+barriers are recorded and executed.</li>
+</ul>
+<h3 id="vulkan-pipeline-state-inspection">Vulkan Pipeline State
+Inspection</h3>
+<p>The Pipeline State Viewer in RenderDoc translates raw Vulkan
+structures into a structured, visual representation of the active
+graphics or compute pipeline.</p>
+<ul>
+<li><strong>Fixed-Function and Dynamic States:</strong> The viewer
+displays static configuration derived from
+<code>VkGraphicsPipelineCreateInfo</code> alongside dynamic states set
+via <code>vkCmdSetViewport</code>, <code>vkCmdSetScissor</code>,
+<code>vkCmdSetBlendConstants</code>, and other dynamic state
+commands.</li>
+<li><strong>Stage-by-Stage Breakdown:</strong> Users can inspect each
+discrete stage:
+<ul>
+<li><em>Vertex Input &amp; Input Assembly:</em> Displays bound
+<code>VkBuffer</code> bindings, vertex attribute offsets, formats, and
+primitive topologies.</li>
+<li><em>Shader Stages:</em> Confirms the active SPIR-V module for
+vertex, tessellation, geometry, fragment, and compute stages, including
+specialization constants.</li>
+<li><em>Rasterization &amp; Multisampling:</em> Shows polygon modes,
+culling configurations, depth bias, and sample masks.</li>
+<li><em>Output Merger &amp; Color Blending:</em> Details render pass
+attachments, blending equations, write masks, and depth-stencil
+operation parameters.</li>
+</ul></li>
+<li><strong>Descriptor Set and Resource Binding:</strong> RenderDoc
+lists all bound <code>VkDescriptorSet</code> objects and their layout
+bindings. It maps uniform buffers, storage buffers, sampled images,
+storage images, samplers, and push constants directly to the active
+shader reflection data, allowing immediate verification of descriptor
+correctness.</li>
+</ul>
+<h3 id="resource-and-buffer-diagnostics">Resource and Buffer
+Diagnostics</h3>
+<ul>
+<li><strong>Texture Viewer:</strong> Allows inspection of all
+<code>VkImage</code> resources bound to attachments or descriptors.
+Features include viewing specific mip levels, array layers, and cubemap
+faces; inspecting raw channel data; applying format overlays; and
+checking pixel history to see which draw calls modified a specific
+texel.</li>
+<li><strong>Mesh Output Viewer:</strong> Visualizes 3D vertex data at
+various stages of the pipeline: VS Input, VS Output, and GS/Tessellation
+Output. This isolates errors caused by matrix transformations, clipping,
+or incorrect vertex attribute indexing.</li>
+<li><strong>Buffer Inspection:</strong> Provides raw and structured
+views of <code>VkBuffer</code> contents, such as uniform buffer objects
+(UBOs) and shader storage buffer objects (SSBOs), supporting
+user-defined format decoding.</li>
+</ul>
+<h3 id="shader-debugging-and-execution-analysis">Shader Debugging and
+Execution Analysis</h3>
+<p>RenderDoc contains a built-in virtual machine that interprets SPIR-V
+bytecode, enabling line-by-line debugging of Vulkan shaders.</p>
+<ul>
+<li><strong>Source and Assembly Mapping:</strong> The debugger displays
+disassembled SPIR-V alongside high-level source code (GLSL or HLSL) if
+debug symbols (<code>NonSemantic.Shader.DebugInfo</code> or embedded
+source) are present.</li>
+<li><strong>Interactive Debugging:</strong> Developers can set
+breakpoints, step through shader execution for a specific pixel, vertex,
+or compute thread invocation, and inspect live register values,
+temporary variables, and memory loads.</li>
+<li><strong>Pixel History:</strong> For any selected pixel in a render
+target, RenderDoc generates a chronological log of all draw calls that
+touched the coordinate, indicating whether each fragment passed or
+failed depth, stencil, scissor, or blending tests.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

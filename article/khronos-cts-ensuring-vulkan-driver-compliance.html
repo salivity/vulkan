@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Khronos CTS: Ensuring Vulkan Driver Compliance - vulkan</title>
+    <meta name="description" content="The Khronos Conformance Test Suite (CTS) is an open-source testing framework designed to verify that hardware drivers adhere precisely to the official Vulkan graphics and compute API specifications. By running hundreds of thousands of rigorous functional,">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/khronos-cts-ensuring-vulkan-driver-compliance">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Khronos CTS: Ensuring Vulkan Driver Compliance - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/khronos-cts-ensuring-vulkan-driver-compliance" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The Khronos Conformance Test Suite (CTS) is an open-source testing framework designed to verify that hardware drivers adhere precisely to the official Vulkan graphics and compute API specifications. By running hundreds of thousands of rigorous functional," />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="khronos-cts-ensuring-vulkan-driver-compliance">Khronos CTS:
+Ensuring Vulkan Driver Compliance</h1>
+<p>The Khronos Conformance Test Suite (CTS) is an open-source testing
+framework designed to verify that hardware drivers adhere precisely to
+the official Vulkan graphics and compute API specifications. By running
+hundreds of thousands of rigorous functional, stress, and edge-case
+tests against a target implementation, the CTS ensures cross-vendor
+portability, stability, and predictable behavior for developers.
+Hardware manufacturers must pass every applicable test within this suite
+and undergo a formal peer-review process before their drivers can
+legally bear the Vulkan trademark.</p>
+<h2 id="what-is-the-khronos-conformance-test-suite">What is the Khronos
+Conformance Test Suite?</h2>
+<p>The Vulkan Conformance Test Suite is a comprehensive software
+repository hosted and maintained by the Khronos Group on GitHub. Built
+on top of the open-source Google <code>deqp</code> (drawElements Quality
+Program) framework, the CTS serves as the definitive benchmark for
+correctness for the Vulkan API.</p>
+<p>The suite contains tests that cover the entire API surface. This
+includes core features, optional extensions, memory allocation,
+multi-queue synchronization, pipeline state validation, compute
+operations, and the exact compilation and execution of SPIR-V
+intermediate shading language modules. Because the Vulkan specification
+is written as a strict contractual standard between the application and
+the hardware driver, the CTS acts as the executable realization of that
+standard.</p>
+<h2 id="how-the-cts-validates-driver-behavior">How the CTS Validates
+Driver Behavior</h2>
+<p>The CTS evaluates a driver through systematic, automated test
+execution. It targets low-level mechanics that graphics and compute
+engines rely on daily:</p>
+<ul>
+<li><strong>Functional Verification:</strong> Tests individual Vulkan
+functions and state combinations to ensure parameters are parsed
+according to specification.</li>
+<li><strong>Precision and Rendering Tests:</strong> Renders predefined
+graphical workloads and compares the output against a mathematical
+reference implementation to confirm color, depth, stencil, and precision
+tolerances.</li>
+<li><strong>SPIR-V Consumption:</strong> Feeds varied, valid SPIR-V
+bytecode into the driver's internal shader compiler to verify that valid
+code generates identical logical results across different GPU
+architectures.</li>
+<li><strong>Robustness and Edge Cases:</strong> Tests out-of-bounds
+array access, resource limits, and extreme values to confirm that
+drivers handle unexpected inputs gracefully without crashing the
+operating system.</li>
+</ul>
+<h2 id="the-process-of-guaranteeing-driver-compliance">The Process of
+Guaranteeing Driver Compliance</h2>
+<p>Running the tests is only one half of the equation; the Khronos Group
+enforces compliance through a legally binding certification framework
+known as the Khronos Adopter Program.</p>
+<ol type="1">
+<li><strong>Test Execution:</strong> A hardware vendor (such as NVIDIA,
+AMD, Intel, ARM, or Qualcomm) compiles and runs the latest official
+version of the CTS on their specific hardware, driver, and operating
+system configuration.</li>
+<li><strong>Zero Failures:</strong> To achieve compliance, the driver
+must pass 100% of the relevant tests. Any failure must either be fixed
+in the driver or proven to be a defect in the CTS test itself via an
+official Khronos bug report and waiver process.</li>
+<li><strong>Submission and Peer Review:</strong> The vendor submits
+their full test logs to the Khronos Conformance Sub-Committee. The
+submission enters a mandatory review period—typically 30 days—during
+which competing hardware vendors and Khronos members scrutinize the
+results to verify that no shortcuts, invalid configurations, or driver
+hacks were used.</li>
+<li><strong>Official Certification:</strong> If no valid objections are
+raised during the review window, the implementation is officially
+declared conformant and added to the Khronos Conformance List. Only then
+does the vendor earn the legal right to market their driver as "Vulkan
+Conformant" and display the Vulkan trademark.</li>
+</ol>
+<h2 id="importance-for-developers">Importance for Developers</h2>
+<p>Because Vulkan is an explicit, low-level API, it shifts memory
+management and synchronization duties from the driver directly to the
+application developer. In this paradigm, inconsistent driver behavior
+across different vendors would lead to catastrophic fragmentation. The
+Khronos CTS eliminates this risk by forcing all hardware vendors to
+implement identical mechanics, guaranteeing that valid Vulkan code
+behaves consistently regardless of the underlying platform.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

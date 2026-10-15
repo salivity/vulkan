@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memory Barriers in Vulkan Compute Shaders Explained - vulkan</title>
+    <meta name="description" content="This article explores the purpose and mechanics of memory barriers inside compute shaders within the Vulkan API. It covers how the GPU&#39;s weakly ordered memory model necessitates synchronization, the critical distinction between execution control and memor">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/memory-barriers-in-vulkan-compute-shaders-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Memory Barriers in Vulkan Compute Shaders Explained - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/memory-barriers-in-vulkan-compute-shaders-explained" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explores the purpose and mechanics of memory barriers inside compute shaders within the Vulkan API. It covers how the GPU&#39;s weakly ordered memory model necessitates synchronization, the critical distinction between execution control and memor" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="memory-barriers-in-vulkan-compute-shaders-explained">Memory
+Barriers in Vulkan Compute Shaders Explained</h1>
+<p>This article explores the purpose and mechanics of memory barriers
+inside compute shaders within the Vulkan API. It covers how the GPU's
+weakly ordered memory model necessitates synchronization, the critical
+distinction between execution control and memory visibility, the
+specific types of intra-shader memory barriers available, and how these
+barriers prevent data races across invocations in a workgroup.</p>
+<h3 id="the-problem-weakly-ordered-gpu-memory">The Problem: Weakly
+Ordered GPU Memory</h3>
+<p>Vulkan operates on a weakly ordered, highly parallel memory
+architecture. When a compute shader executes, thousands of invocations
+(threads) run concurrently across multiple compute units. By default,
+the GPU does not guarantee the order in which memory writes become
+visible to other invocations, nor does it guarantee that writes will be
+immediately flushed from local registers or L1 caches to shared memory
+caches or VRAM.</p>
+<p>Without explicit synchronization, reading data that was written by
+another invocation can lead to race conditions, including
+Read-After-Write (RAW), Write-After-Read (WAR), and Write-After-Write
+(WAW) hazards.</p>
+<h3 id="the-purpose-of-in-shader-memory-barriers">The Purpose of
+In-Shader Memory Barriers</h3>
+<p>The primary purpose of an in-shader memory barrier is to ensure
+<strong>memory ordering</strong> and <strong>memory
+visibility</strong>:</p>
+<ol type="1">
+<li><strong>Ordering:</strong> It enforces that all memory stores issued
+before the barrier are processed before any memory loads or stores
+issued after the barrier.</li>
+<li><strong>Visibility:</strong> It ensures that modifications made by
+one invocation are made visible to other invocations that share a memory
+scope (such as the workgroup or the entire GPU).</li>
+</ol>
+<h3 id="execution-barriers-vs-memory-barriers">Execution Barriers vs.
+Memory Barriers</h3>
+<p>In shader languages like GLSL or HLSL running over Vulkan's SPIR-V
+intermediate representation, there is a fundamental difference between
+execution barriers and memory barriers:</p>
+<ul>
+<li><strong>Execution Barrier (<code>barrier()</code>):</strong> Pauses
+execution of an invocation until all other invocations within the same
+workgroup reach the same point in the code. However, an execution
+barrier alone does not guarantee that non-shared memory writes are
+visible.</li>
+<li><strong>Memory Barrier (<code>memoryBarrier*()</code>):</strong>
+Controls the ordering and visibility of memory transactions. It does not
+pause thread execution unless coupled with an execution barrier.</li>
+</ul>
+<p>In practice, compute shaders frequently pair memory barriers with
+execution barriers to ensure that data written by one thread can safely
+be read by another thread within the same workgroup.</p>
+<h3 id="types-of-in-shader-memory-barriers">Types of In-Shader Memory
+Barriers</h3>
+<p>GLSL and SPIR-V provide specialized memory barrier functions tailored
+to specific memory types. Using granular barriers avoids unnecessary
+cache flushes and maintains performance:</p>
+<ul>
+<li><strong><code>memoryBarrierShared()</code>:</strong> Synchronizes
+access exclusively to <code>shared</code> memory (workgroup-local
+storage). It ensures that all writes to shared variables made by the
+invocation prior to the barrier are committed and accessible to other
+invocations in the workgroup.</li>
+<li><strong><code>memoryBarrierBuffer()</code>:</strong> Applies to
+Shader Storage Buffer Objects (SSBOs). It guarantees that writes to
+storage buffers complete and are made visible according to the specified
+memory scope.</li>
+<li><strong><code>memoryBarrierImage()</code>:</strong> Applies to
+storage images (<code>image2D</code>, <code>image3D</code>, etc.). It
+ensures that <code>imageStore</code> operations are committed before
+subsequent image reads or writes take place.</li>
+<li><strong><code>memoryBarrier()</code>:</strong> A global memory
+barrier that synchronizes all memory types simultaneously, including
+shared memory, storage buffers, and images. While convenient, it can
+introduce unnecessary latency if only a specific memory type needs
+synchronization.</li>
+<li><strong><code>groupMemoryBarrier()</code>:</strong> Similar to
+<code>memoryBarrier()</code>, but restricts the ordering and visibility
+scope to invocations within the local workgroup.</li>
+</ul>
+<h3 id="scope-and-coherence">Scope and Coherence</h3>
+<p>In-shader memory barriers work in tandem with type qualifiers such as
+<code>coherent</code>. In Vulkan GLSL, marking a storage buffer or image
+as <code>coherent</code> informs the compiler that the data is shared
+across invocations, preventing the compiler from caching values in
+registers across barrier boundaries. When an invocation issues a memory
+barrier on a <code>coherent</code> resource, the hardware flushes the
+writes to the common cache level shared by the communicating
+invocations, guaranteeing safe and deterministic concurrent
+execution.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

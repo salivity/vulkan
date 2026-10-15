@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Sparse Texture Residency and Tile Loading - vulkan</title>
+    <meta name="description" content="Sparse texture residency—often referred to as partially resident textures—allows Vulkan applications to allocate massive, high-resolution textures without allocating all the underlying physical memory upfront. By breaking texture resources into uniform, v">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-sparse-texture-residency-and-tile-loading">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Sparse Texture Residency and Tile Loading - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-sparse-texture-residency-and-tile-loading" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Sparse texture residency—often referred to as partially resident textures—allows Vulkan applications to allocate massive, high-resolution textures without allocating all the underlying physical memory upfront. By breaking texture resources into uniform, v" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-sparse-texture-residency-and-tile-loading">Vulkan Sparse
+Texture Residency and Tile Loading</h1>
+<p>Sparse texture residency—often referred to as partially resident
+textures—allows Vulkan applications to allocate massive, high-resolution
+textures without allocating all the underlying physical memory upfront.
+By breaking texture resources into uniform, virtual tiles and allocating
+physical device memory only for visible or high-priority areas, Vulkan
+optimizes memory consumption and bandwidth. This article explains how
+Vulkan handles sparse image creation, standard tile alignment, residency
+feedback, and on-demand tile streaming through asynchronous queue
+operations.</p>
+<h3 id="virtual-allocation-and-sparse-flags">Virtual Allocation and
+Sparse Flags</h3>
+<p>In a standard Vulkan pipeline, creating a <code>VkImage</code>
+requires binding a single, contiguous block of
+<code>VkDeviceMemory</code> via <code>vkBindImageMemory</code>. Sparse
+texturing bypasses this requirement by decoupling the virtual address
+space of the image from physical memory.</p>
+<p>To enable residency, an image is created with specific flags in
+<code>VkImageCreateInfo</code>:</p>
+<ul>
+<li><code>VK_IMAGE_CREATE_SPARSE_BINDING_BIT</code>: Signals that the
+resource's memory backing can be managed sparsely with non-contiguous
+allocations.</li>
+<li><code>VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT</code>: Enables
+individual mip levels and regions to be partially resident, meaning
+tiles can be mapped or unmapped dynamically.</li>
+</ul>
+<p>When these flags are set, the driver reserves a virtual address range
+for the full resolution of the image (often up to 16K x 16K or higher)
+without committing physical memory.</p>
+<h3 id="tile-shapes-and-mip-tails">Tile Shapes and Mip Tails</h3>
+<p>GPUs process sparse textures in fixed block shapes, typically sized
+around 64 KB per tile. Before binding memory, the application queries
+these dimensions using
+<code>vkGetImageSparseMemoryRequirements</code>.</p>
+<p>The query provides two critical structures:</p>
+<ol type="1">
+<li><strong>Tile Dimensions:</strong> The width, height, and depth (in
+texels) of a single sparse tile for each aspect mask.</li>
+<li><strong>Mip Tail Information:</strong> Higher mip levels are large
+enough to be split into individual tiles. Once mip dimensions shrink
+below the size of a single tile, subdividing them becomes inefficient.
+The driver bundles these tiny mips into a single contiguous region
+called the "mip tail." The mip tail must be bound to physical memory as
+a single unit rather than on a per-tile basis.</li>
+</ol>
+<h3 id="asynchronous-binding-with-vkqueuebindsparse">Asynchronous
+Binding with vkQueueBindSparse</h3>
+<p>Instead of standard memory binding commands, sparse textures rely on
+<code>vkQueueBindSparse</code>. This is a queue-submission command that
+executes on any queue supporting
+<code>VK_QUEUE_SPARSE_BINDING_BIT</code>.</p>
+<p>The binding process involves submitting a
+<code>VkBindSparseInfo</code> structure that details:</p>
+<ul>
+<li>The target <code>VkImage</code>.</li>
+<li>An array of <code>VkSparseImageMemoryBind</code> structs specifying
+the mip level, subresource offset (X, Y, Z), and extent of the region to
+be mapped.</li>
+<li>The <code>VkDeviceMemory</code> object and memory offset to bind to
+that region.</li>
+</ul>
+<p>Passing a null handle for the memory unbinds the tile, freeing the
+underlying <code>VkDeviceMemory</code> back to an application-managed
+memory pool. Because <code>vkQueueBindSparse</code> is a queue
+operation, it can be synchronized using semaphores and fences alongside
+transfer and graphics workloads.</p>
+<h3 id="detecting-missing-tiles">Detecting Missing Tiles</h3>
+<p>For on-demand streaming to work, the engine must identify which tiles
+are required for rendering. Vulkan supports this through two primary
+approaches:</p>
+<ol type="1">
+<li><strong>Shader Residency Feedback:</strong> Shaders use sparse image
+sampling instructions (such as
+<code>OpImageSparseSampleImplicitLod</code> in SPIR-V). These
+instructions return two components: the sampled texel data and a
+residency code. The shader checks the code using
+<code>sparseImageOpResultARB</code> to determine if any sampled texels
+were unmapped. If unmapped tiles are hit, the shader can write the
+missing tile coordinates to a storage buffer.</li>
+<li><strong>Software Virtual Texturing Feedback:</strong> The
+application renders a low-resolution visibility pass where fragments
+output the required tile coordinate and mip level directly to an
+offscreen render target. The CPU reads back this data or a compute
+shader processes it to build a list of tiles entering the camera's view
+frustum.</li>
+</ol>
+<h3 id="the-on-demand-streaming-loop">The On-Demand Streaming Loop</h3>
+<p>Once the application identifies the missing tiles, the streaming
+pipeline proceeds through the following steps:</p>
+<ol type="1">
+<li><strong>Physical Memory Allocation:</strong> The application assigns
+free memory blocks from a pre-allocated <code>VkDeviceMemory</code>
+pool.</li>
+<li><strong>Mapping:</strong> <code>vkQueueBindSparse</code> maps the
+allocated memory to the specific subresource coordinates of the
+image.</li>
+<li><strong>Data Upload:</strong> The application reads the compressed
+texel data from disk or storage into a staging <code>VkBuffer</code>. A
+copy command (<code>vkCmdCopyBufferToImage</code>) transfers the texels
+from the staging buffer into the newly bound sparse image tiles.</li>
+<li><strong>Synchronization:</strong> A pipeline barrier or semaphore
+ensures the copy operation finishes before subsequent draw commands
+sample from the newly resident tiles.</li>
+<li><strong>Eviction:</strong> When tiles fall outside the view frustum
+or drop in required detail, the engine submits a
+<code>vkQueueBindSparse</code> call to unbind the physical memory,
+returning those pages to the pool for reuse.</li>
+</ol></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan VK_EXT_scalar_block_layout Explained - vulkan</title>
+    <meta name="description" content="In Vulkan development, matching CPU-side C/C++ data structures with GPU shader buffers has historically required careful manual padding due to rigid alignment standards like std140 and std430. This article explains the mechanics of Vulkan memory alignment">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-vk-ext-scalar-block-layout-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan VK_EXT_scalar_block_layout Explained - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-vk-ext-scalar-block-layout-explained" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Vulkan development, matching CPU-side C/C++ data structures with GPU shader buffers has historically required careful manual padding due to rigid alignment standards like std140 and std430. This article explains the mechanics of Vulkan memory alignment" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-vk_ext_scalar_block_layout-explained">Vulkan
+VK_EXT_scalar_block_layout Explained</h1>
+<p>In Vulkan development, matching CPU-side C/C++ data structures with
+GPU shader buffers has historically required careful manual padding due
+to rigid alignment standards like <code>std140</code> and
+<code>std430</code>. This article explains the mechanics of Vulkan
+memory alignment, details the behavior of the scalar block layout, and
+demonstrates how the <code>VK_EXT_scalar_block_layout</code> extension
+eliminates the need for artificial structure padding by aligning members
+strictly to their scalar sizes.</p>
+<h3 id="the-alignment-challenge-std140-and-std430">The Alignment
+Challenge: std140 and std430</h3>
+<p>Shader stages access uniform buffers (UBOs), shader storage buffers
+(SSBOs), and push constants through defined memory layouts.
+Traditionally, these layouts follow the <code>std140</code> or
+<code>std430</code> specifications in GLSL:</p>
+<ul>
+<li><strong>std140:</strong> Often required for Uniform Buffer Objects.
+It mandates strict base alignments where vectors are aligned to their
+total byte size rounded up to the nearest multiple of 16 bytes. For
+instance, a <code>vec3</code> (12 bytes) or <code>vec4</code> (16 bytes)
+requires a 16-byte alignment. Even arrays of scalar types force each
+element to be padded to 16 bytes.</li>
+<li><strong>std430:</strong> Commonly used for Shader Storage Buffer
+Objects. It relaxes array rules by aligning array elements according to
+their component size rather than forcing 16-byte strides. However,
+composite types like <code>vec3</code> and <code>vec4</code> still
+require 16-byte alignment, and a <code>vec2</code> requires 8-byte
+alignment.</li>
+</ul>
+<p>In C and C++, native structures generally align data members to their
+individual type sizes unless explicitly told otherwise. A C++ structure
+containing a <code>float</code> followed by a <code>glm::vec3</code>
+occupies 16 bytes in CPU memory (4 bytes for the float, followed by 12
+bytes for the vector). Under <code>std140</code> or <code>std430</code>,
+the GPU expects <code>vec3</code> to start on a 16-byte boundary,
+placing it at offset 16 instead of offset 4.</p>
+<p>To prevent data corruption, developers had to manually insert
+explicit padding fields (such as <code>float _pad[3];</code>) or use
+compiler-specific alignment specifiers (<code>alignas(16)</code>) to
+synchronize layouts between CPU and GPU code.</p>
+<h3 id="what-is-scalar-block-layout">What is Scalar Block Layout?</h3>
+<p>Scalar block layout replaces vector-based alignment rules with
+scalar-based alignment rules. Under this model, the alignment
+requirement of any composite type—including vectors, matrices, arrays,
+and nested structures—is equal to the alignment of the underlying scalar
+type it contains.</p>
+<p>For example, a 32-bit floating-point value (<code>float</code>) has
+an alignment requirement of 4 bytes:</p>
+<ul>
+<li>In <code>std430</code>, a <code>vec3</code> (composed of three
+32-bit floats) requires an alignment of 16 bytes.</li>
+<li>In scalar layout, a <code>vec3</code> requires an alignment of only
+4 bytes (the size of a single <code>float</code>).</li>
+</ul>
+<p>Similarly, matrices and structures require alignment equal only to
+the largest scalar component contained within them (such as 4 bytes for
+32-bit types, or 8 bytes for 64-bit integers or doubles), rather than
+rounding up to power-of-two vector chunks.</p>
+<h3
+id="eliminating-manual-struct-padding-with-vk_ext_scalar_block_layout">Eliminating
+Manual Struct Padding with VK_EXT_scalar_block_layout</h3>
+<p>The <code>VK_EXT_scalar_block_layout</code> extension (promoted to
+core in Vulkan 1.2) introduces the ability to enable scalar alignment
+across UBOs, SSBOs, and push constants.</p>
+<p>When this feature is enabled:</p>
+<ol type="1">
+<li><strong>Direct CPU-to-GPU Memory Mapping:</strong> Standard C and
+C++ structs can be mapped directly into Vulkan buffers using
+<code>memcpy</code> without inserting dummy padding variables. A struct
+consisting of a <code>float</code> and a 3-component vector will
+naturally pack sequentially into 16 bytes on both the host and
+device.</li>
+<li><strong>Reduced Memory Footprint:</strong> Buffers no longer waste
+space on alignment gaps between mismatched vector types, reducing the
+total bandwidth needed to transfer data across the PCIe bus and cache
+lines.</li>
+<li><strong>Prevention of Alignment Bugs:</strong> Subtle rendering
+glitches and compute errors caused by mismatched CPU/GPU offsets are
+eliminated, as shader compilers conform to the standard packing behavior
+of host languages.</li>
+</ol>
+<h3 id="enabling-the-feature">Enabling the Feature</h3>
+<p>To use scalar layouts in Vulkan, query and enable the
+<code>scalarBlockLayout</code> boolean feature via
+<code>VkPhysicalDeviceScalarBlockLayoutFeatures</code> during device
+creation. In shader code, declare the corresponding extension to
+configure the block layout:</p>
+<p>In GLSL:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#extension GL_EXT_scalar_block_layout : require</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span>scalar<span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="kw">buffer</span> StorageBlock <span class="op">{</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> a<span class="op">;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span>  b<span class="op">;</span> <span class="co">// Placed immediately at byte offset 4, requiring no padding after &#39;a&#39;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
+<p>By instructing the SPIR-V compiler to emit the
+<code>ScalarBlockLayout</code> capability, the GPU decodes the buffer
+according to native scalar boundaries, removing the layout discrepancies
+that historically complicated Vulkan buffer management.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

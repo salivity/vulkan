@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pipeline Derivatives and Code Sharing in Vulkan - vulkan</title>
+    <meta name="description" content="Vulkan pipeline derivatives provide an explicit mechanism for creating new pipelines based on existing ones to minimize state duplication and compilation overhead. By designating a parent pipeline, the driver can reuse compiled shader code, intermediate r">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/pipeline-derivatives-and-code-sharing-in-vulkan">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Pipeline Derivatives and Code Sharing in Vulkan - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/pipeline-derivatives-and-code-sharing-in-vulkan" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Vulkan pipeline derivatives provide an explicit mechanism for creating new pipelines based on existing ones to minimize state duplication and compilation overhead. By designating a parent pipeline, the driver can reuse compiled shader code, intermediate r" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="pipeline-derivatives-and-code-sharing-in-vulkan">Pipeline
+Derivatives and Code Sharing in Vulkan</h1>
+<p>Vulkan pipeline derivatives provide an explicit mechanism for
+creating new pipelines based on existing ones to minimize state
+duplication and compilation overhead. By designating a parent pipeline,
+the driver can reuse compiled shader code, intermediate representations,
+and internal hardware configurations for child pipelines with identical
+or closely related state. This article explains how pipeline derivatives
+function, how parent pipelines share compiled code, and how to implement
+this pattern in graphics and compute workloads.</p>
+<h2 id="what-are-pipeline-derivatives">What Are Pipeline
+Derivatives?</h2>
+<p>In Vulkan, compiling a pipeline (<code>VkPipeline</code>) is an
+expensive operation because it requires the driver to convert
+intermediate SPIR-V bytecode into optimized hardware-specific machine
+code, link pipeline stages, and prepare GPU-specific hardware state.
+When creating several pipelines that share significant portions of their
+execution graph—such as identical vertex processing but differing
+fragment stages or blend operations—creating each pipeline from scratch
+introduces redundant work.</p>
+<p>Pipeline derivatives address this by establishing an explicit
+parent-child relationship. A child (derivative) pipeline specifies a
+parent pipeline, giving the driver a hint that it can branch off the
+parent’s already processed state rather than recompiling identical
+components from scratch.</p>
+<h2 id="how-parent-pipelines-share-compiled-code">How Parent Pipelines
+Share Compiled Code</h2>
+<p>When creating a child pipeline, the driver can bypass several stages
+of the compilation pipeline:</p>
+<ul>
+<li><strong>Shader Stage Reuse:</strong> If a parent and child share
+shader stages (such as an identical vertex shader, tessellation stage,
+or geometry shader), the driver can reuse the exact compiled machine
+instructions and register allocation maps rather than recompiling the
+SPIR-V code.</li>
+<li><strong>Shared State Validation:</strong> State blocks that remain
+constant between parent and child—such as input assembly layouts,
+rasterization settings, or depth-stencil configurations—can be
+shallow-copied or referenced internally rather than recomputed and
+validated.</li>
+<li><strong>Internal Dependency Linking:</strong> The driver can skip
+global link-time optimizations across the shared stages, executing only
+the delta optimizations required for the modified stages.</li>
+</ul>
+<p>The degree of reuse depends on the underlying driver implementation.
+While the driver is not strictly required to share code, providing
+derivative hints allows compliant drivers to significantly shorten
+compile times and reduce the memory footprint of pipeline state objects
+(PSOs).</p>
+<h2 id="configuring-pipeline-derivatives-in-vulkan">Configuring Pipeline
+Derivatives in Vulkan</h2>
+<p>Derivatives can be configured for both graphics pipelines
+(<code>VkGraphicsPipelineCreateInfo</code>) and compute pipelines
+(<code>VkComputePipelineCreateInfo</code>). The setup involves two main
+components: flags and base references.</p>
+<h3 id="1-flagging-the-parent-and-child">1. Flagging the Parent and
+Child</h3>
+<p>To enable derivation, specific flags must be set in the
+<code>flags</code> field of the pipeline creation info structures:</p>
+<ul>
+<li><strong>Parent Pipeline:</strong> Must include the
+<code>VK_PIPELINE_CREATE_ALLOW_DERIVATIVES_BIT</code> flag. This informs
+the driver to retain intermediate compilation artifacts and data
+structures necessary to spawn children.</li>
+<li><strong>Child Pipeline:</strong> Must include the
+<code>VK_PIPELINE_CREATE_DERIVATIVE_BIT</code> flag, signaling that it
+intends to inherit state from a base pipeline.</li>
+</ul>
+<h3 id="2-referencing-the-parent">2. Referencing the Parent</h3>
+<p>A derivative references its parent using one of two fields in the
+create-info structure:</p>
+<ul>
+<li><code>basePipelineHandle</code>: A handle to an already created
+<code>VkPipeline</code> that was constructed with the
+<code>VK_PIPELINE_CREATE_ALLOW_DERIVATIVES_BIT</code> flag.</li>
+<li><code>basePipelineIndex</code>: A zero-based index pointing to
+another pipeline structure within the same array passed to
+<code>vkCreateGraphicsPipelines</code> or
+<code>vkCreateComputePipelines</code>. This is used when batch-creating
+parent and child pipelines simultaneously. In this case,
+<code>basePipelineHandle</code> must be set to
+<code>VK_NULL_HANDLE</code>, and the parent entry in the array must
+appear earlier than the child or carry the allow-derivatives flag.</li>
+</ul>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Example: Creating a derivative pipeline using basePipelineHandle</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>VkGraphicsPipelineCreateInfo childPipelineInfo<span class="op">{};</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>childPipelineInfo<span class="op">.</span>sType <span class="op">=</span> VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>childPipelineInfo<span class="op">.</span>flags <span class="op">=</span> VK_PIPELINE_CREATE_DERIVATIVE_BIT<span class="op">;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>childPipelineInfo<span class="op">.</span>basePipelineHandle <span class="op">=</span> parentPipelineHandle<span class="op">;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>childPipelineInfo<span class="op">.</span>basePipelineIndex <span class="op">=</span> <span class="op">-</span><span class="dv">1</span><span class="op">;</span> <span class="co">// Ignored when handle is valid</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="co">// Configure remaining stages (e.g., modified fragment shader or blend state)</span></span></code></pre></div>
+<h2 id="common-use-cases">Common Use Cases</h2>
+<ul>
+<li><strong>Material and Shader Variations:</strong> Using the same
+vertex transform logic across hundreds of materials while varying only
+the fragment shader or alpha-testing parameters.</li>
+<li><strong>Render Pass Variations:</strong> Using the same shader logic
+across different render target formats or blending configurations (e.g.,
+additive vs. alpha-blended rendering).</li>
+<li><strong>Batch Compilation:</strong> Compiling an entire pipeline
+family within a single <code>vkCreateGraphicsPipelines</code> call using
+<code>basePipelineIndex</code>, enabling the driver to multithread
+compilation while sharing base artifacts in-memory.</li>
+</ul>
+<h2 id="derivatives-vs-pipeline-caches">Derivatives vs. Pipeline
+Caches</h2>
+<p>While pipeline derivatives provide explicit parent-child hints at
+pipeline creation time, they are complementary to
+<code>VkPipelineCache</code>. A pipeline cache persists compiled binary
+data across runs and avoids recompilation on subsequent application
+launches. Pipeline derivatives explicitly declare structural
+relationships at runtime, assisting drivers in optimizing memory usage,
+compilation latency, and state transitions between related pipelines
+during execution.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

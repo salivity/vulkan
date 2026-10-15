@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Understanding Vulkan Memory Model Acquire-Release - vulkan</title>
+    <meta name="description" content="This article provides an overview of acquire-release semantics within the formal Vulkan memory model, detailing how low-level shader invocations synchronize data. By establishing explicit ordering constraints and pairing release writes with acquire reads,">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/understanding-vulkan-memory-model-acquire-release">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Understanding Vulkan Memory Model Acquire-Release - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/understanding-vulkan-memory-model-acquire-release" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article provides an overview of acquire-release semantics within the formal Vulkan memory model, detailing how low-level shader invocations synchronize data. By establishing explicit ordering constraints and pairing release writes with acquire reads," />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="understanding-vulkan-memory-model-acquire-release">Understanding
+Vulkan Memory Model Acquire-Release</h1>
+<p>This article provides an overview of acquire-release semantics within
+the formal Vulkan memory model, detailing how low-level shader
+invocations synchronize data. By establishing explicit ordering
+constraints and pairing release writes with acquire reads, developers
+can guarantee memory visibility across parallel invocations without
+relying on heavy, global memory barriers. Understanding these semantics
+is essential for building efficient, lock-free algorithms and
+inter-thread communication patterns in modern graphics and compute
+pipelines.</p>
+<h3 id="the-foundation-the-vulkan-memory-model">The Foundation: The
+Vulkan Memory Model</h3>
+<p>Introduced in Vulkan 1.2 through the
+<code>VK_KHR_vulkan_memory_model</code> extension, the formal memory
+model defines precise rules for how memory accesses can be reordered by
+compilers and hardware architectures. Prior to this model,
+synchronization in Vulkan was primarily coarse-grained, handled through
+pipeline barriers, subpass dependencies, and events.</p>
+<p>The formal memory model allows fine-grained, instruction-level
+synchronization directly within SPIR-V shaders using atomic operations
+and memory operands, closely mirroring the C++11 memory model while
+accounting for GPU hierarchies.</p>
+<h3 id="what-are-acquire-release-semantics">What Are Acquire-Release
+Semantics?</h3>
+<p>Acquire-release semantics are a form of one-way memory barrier used
+to establish a "happens-before" relationship between different threads
+(shader invocations) without imposing a full sequential consistency
+penalty.</p>
+<ul>
+<li><strong>Release Semantics:</strong> A release operation is applied
+to a write or an atomic operation. It guarantees that all prior memory
+stores (both atomic and non-atomic) in the program order are committed
+and made available before the release operation itself takes effect.
+Memory operations that appear <em>before</em> the release cannot be
+reordered to occur <em>after</em> it.</li>
+<li><strong>Acquire Semantics:</strong> An acquire operation is applied
+to a read or an atomic operation. It guarantees that subsequent memory
+loads (both atomic and non-atomic) in the program order cannot be
+reordered <em>before</em> the acquire operation. Memory operations that
+appear <em>after</em> the acquire cannot be reordered <em>prior</em> to
+it.</li>
+</ul>
+<p>When an acquire operation reads a value stored by a release operation
+on the same memory location, the two operations synchronize with each
+other. All memory operations that occurred before the release become
+visible to the thread executing the acquire.</p>
+<h3 id="availability-and-visibility-operations">Availability and
+Visibility Operations</h3>
+<p>In Vulkan's formal terminology, acquire-release semantics are
+directly tied to memory availability and visibility:</p>
+<ol type="1">
+<li><strong>Make Available (Release):</strong> When a shader invocation
+writes data and executes a release operation, it flushes dirty cache
+lines or invalidates write buffers, making the modified data
+<em>available</em> to a designated memory domain.</li>
+<li><strong>Make Visible (Acquire):</strong> When a receiving invocation
+performs an acquire operation, it invalidates its local read caches,
+making the previously available data <em>visible</em> to its own
+execution context.</li>
+</ol>
+<p>Without explicitly making writes available and then visible, another
+GPU invocation might read stale cache lines, even if an atomic flag
+indicates the work is finished.</p>
+<h3 id="scopes-in-vulkan">Scopes in Vulkan</h3>
+<p>Acquire and release operations must define a <strong>Memory
+Scope</strong> to establish which hardware domain participates in the
+synchronization. Scopes define the boundary across which the
+synchronization is valid:</p>
+<ul>
+<li><strong>Subgroup Scope:</strong> Synchronizes invocations within the
+same warp or wavefront.</li>
+<li><strong>Workgroup Scope:</strong> Synchronizes invocations within
+the same compute workgroup.</li>
+<li><strong>QueueFamily Scope:</strong> Synchronizes invocations across
+different workgroups running on the same GPU queue family.</li>
+<li><strong>Device Scope:</strong> Synchronizes invocations across the
+entire physical device.</li>
+</ul>
+<p>For a release operation to properly synchronize with an acquire
+operation, both operations must specify a scope that encompasses both
+participating invocations. For example, communicating between two
+different workgroups requires at least a <code>QueueFamily</code> or
+<code>Device</code> scope.</p>
+<h3 id="typical-implementation-pattern">Typical Implementation
+Pattern</h3>
+<p>A classic use case in compute shaders is a producer-consumer
+handoff:</p>
+<ol type="1">
+<li><strong>Producer Invocation:</strong> Writes data to a shared
+storage buffer (payload).</li>
+<li><strong>Producer Release:</strong> Performs an atomic store to a
+control flag with <code>Release</code> semantics and
+<code>MakePointerAvailableKHR</code>, targeting the
+<code>QueueFamily</code> scope.</li>
+<li><strong>Consumer Acquire:</strong> Polls the control flag using an
+atomic load with <code>Acquire</code> semantics and
+<code>MakePointerVisibleKHR</code>, targeting the
+<code>QueueFamily</code> scope.</li>
+<li><strong>Consumer Invocation:</strong> Once the flag is observed, the
+consumer reads the payload from the storage buffer, guaranteed to see
+the latest data written by the producer.</li>
+</ol>
+<h3 id="performance-impact">Performance Impact</h3>
+<p>Using acquire-release semantics allows the GPU compiler and execution
+units to reorder non-dependent instructions on either side of the
+barrier, maximizing instruction-level parallelism. Unlike sequentially
+consistent operations (<code>SequentiallyConsistent</code>), which
+enforce a globally agreed-upon order across all threads, acquire-release
+semantics restrict only the operations necessary to establish a directed
+point-to-point dependency, resulting in lower synchronization overhead
+on modern GPU architectures.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

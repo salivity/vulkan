@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Vertex Input in Vulkan Explained - vulkan</title>
+    <meta name="description" content="In standard Vulkan workflows, vertex buffer formats and input layouts must be baked directly into immutable pipeline state objects (PSOs), causing significant pipeline permutation bloat. This article details the dynamic vertex input extensions that elimin">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/dynamic-vertex-input-in-vulkan-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Dynamic Vertex Input in Vulkan Explained - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/dynamic-vertex-input-in-vulkan-explained" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In standard Vulkan workflows, vertex buffer formats and input layouts must be baked directly into immutable pipeline state objects (PSOs), causing significant pipeline permutation bloat. This article details the dynamic vertex input extensions that elimin" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamic-vertex-input-in-vulkan-explained">Dynamic Vertex Input
+in Vulkan Explained</h1>
+<p>In standard Vulkan workflows, vertex buffer formats and input layouts
+must be baked directly into immutable pipeline state objects (PSOs),
+causing significant pipeline permutation bloat. This article details the
+dynamic vertex input extensions that eliminate this restriction,
+specifically highlighting <code>VK_EXT_vertex_input_dynamic_state</code>
+and related dynamic state features. By leveraging these extensions,
+developers can configure vertex attributes and buffer bindings on the
+fly during command buffer recording, drastically reducing pipeline
+counts and build overhead.</p>
+<h3 id="the-static-vertex-input-limitation">The Static Vertex Input
+Limitation</h3>
+<p>Traditionally, Vulkan requires vertex attribute and binding
+descriptions to be defined statically through the
+<code>VkPipelineVertexInputStateCreateInfo</code> structure during
+graphics pipeline creation. If a 3D model uses an alternative vertex
+structure—such as interleaved positions and normals versus separate
+per-attribute buffers, or varying data precisions (e.g., 16-bit versus
+32-bit floats)—the application must compile an entirely separate
+<code>VkPipeline</code>. In complex rendering engines, this limitation
+leads to pipeline combinatorial explosion, higher memory consumption,
+and increased runtime hitching during pipeline creation.</p>
+<h3 id="the-solution-vk_ext_vertex_input_dynamic_state">The Solution:
+VK_EXT_vertex_input_dynamic_state</h3>
+<p>The primary extension addressing this limitation is
+<code>VK_EXT_vertex_input_dynamic_state</code>. This extension decouples
+vertex input layout definitions from pipeline creation entirely,
+allowing the application to specify vertex layouts dynamically when
+recording command buffers.</p>
+<p>To use this feature, the pipeline must be created with the dynamic
+state token <code>VK_DYNAMIC_STATE_VERTEX_INPUT_EXT</code> included in
+the <code>VkPipelineDynamicStateCreateInfo</code> structure. When this
+state is enabled, the pipeline creation process ignores the static
+descriptions in <code>VkPipelineVertexInputStateCreateInfo</code>.</p>
+<p>At render time, the layout is bound using the dedicated command:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> vkCmdSetVertexInputEXT<span class="op">(</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    VkCommandBuffer                               commandBuffer<span class="op">,</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint32_t</span>                                      vertexBindingDescriptionCount<span class="op">,</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">const</span> VkVertexInputBindingDescription2EXT<span class="op">*</span>     pVertexBindingDescriptions<span class="op">,</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint32_t</span>                                      vertexAttributeDescriptionCount<span class="op">,</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">const</span> VkVertexInputAttributeDescription2EXT<span class="op">*</span>   pVertexAttributeDescriptions<span class="op">);</span></span></code></pre></div>
+<p>This command takes updated description structures:</p>
+<ul>
+<li><strong><code>VkVertexInputBindingDescription2EXT</code></strong>:
+Configures the binding index, stride, input rate (per-vertex or
+per-instance), and divisor for instancing.</li>
+<li><strong><code>VkVertexInputAttributeDescription2EXT</code></strong>:
+Configures the shader location, binding slot, data format
+(<code>VkFormat</code>), and byte offset.</li>
+</ul>
+<p>Because these configurations are issued directly into the command
+stream, a single compiled pipeline can process meshes with arbitrary
+vertex layouts, provided the underlying vertex shader interface remains
+compatible.</p>
+<h3 id="complementary-dynamic-extensions">Complementary Dynamic
+Extensions</h3>
+<p>Several other Vulkan extensions provide intermediate or complementary
+dynamic vertex state functionality:</p>
+<ul>
+<li><strong><code>VK_EXT_extended_dynamic_state</code> (promoted to
+Vulkan 1.3 Core)</strong>: While it does not make the full attribute
+layout dynamic, it introduces <code>vkCmdBindVertexBuffers2EXT</code>.
+This command allows dynamic configuration of vertex buffer strides
+alongside offsets and buffer handles, removing the need for separate
+pipelines if only buffer strides change.</li>
+<li><strong><code>VK_EXT_shader_object</code></strong>: This extension
+builds further upon dynamic state concepts by removing pipeline objects
+entirely, relying heavily on dynamic state commands—including
+<code>vkCmdSetVertexInputEXT</code>—to configure the graphics state
+across draw calls.</li>
+</ul>
+<h3 id="engine-architecture-impact">Engine Architecture Impact</h3>
+<p>Adopting dynamic vertex input significantly streamlines rendering
+architectures. PSO caches become smaller and faster to compile since
+vertex layouts are decoupled from shader configurations. Runtime shader
+compilation pipelines can focus solely on visual and material
+properties, while asset loaders gain the flexibility to supply
+heterogeneous mesh data structures directly to the GPU without
+triggering pipeline rebuilds.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

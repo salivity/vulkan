@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How Fossilize Fixes Steam Deck Shader Stutter - vulkan</title>
+    <meta name="description" content="Valve utilizes Fossilize to eliminate shader compilation stutter on the Steam Deck by pre-recording, sharing, and pre-compiling Vulkan pipeline states before a game is ever launched. In modern PC gaming, compiling shaders at runtime often causes sudden mi">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/how-fossilize-fixes-steam-deck-shader-stutter">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How Fossilize Fixes Steam Deck Shader Stutter - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/how-fossilize-fixes-steam-deck-shader-stutter" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Valve utilizes Fossilize to eliminate shader compilation stutter on the Steam Deck by pre-recording, sharing, and pre-compiling Vulkan pipeline states before a game is ever launched. In modern PC gaming, compiling shaders at runtime often causes sudden mi" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-fossilize-fixes-steam-deck-shader-stutter">How Fossilize
+Fixes Steam Deck Shader Stutter</h1>
+<p>Valve utilizes Fossilize to eliminate shader compilation stutter on
+the Steam Deck by pre-recording, sharing, and pre-compiling Vulkan
+pipeline states before a game is ever launched. In modern PC gaming,
+compiling shaders at runtime often causes sudden micro-stutters and
+frame rate drops as the hardware pauses rendering to compile graphic
+instructions. Because the Steam Deck operates on a unified hardware and
+software specification, Valve leverages Fossilize to capture shader
+pipelines from players across the globe, compile them on Valve’s servers
+specifically for the Deck’s AMD Van Gogh APU and Mesa drivers, and
+distribute the pre-compiled caches directly to user devices via
+Steam.</p>
+<h3 id="the-shader-compilation-problem-in-vulkan">The Shader Compilation
+Problem in Vulkan</h3>
+<p>In modern graphics APIs like Vulkan, the driver does not simply
+compile individual shaders in isolation; it compiles complete "graphics
+pipelines" that define how shaders, blending modes, and render states
+interact. When a player encounters a visual effect, character model, or
+environment for the first time, the system must compile this pipeline
+immediately.</p>
+<p>Because this translation often happens on the main rendering thread,
+the CPU and GPU temporarily stall while waiting for the driver to finish
+building the pipeline. This delay manifests as a jarring frame drop or
+stutter. The issue is amplified on the Steam Deck, where Windows games
+running through Proton rely on translation layers like DXVK and
+VKD3D-Proton to convert DirectX 9, 11, and 12 instructions into Vulkan
+in real time.</p>
+<h3 id="how-fossilize-solves-the-bottleneck">How Fossilize Solves the
+Bottleneck</h3>
+<p>Fossilize is an open-source library created by Valve engineer
+Hans-Kristian Arntzen. It functions as a serialization layer for the
+Vulkan API, specifically capturing the parameters used during pipeline
+creation and storing them as lightweight binary representations called
+"fossil" archives.</p>
+<ol type="1">
+<li><strong>Recording Pipeline States:</strong> As games run, Fossilize
+intercepts and records all Vulkan pipeline creation calls. This capture
+includes the vertex, fragment, and compute shaders, alongside the
+precise pipeline state object (PSO) parameters.</li>
+<li><strong>Backend Aggregation:</strong> When users play games across
+the Steam network, Fossilize uploads these recorded execution parameters
+to Valve's servers. Valve automatically de-duplicates and aggregates
+pipelines to build a comprehensive map of every visual asset the game
+will ever render.</li>
+<li><strong>Targeted Pre-Compilation:</strong> Valve’s build farm
+compiles the aggregated pipelines into native machine code targeting the
+exact GPU architecture and Mesa graphics drivers used by SteamOS.</li>
+<li><strong>Seamless Client Delivery:</strong> When a Steam Deck user
+downloads or updates a game, Steam automatically downloads the
+pre-compiled cache file alongside the game files.</li>
+</ol>
+<h3 id="why-the-steam-deck-is-the-ideal-platform-for-fossilize">Why the
+Steam Deck Is the Ideal Platform for Fossilize</h3>
+<p>Pre-compilation has historically been difficult on traditional
+desktop PCs because graphics pipelines are tied to specific GPU
+architectures and driver versions. A cache generated on an Nvidia GPU
+using driver version 550 cannot be used on an AMD GPU, or even on the
+same Nvidia GPU running driver version 555.</p>
+<p>The Steam Deck bypasses this limitation entirely due to its fixed
+platform. Every standard Steam Deck shares the same AMD RDNA 2 compute
+units and uses Valve's standardized Mesa/RADV Vulkan driver stack. As a
+result, a shader cache compiled on Valve’s servers will execute natively
+on every Steam Deck in existence. By shifting the heavy computational
+burden of shader compilation from the player's handheld device to
+Valve’s cloud infrastructure, Fossilize guarantees smooth frame
+delivery, prevents runtime stutter, and reduces battery drain during
+gameplay.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

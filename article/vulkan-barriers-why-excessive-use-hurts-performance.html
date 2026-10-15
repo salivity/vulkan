@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Barriers: Why Excessive Use Hurts Performance - vulkan</title>
+    <meta name="description" content="In Vulkan, execution barriers are essential synchronization primitives that enforce ordering between GPU commands, but overusing them severely degrades performance. This article explains how excessive or poorly scoped execution barriers stall GPU hardware">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-barriers-why-excessive-use-hurts-performance">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Barriers: Why Excessive Use Hurts Performance - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-barriers-why-excessive-use-hurts-performance" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Vulkan, execution barriers are essential synchronization primitives that enforce ordering between GPU commands, but overusing them severely degrades performance. This article explains how excessive or poorly scoped execution barriers stall GPU hardware" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-barriers-why-excessive-use-hurts-performance">Vulkan
+Barriers: Why Excessive Use Hurts Performance</h1>
+<p>In Vulkan, execution barriers are essential synchronization
+primitives that enforce ordering between GPU commands, but overusing
+them severely degrades performance. This article explains how excessive
+or poorly scoped execution barriers stall GPU hardware, drain execution
+pipelines, generate idle cycles known as "pipeline bubbles," and
+eliminate the massive parallelism that modern GPUs rely on to achieve
+high frame rates.</p>
+<h3 id="the-gpu-pipeline-and-parallelism">The GPU Pipeline and
+Parallelism</h3>
+<p>Modern GPUs achieve high throughput by overlapping multiple tasks.
+While one set of execution units processes compute shaders, another
+might be executing fragment shaders or handling rasterization. The
+hardware relies on keeping its thousands of cores consistently saturated
+with active warps or wavefronts to hide memory latency and maximize
+compute efficiency.</p>
+<h3 id="what-an-execution-barrier-does">What an Execution Barrier
+Does</h3>
+<p>An execution barrier—inserted via
+<code>vkCmdPipelineBarrier</code>—instructs the GPU that commands
+submitted after the barrier cannot start executing in specified pipeline
+stages until commands submitted before the barrier have completed their
+designated stages.</p>
+<p>When a barrier is issued, the GPU must actively enforce this
+dependency. The source stages (<code>srcStageMask</code>) must complete,
+meaning the GPU cannot schedule dependent work to available execution
+units until the condition is satisfied.</p>
+<h3 id="how-pipeline-bubbles-form">How Pipeline Bubbles Form</h3>
+<p>A "pipeline bubble" occurs when GPU execution units become starved of
+work and sit idle. Excessive execution barriers create bubbles through
+the following mechanisms:</p>
+<ol type="1">
+<li><strong>Pipeline Draining:</strong> When a barrier requires prior
+work to complete, the GPU must wait for in-flight warps to exit the
+execution units. As these tasks finish and no new dependent tasks can
+yet be scheduled, core utilization drops to zero.</li>
+<li><strong>Preventing Wavefront Overlap:</strong> GPUs hide latency by
+switching immediately to another wavefront when a thread stalls on
+memory access. When barriers stop new wavefronts from launching, the GPU
+cannot hide this latency, magnifying the performance cost of cache
+misses and memory fetches.</li>
+<li><strong>Serialized Execution:</strong> Excessive barriers
+effectively serialize what could otherwise be asynchronous operations.
+Instead of processing compute tasks alongside graphics passes or
+overlapping pre-pass depth rendering with compute culling, the GPU
+executes stages in strict sequence, turning a wide parallel pipeline
+into a narrow serial queue.</li>
+</ol>
+<h3 id="common-pitfalls-leading-to-excessive-stalls">Common Pitfalls
+Leading to Excessive Stalls</h3>
+<p>The severity of pipeline bubbles is heavily influenced by how
+barriers are configured:</p>
+<ul>
+<li><strong>Overly Broad Stage Masks:</strong> Using
+<code>VK_PIPELINE_STAGE_ALL_COMMANDS_BIT</code> or
+<code>VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT</code> forces the entire
+pipeline to clear before subsequent work begins, creating the largest
+possible bubble.</li>
+<li><strong>Redundant Barriers:</strong> Issuing individual barriers
+between closely related render commands rather than batching transitions
+into a single synchronization point repeatedly halts the hardware.</li>
+<li><strong>Unnecessary Execution Dependencies:</strong> Forcing
+execution synchronization across stages that have no actual
+read-after-write (RAW), write-after-read (WAR), or write-after-write
+(WAW) data hazards.</li>
+</ul>
+<h3 id="mitigating-barrier-induced-stalls">Mitigating Barrier-Induced
+Stalls</h3>
+<p>To eliminate pipeline bubbles, synchronization must be kept as
+granular as possible:</p>
+<ul>
+<li><strong>Narrow Stage Flags:</strong> Explicitly define the narrowest
+possible source and destination stages (e.g., synchronizing strictly
+from <code>VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT</code> to
+<code>VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT</code>).</li>
+<li><strong>Batch Pipeline Barriers:</strong> Group multiple resource
+memory barriers into a single <code>vkCmdPipelineBarrier</code> call to
+resolve all dependencies in a single stall cycle rather than multiple
+consecutive pauses.</li>
+<li><strong>Leverage Subpass Dependencies:</strong> Use Vulkan render
+pass subpass dependencies, allowing the driver to overlap tile-based
+rendering and defer execution dependencies efficiently.</li>
+<li><strong>Split Barriers Using Events:</strong> Utilize
+<code>vkCmdSetEvent</code> and <code>vkCmdWaitEvents</code> to separate
+the initiation of a dependency from its resolution, allowing independent
+commands to run in between and naturally fill potential bubbles.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

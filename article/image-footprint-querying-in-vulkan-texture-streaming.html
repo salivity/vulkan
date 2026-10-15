@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Footprint Querying in Vulkan Texture Streaming - vulkan</title>
+    <meta name="description" content="This article explores image footprint querying in Vulkan and its role in modern feedback-driven texture streaming architectures. It covers the technical definition of shader-based image footprint querying, explains how developers obtain fine-grained acces">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/image-footprint-querying-in-vulkan-texture-streaming">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Image Footprint Querying in Vulkan Texture Streaming - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/image-footprint-querying-in-vulkan-texture-streaming" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explores image footprint querying in Vulkan and its role in modern feedback-driven texture streaming architectures. It covers the technical definition of shader-based image footprint querying, explains how developers obtain fine-grained acces" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="image-footprint-querying-in-vulkan-texture-streaming">Image
+Footprint Querying in Vulkan Texture Streaming</h1>
+<p>This article explores image footprint querying in Vulkan and its role
+in modern feedback-driven texture streaming architectures. It covers the
+technical definition of shader-based image footprint querying, explains
+how developers obtain fine-grained access patterns directly from the
+GPU, and details how this metadata enables rendering engines to stream
+only the necessary texture mip levels and sparse tiles to minimize VRAM
+usage and eliminate over-fetching.</p>
+<h3 id="what-is-image-footprint-querying">What is Image Footprint
+Querying?</h3>
+<p>Image footprint querying is a GPU-accelerated capability—exposed in
+Vulkan primarily through the <code>VK_EXT_shader_image_footprint</code>
+extension—that allows shaders to determine the exact memory footprint an
+image sampling operation would cover before or instead of executing the
+actual sample.</p>
+<p>Under normal rendering conditions, a sampling instruction evaluates
+screen-space derivatives, applies filtering modes (such as trilinear or
+anisotropic filtering), and fetches texels from one or two mip levels.
+In contrast, an image footprint query evaluates these exact same
+sampling calculations but outputs metadata rather than color data. This
+metadata includes:</p>
+<ul>
+<li>The specific mip levels chosen by the sampler's level-of-detail
+(LOD) and anisotropic calculation.</li>
+<li>The anchor coordinates and dimensions of the accessed region (the
+"footprint").</li>
+<li>A bitmask or boolean flag indicating whether the queried region is
+fully covered or resident.</li>
+</ul>
+<p>Because this calculation takes place inside the shader pipeline, it
+inherently accounts for complex projection matrices, surface curvature,
+viewing angles, and anisotropic filter footprints that are impossible to
+predict accurately on the CPU.</p>
+<h3 id="the-challenge-of-traditional-texture-streaming">The Challenge of
+Traditional Texture Streaming</h3>
+<p>Modern games frequently use dozens of gigabytes of high-resolution
+textures. Storing all mip levels in VRAM simultaneously is impractical.
+Traditionally, engines stream textures using CPU-side heuristics,
+estimating required mip levels based on distance from the camera, object
+bounding boxes, or rough screen-space projections.</p>
+<p>These CPU-based heuristics suffer from major inefficiencies:</p>
+<ul>
+<li><strong>Over-allocation:</strong> To prevent visible texture blur or
+popping, engines conservatively stream higher mip levels for an entire
+mesh, even if only a tiny fraction of the surface is visible or
+unoccluded.</li>
+<li><strong>Under-allocation and Popping:</strong> Sudden camera
+movements or sharp glancing angles with anisotropic filtering can cause
+incorrect estimates, leading to delayed loading and noticeable visual
+artifacts.</li>
+<li><strong>Coarse Granularity:</strong> Objects must generally be
+loaded as complete mip chains rather than just the visible subsets of
+tiles.</li>
+</ul>
+<h3
+id="how-image-footprint-querying-powers-feedback-driven-streaming">How
+Image Footprint Querying Powers Feedback-Driven Streaming</h3>
+<p>Feedback-driven texture streaming solves these issues by shifting
+visibility and LOD determination directly to the GPU. Image footprint
+querying is the core mechanism that makes this process accurate and
+lightweight.</p>
+<h4 id="1-real-time-mip-and-tile-identification">1. Real-Time Mip and
+Tile Identification</h4>
+<p>During an initial pre-pass (such as a depth pre-pass, visibility
+buffer pass, or a downsampled analysis pass), shaders run footprint
+queries on surfaces using their actual UV coordinates and screen-space
+gradients. Instead of loading the full texture data, the query reveals
+exactly which mip levels and spatial sub-regions (tiles) are visible to
+the rasterizer.</p>
+<h4 id="2-writing-to-a-feedback-buffer">2. Writing to a Feedback
+Buffer</h4>
+<p>The footprint results are packed into a storage buffer (SSBO) or an
+append buffer using atomic operations or a compact render target. This
+generates a definitive list of required virtual texture pages for the
+current frame. Because the query accounts for anisotropic footprints,
+pixels viewed at steep glancing angles accurately request higher
+resolution in only the specific coordinate axes required.</p>
+<h4 id="3-integration-with-vulkan-sparse-resources">3. Integration with
+Vulkan Sparse Resources</h4>
+<p>Vulkan provides native support for partially resident textures
+through sparse binding (<code>VK_BUFFER_CREATE_SPARSE_BINDING_BIT</code>
+and sparse image features). Footprint querying maps directly to these
+sparse tiles:</p>
+<ul>
+<li>The streaming engine reads the GPU feedback buffer.</li>
+<li>The engine identifies missing pages (tiles that are needed but not
+currently resident in VRAM).</li>
+<li>Background I/O threads load the requested compressed tiles from disk
+or system memory.</li>
+<li>Vulkan updates the sparse memory bindings on the image without
+reallocating or rebinding the entire texture.</li>
+</ul>
+<h4 id="4-bandwidth-and-memory-conservation">4. Bandwidth and Memory
+Conservation</h4>
+<p>By using footprint queries, the GPU only requests the exact tiles
+that contribute to final pixels. Surfaces that are occluded, face away
+from the camera, or are clamped due to distance do not trigger memory
+requests. This drastically cuts peak VRAM consumption, reduces PCIe
+transfer overhead, and prevents the frame drops associated with
+streaming unneeded high-resolution asset data.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

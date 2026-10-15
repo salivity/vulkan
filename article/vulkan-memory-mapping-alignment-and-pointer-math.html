@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Memory Mapping Alignment and Pointer Math - vulkan</title>
+    <meta name="description" content="In Vulkan, writing a custom memory manager requires managing device allocations and translating those allocations into usable CPU pointers for host-visible memory. A critical constraint in this process is minMemoryMapAlignment, a physical device limit tha">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-memory-mapping-alignment-and-pointer-math">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Memory Mapping Alignment and Pointer Math - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-memory-mapping-alignment-and-pointer-math" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Vulkan, writing a custom memory manager requires managing device allocations and translating those allocations into usable CPU pointers for host-visible memory. A critical constraint in this process is minMemoryMapAlignment, a physical device limit tha" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-memory-mapping-alignment-and-pointer-math">Vulkan Memory
+Mapping Alignment and Pointer Math</h1>
+<p>In Vulkan, writing a custom memory manager requires managing device
+allocations and translating those allocations into usable CPU pointers
+for host-visible memory. A critical constraint in this process is
+<code>minMemoryMapAlignment</code>, a physical device limit that governs
+the valid starting offsets when calling <code>vkMapMemory</code>.
+Failing to account for this alignment constraint can lead to undefined
+behavior, runtime validation errors, or corrupted pointer arithmetic.
+This article explains how memory mapping offset alignment affects host
+pointer calculations, details the differences between persistent and
+dynamic mapping, and demonstrates the correct pointer math required to
+safely suballocate host-visible device memory.</p>
+<h3 id="the-alignment-constraint-minmemorymapalignment">The Alignment
+Constraint: <code>minMemoryMapAlignment</code></h3>
+<p>When allocating memory using <code>vkAllocateMemory</code>, the
+driver returns a large block of <code>VkDeviceMemory</code>. To write
+data from the host (CPU), the application maps this memory using
+<code>vkMapMemory</code>. The Vulkan specification mandates that the
+<code>offset</code> parameter passed to <code>vkMapMemory</code> must be
+an integer multiple of
+<code>VkPhysicalDeviceLimits::minMemoryMapAlignment</code> (typically 64
+bytes on modern hardware).</p>
+<p>Custom allocators rarely allocate a distinct
+<code>VkDeviceMemory</code> handle for every resource. Instead, they
+allocate large slabs (e.g., 64 MiB or 256 MiB) and suballocate smaller
+segments for individual buffers and images. If a custom allocator
+attempts to dynamically map only the specific range assigned to a
+suballocation, the suballocation's offset within the
+<code>VkDeviceMemory</code> slab may not satisfy
+<code>minMemoryMapAlignment</code>.</p>
+<h3 id="dynamic-mapping-vs-persistent-mapping">Dynamic Mapping vs.
+Persistent Mapping</h3>
+<p>The impact of <code>minMemoryMapAlignment</code> on pointer
+arithmetic depends directly on your memory mapping architecture:</p>
+<h4 id="1-dynamic-mapping-per-allocation-mapping">1. Dynamic Mapping
+(Per-Allocation Mapping)</h4>
+<p>If you map and unmap memory on demand, you must align the mapping
+boundaries explicitly:</p>
+<ul>
+<li><p><strong>Rounded Down Offset:</strong> If a suballocation begins
+at byte offset <code>A</code>, and <code>A</code> is not a multiple of
+<code>minMemoryMapAlignment</code>, <code>vkMapMemory</code> cannot be
+called with offset <code>A</code>. You must round <code>A</code> down to
+the nearest multiple: <span class="math display">\[\text{Aligned Offset}
+= A - (A \bmod \text{minMemoryMapAlignment})\]</span></p></li>
+<li><p><strong>Adjusted Size:</strong> The mapping size must be
+increased by the difference between <code>A</code> and the aligned
+offset so that the requested range is fully covered.</p></li>
+<li><p><strong>Pointer Correction:</strong> <code>vkMapMemory</code>
+returns a host pointer (<code>void* pData</code>) corresponding to the
+aligned offset. To reach the actual suballocation data, you must apply
+an adjustment:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">uint8_t</span><span class="op">*</span> mappedBase <span class="op">=</span> <span class="op">(</span><span class="dt">uint8_t</span><span class="op">*)</span>pData<span class="op">;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="dt">size_t</span> offsetAdjustment <span class="op">=</span> allocationOffset <span class="op">-</span> alignedOffset<span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span><span class="op">*</span> suballocationHostPtr <span class="op">=</span> mappedBase <span class="op">+</span> offsetAdjustment<span class="op">;</span></span></code></pre></div></li>
+</ul>
+<h4 id="2-persistent-mapping-recommended-approach">2. Persistent Mapping
+(Recommended Approach)</h4>
+<p>To avoid continuous pointer adjustment and mapping overhead, the
+industry standard is persistent mapping. When a host-visible
+<code>VkDeviceMemory</code> slab is allocated, map the entire slab once
+from offset <code>0</code> to <code>VK_WHOLE_SIZE</code> (or the slab's
+total capacity).</p>
+<p>Since offset <code>0</code> is always a valid multiple of
+<code>minMemoryMapAlignment</code>, this completely bypasses runtime
+alignment checks for <code>vkMapMemory</code>. The pointer math
+simplifies to standard relative offsetting:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="dt">uint8_t</span><span class="op">*</span> persistentBase <span class="op">=</span> <span class="op">(</span><span class="dt">uint8_t</span><span class="op">*)</span>pMappedData<span class="op">;</span> <span class="co">// mapped with offset = 0</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span><span class="op">*</span> suballocationHostPtr <span class="op">=</span> persistentBase <span class="op">+</span> suballocationOffset<span class="op">;</span></span></code></pre></div>
+<h3 id="resource-alignment-vs-mapping-alignment">Resource Alignment vs.
+Mapping Alignment</h3>
+<p>Even with persistent mapping, pointer math interacts with other
+alignment limits. Different Vulkan resources have independent alignment
+requirements:</p>
+<ul>
+<li><strong>Buffer Resource Requirements:</strong>
+<code>VkMemoryRequirements::alignment</code> dictates the offset
+alignment inside the <code>VkDeviceMemory</code> block.</li>
+<li><strong>Descriptor Usage Constraints:</strong> Uniform buffers must
+align to <code>minUniformBufferOffsetAlignment</code>, and storage
+buffers must align to <code>minStorageBufferOffsetAlignment</code>.</li>
+</ul>
+<p>When performing pointer arithmetic on the host side, your allocator
+must ensure that the GPU offset (<code>allocationOffset</code>)
+satisfies both the resource's Vulkan requirements and, if using dynamic
+mapping, the map alignment. A common design is to enforce that all
+suballocations within host-visible slabs are aligned to the least common
+multiple (or maximum) of <code>minMemoryMapAlignment</code> and the
+respective resource alignment. This unifies host-side and device-side
+offsets, ensuring that <code>allocationOffset</code> is naturally valid
+for host mapping operations.</p>
+<h3 id="non-coherent-memory-and-atom-alignment">Non-Coherent Memory and
+Atom Alignment</h3>
+<p>If the allocated memory type is host-visible but lacks the
+<code>VK_MEMORY_PROPERTY_HOST_COHERENT_BIT</code> property, host writes
+must be flushed using <code>vkFlushMappedMemoryRanges</code>, and host
+reads must be preceded by
+<code>vkInvalidateMappedMemoryRanges</code>.</p>
+<p>Both operations require that the <code>offset</code> in
+<code>VkMappedMemoryRange</code> be a multiple of
+<code>VkPhysicalDeviceLimits::nonCoherentAtomSize</code>, and the
+<code>size</code> must either be a multiple of
+<code>nonCoherentAtomSize</code> or extend to the very end of the memory
+block.</p>
+<p>When calculating the flush range for a suballocation:</p>
+<ol type="1">
+<li>Round down the flush start: <span class="math display">\[\text{Flush
+Offset} = A - (A \bmod \text{nonCoherentAtomSize})\]</span></li>
+<li>Round up the flush end: <span class="math display">\[\text{Flush
+End} = \lceil (A + \text{Size}) / \text{nonCoherentAtomSize} \rceil
+\times \text{nonCoherentAtomSize}\]</span></li>
+<li>Set the flush size to <span class="math inline">\(\text{Flush End} -
+\text{Flush Offset}\)</span>.</li>
+</ol>
+<p>If multiple suballocations share the same
+<code>nonCoherentAtomSize</code> cache line, an invalidation or flush
+from one suballocation can inadvertently overwrite or discard pending
+writes from an adjacent suballocation. Consequently, memory allocators
+must pad suballocations in non-coherent memory so that independent
+allocations do not share any atom boundary.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

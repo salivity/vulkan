@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Primitive Topologies in Vulkan Explained - vulkan</title>
+    <meta name="description" content="In Vulkan, primitive topology dictates how the Input Assembly (IA) stage reads a continuous stream of vertex and index data and assembles it into geometric shapes for rendering. Configured via the VkPipelineInputAssemblyStateCreateInfo structure using the">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/primitive-topologies-in-vulkan-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Primitive Topologies in Vulkan Explained - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/primitive-topologies-in-vulkan-explained" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Vulkan, primitive topology dictates how the Input Assembly (IA) stage reads a continuous stream of vertex and index data and assembles it into geometric shapes for rendering. Configured via the VkPipelineInputAssemblyStateCreateInfo structure using the" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="primitive-topologies-in-vulkan-explained">Primitive Topologies
+in Vulkan Explained</h1>
+<p>In Vulkan, primitive topology dictates how the Input Assembly (IA)
+stage reads a continuous stream of vertex and index data and assembles
+it into geometric shapes for rendering. Configured via the
+<code>VkPipelineInputAssemblyStateCreateInfo</code> structure using the
+<code>VkPrimitiveTopology</code> enum, topologies define the
+connectivity rules for vertices. This article breaks down how Vulkan
+processes points, lines, triangle variants, adjacency data, and
+tessellation patch lists, as well as the role of primitive restart.</p>
+<h2 id="point-topologies">Point Topologies</h2>
+<h3 id="point-list-vk_primitive_topology_point_list">Point List
+(<code>VK_PRIMITIVE_TOPOLOGY_POINT_LIST</code>)</h3>
+<p>In a point list, every individual vertex in the buffer represents a
+discrete point. If you provide <span class="math inline">\(N\)</span>
+vertices, the input assembler emits <span
+class="math inline">\(N\)</span> points. Point size must be defined in
+the vertex shader using the <code>gl_PointSize</code> built-in variable
+unless the pipeline has wide lines or specific point-size dynamic states
+disabled.</p>
+<h2 id="line-topologies">Line Topologies</h2>
+<p>Line primitives connect pairs of vertices to form segments.</p>
+<ul>
+<li><strong>Line List
+(<code>VK_PRIMITIVE_TOPOLOGY_LINE_LIST</code>):</strong> Vertices are
+processed in non-overlapping pairs. Vertices <span
+class="math inline">\((0, 1)\)</span> define the first line, <span
+class="math inline">\((2, 3)\)</span> define the second, and so on. An
+odd number of vertices results in the final incomplete pair being
+discarded.</li>
+<li><strong>Line Strip
+(<code>VK_PRIMITIVE_TOPOLOGY_LINE_STRIP</code>):</strong> Vertices form
+a continuous connected path. The first line spans <span
+class="math inline">\((0, 1)\)</span>, the second spans <span
+class="math inline">\((1, 2)\)</span>, the third <span
+class="math inline">\((2, 3)\)</span>, and each subsequent vertex adds
+another segment connected to the previous one.</li>
+</ul>
+<h2 id="triangle-topologies">Triangle Topologies</h2>
+<p>Triangles are the standard primitive for 3D meshes and define solid
+geometric surfaces.</p>
+<ul>
+<li><strong>Triangle List
+(<code>VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST</code>):</strong> Vertices
+are read in groups of three. Vertices <span class="math inline">\((0, 1,
+2)\)</span> form the first triangle, <span class="math inline">\((3, 4,
+5)\)</span> form the second, and so on. Incomplete groups of fewer than
+three vertices are dropped.</li>
+<li><strong>Triangle Strip
+(<code>VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP</code>):</strong> Vertices
+create an interconnected strip where each triangle shares two vertices
+with its predecessor. Triangle 0 is formed by <span
+class="math inline">\((0, 1, 2)\)</span>, triangle 1 by <span
+class="math inline">\((1, 2, 3)\)</span>, triangle 2 by <span
+class="math inline">\((2, 3, 4)\)</span>, etc. Vulkan automatically
+alternates the winding order internally for even-numbered triangles to
+ensure consistent front-face culling across the strip.</li>
+<li><strong>Triangle Fan
+(<code>VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN</code>):</strong> All
+triangles share the initial root vertex (vertex 0). Triangle 0 is <span
+class="math inline">\((0, 1, 2)\)</span>, triangle 1 is <span
+class="math inline">\((0, 2, 3)\)</span>, and triangle <span
+class="math inline">\(i\)</span> is <span class="math inline">\((0, i+1,
+i+2)\)</span>. This topology is rarely used in modern rendering
+pipelines due to memory bottlenecks at the shared vertex and poor
+post-transform cache behavior.</li>
+</ul>
+<h2 id="adjacency-topologies">Adjacency Topologies</h2>
+<p>Adjacency topologies provide neighborhood information to the Geometry
+Shader stage to assist with algorithms like silhouette detection, shadow
+volume generation, and edge-preserving subdivision.</p>
+<ul>
+<li><strong>Line List with Adjacency
+(<code>VK_PRIMITIVE_TOPOLOGY_LINE_LIST_WITH_ADJACENCY</code>):</strong>
+Requires four vertices per primitive. Vertices 1 and 2 define the
+visible segment, while vertices 0 and 3 provide adjacent neighbor
+points.</li>
+<li><strong>Line Strip with Adjacency
+(<code>VK_PRIMITIVE_TOPOLOGY_LINE_STRIP_WITH_ADJACENCY</code>):</strong>
+Consists of a connected path where internal segments share endpoints and
+neighbor data.</li>
+<li><strong>Triangle List with Adjacency
+(<code>VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST_WITH_ADJACENCY</code>):</strong>
+Requires six vertices per triangle. Vertices 0, 2, and 4 form the
+primary rendered triangle, while vertices 1, 3, and 5 represent the
+adjacent neighbor vertices sharing those edges.</li>
+<li><strong>Triangle Strip with Adjacency
+(<code>VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP_WITH_ADJACENCY</code>):</strong>
+A continuous strip where neighbor vertices are interleaved with primary
+vertices according to a structured winding layout.</li>
+</ul>
+<p>These adjacency primitives cannot be rendered directly by
+rasterization stages and require a Geometry Shader or Mesh Shader to
+unpack them into standard renderable primitives.</p>
+<h2 id="patch-lists-vk_primitive_topology_patch_list">Patch Lists
+(<code>VK_PRIMITIVE_TOPOLOGY_PATCH_LIST</code>)</h2>
+<p>Patch lists are used strictly when tessellation is enabled (requiring
+Tessellation Control and Tessellation Evaluation shaders).</p>
+<p>Unlike triangle or line topologies, a patch list does not imply any
+fixed geometric structure at the input assembler stage. Instead, a patch
+is an arbitrary collection of control points. The number of vertices per
+patch is configured using the <code>patchControlPointCount</code> member
+of <code>VkPipelineTessellationStateCreateInfo</code>, ranging from 1 to
+32 (subject to device limits defined by
+<code>maxTessellationPatchSize</code>).</p>
+<p>The Tessellation Control Shader receives the patch, defines
+tessellation factors, and the hardware tessellator generates standard
+triangles or quads according to your shader's algorithmic rules.</p>
+<h2 id="primitive-restart">Primitive Restart</h2>
+<p>When using indexed drawing commands (<code>vkCmdDrawIndexed</code> or
+<code>vkCmdDrawIndexedIndirect</code>) with strip-based topologies (such
+as <code>LINE_STRIP</code> or <code>TRIANGLE_STRIP</code>), you can
+break a strip and start a new one without issuing a separate draw
+call.</p>
+<p>By enabling <code>primitiveRestartEnable</code> in
+<code>VkPipelineInputAssemblyStateCreateInfo</code>, Vulkan reserves the
+maximum integer value of the index buffer format (<code>0xFFFF</code>
+for <code>VK_INDEX_TYPE_UINT16</code> or <code>0xFFFFFFFF</code> for
+<code>VK_INDEX_TYPE_UINT32</code>). Whenever the Input Assembler
+encounters this sentinel index value, it terminates the active strip and
+begins assembling the next primitive from the following index.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

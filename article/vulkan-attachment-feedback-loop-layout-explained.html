@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Attachment Feedback Loop Layout Explained - vulkan</title>
+    <meta name="description" content="This article provides an overview of the attachment feedback loop layout in Vulkan, detailing how it enables self-referential rendering where an image is both written to and read from simultaneously. You will learn the mechanics behind the VKEXTattachment">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-attachment-feedback-loop-layout-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Attachment Feedback Loop Layout Explained - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-attachment-feedback-loop-layout-explained" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article provides an overview of the attachment feedback loop layout in Vulkan, detailing how it enables self-referential rendering where an image is both written to and read from simultaneously. You will learn the mechanics behind the VKEXTattachment" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-attachment-feedback-loop-layout-explained">Vulkan
+Attachment Feedback Loop Layout Explained</h1>
+<p>This article provides an overview of the attachment feedback loop
+layout in Vulkan, detailing how it enables self-referential rendering
+where an image is both written to and read from simultaneously. You will
+learn the mechanics behind the
+<code>VK_EXT_attachment_feedback_loop_layout</code> extension, why
+traditional image layouts lead to undefined behavior in these scenarios,
+and the precise conditions under which this layout is required to
+prevent rendering artifacts and driver crashes.</p>
+<h2 id="what-is-a-feedback-loop-in-vulkan">What is a Feedback Loop in
+Vulkan?</h2>
+<p>In Vulkan, a feedback loop occurs when a single image subresource—or
+different subresources of the same image object—is used concurrently as
+both a framebuffer attachment (render target or depth/stencil buffer)
+and a read resource (such as a sampled texture, storage image, or input
+attachment) within the same render pass.</p>
+<p>Under the core Vulkan specification, this self-referential access is
+strictly forbidden without appropriate synchronization and layout
+transitions. Modern GPUs employ complex caching hierarchies, color
+compression algorithms, and tile-based memory architectures that assume
+render targets and sampled textures operate independently. Violating
+this separation without informing the driver leads to cache incoherency,
+data hazards, memory corruption, and broken hardware decompression
+states.</p>
+<h2 id="the-role-of-the-attachment-feedback-loop-layout">The Role of the
+Attachment Feedback Loop Layout</h2>
+<p>To handle valid self-referential patterns cleanly, Vulkan introduced
+the <code>VK_EXT_attachment_feedback_loop_layout</code> extension. This
+extension defines a dedicated layout:</p>
+<p><code>VK_IMAGE_LAYOUT_ATTACHMENT_FEEDBACK_LOOP_OPTIMAL_EXT</code></p>
+<p>This layout informs the GPU driver that an attachment might be
+sampled or accessed as a storage resource while concurrently bound as an
+active render or depth/stencil target. By specifying this layout, the
+driver configures cache lines, disables incompatible memory compression
+(such as DCC on AMD or framebuffer compression on NVIDIA/mobile GPUs),
+and inserts the necessary hardware workarounds to ensure reads and
+writes do not conflict at the hardware level.</p>
+<h2 id="when-is-the-layout-required">When is the Layout Required?</h2>
+<p>The attachment feedback loop layout is required whenever your
+rendering logic relies on overlapping or concurrent access to an image
+resource within the boundaries of a single render pass without an
+intervening barrier and layout transition. Specific use cases
+include:</p>
+<h3 id="1-reading-and-writing-different-regions-or-mip-levels">1.
+Reading and Writing Different Regions or Mip Levels</h3>
+<p>If you render to one mip level or array layer of an image while
+simultaneously sampling from another mip level or array layer of the
+same image, standard layouts such as
+<code>VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL</code> or
+<code>VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL</code> are illegal if
+applied across the whole image. The feedback loop layout allows the
+driver to accommodate concurrent reads and writes across different
+subresources of the same parent image memory allocation.</p>
+<h3 id="2-emulated-programmable-blending">2. Emulated Programmable
+Blending</h3>
+<p>Some rendering algorithms implement custom blending by fetching the
+current value of a pixel directly in the fragment shader via a sampled
+texture, modifying it, and writing it back out via the color attachment.
+Without hardware-native subpass inputs or native programmable blending
+extensions, this creates an active feedback loop on the exact same
+subresource. Setting the image to the feedback loop layout allows this
+pattern to function without triggering validation layer errors or
+hardware faults.</p>
+<h3 id="3-in-pass-texture-updates">3. In-Pass Texture Updates</h3>
+<p>If an algorithm reads from a texture to calculate procedural values
+and writes back into the same texture memory within the same drawing
+phase—common in painting tools, fluid dynamic solvers, or cellular
+automata—the feedback loop layout is mandatory to guarantee cache
+validity across draw calls.</p>
+<h2 id="how-to-enable-and-use-it">How to Enable and Use It</h2>
+<p>To utilize this layout properly, you must configure several pipeline
+and attachment settings:</p>
+<ol type="1">
+<li><strong>Enable the Extension and Feature:</strong> Enable the
+<code>VK_EXT_attachment_feedback_loop_layout</code> device extension and
+set the <code>attachmentFeedbackLoopLayout</code> feature to
+<code>VK_TRUE</code> during logical device creation.</li>
+<li><strong>Set Image Usage Flags:</strong> The image must be created
+with both <code>VK_IMAGE_USAGE_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT</code>
+alongside its standard flags (such as
+<code>VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT</code> and
+<code>VK_IMAGE_USAGE_SAMPLED_BIT</code>).</li>
+<li><strong>Configure Pipeline Flags:</strong> Pipelines that render
+into feedback loops must include
+<code>VK_PIPELINE_CREATE_COLOR_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT</code>
+or
+<code>VK_PIPELINE_CREATE_DEPTH_STENCIL_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT</code>
+in the <code>flags</code> field of
+<code>VkGraphicsPipelineCreateInfo</code>.</li>
+<li><strong>Transition Layout:</strong> Transition the image to
+<code>VK_IMAGE_LAYOUT_ATTACHMENT_FEEDBACK_LOOP_OPTIMAL_EXT</code> prior
+to executing the render pass that reads and writes the resource.</li>
+</ol></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

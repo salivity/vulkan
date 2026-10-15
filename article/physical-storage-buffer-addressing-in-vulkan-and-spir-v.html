@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Physical Storage Buffer Addressing in Vulkan and SPIR-V - vulkan</title>
+    <meta name="description" content="Physical storage buffer addressing bridges the gap between traditional GPU descriptor-based resource management and raw, C-style 64-bit pointer dereferencing. By combining the Vulkan API&#39;s device address features with SPIR-V’s physical addressing model, d">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/physical-storage-buffer-addressing-in-vulkan-and-spir-v">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Physical Storage Buffer Addressing in Vulkan and SPIR-V - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/physical-storage-buffer-addressing-in-vulkan-and-spir-v" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Physical storage buffer addressing bridges the gap between traditional GPU descriptor-based resource management and raw, C-style 64-bit pointer dereferencing. By combining the Vulkan API&#39;s device address features with SPIR-V’s physical addressing model, d" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="physical-storage-buffer-addressing-in-vulkan-and-spir-v">Physical
+Storage Buffer Addressing in Vulkan and SPIR-V</h1>
+<p>Physical storage buffer addressing bridges the gap between
+traditional GPU descriptor-based resource management and raw, C-style
+64-bit pointer dereferencing. By combining the Vulkan API's device
+address features with SPIR-V’s physical addressing model, developers can
+manipulate memory addresses directly in shaders. This article explains
+how this mechanism operates, detailing the Vulkan setup, the
+corresponding SPIR-V representation, and how the two layers interact to
+enable complex data structures on modern GPUs.</p>
+<h3 id="the-problem-with-traditional-descriptor-sets">The Problem with
+Traditional Descriptor Sets</h3>
+<p>In standard Vulkan execution, shaders access buffer data via
+descriptor sets (<code>VkDescriptorSet</code>). The CPU updates
+descriptor sets, binds them in pipelines, and shaders index them using
+explicit binding decorations
+(<code>layout(set = X, binding = Y)</code>). While robust, this approach
+creates bottlenecks when building complex, pointer-heavy GPU data
+structures such as bounding volume hierarchies (BVH), scene graphs, and
+linked lists. Updating descriptor sets introduces CPU overhead, and
+indirect indexing is limited by descriptor indexing capabilities and
+hardware limits.</p>
+<h3 id="the-vulkan-side-buffer-device-address">The Vulkan Side: Buffer
+Device Address</h3>
+<p>Physical storage buffer addressing resolves these bottlenecks through
+the <code>VK_KHR_buffer_device_address</code> extension, which was
+promoted to core in Vulkan 1.2.</p>
+<ol type="1">
+<li><p><strong>Feature Activation:</strong> The application must query
+and enable the <code>bufferDeviceAddress</code> feature in
+<code>VkPhysicalDeviceBufferDeviceAddressFeatures</code>.</p></li>
+<li><p><strong>Buffer Creation:</strong> Any buffer intended for
+pointer-based access must include the
+<code>VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT</code> flag in its
+<code>VkBufferCreateInfo</code>.</p></li>
+<li><p><strong>Retrieving the Address:</strong> Instead of constructing
+descriptor writes, the host queries the 64-bit integer address directly
+using <code>vkGetBufferDeviceAddress()</code>:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>VkBufferDeviceAddressInfo addressInfo <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span>sType <span class="op">=</span> VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO<span class="op">,</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span>buffer <span class="op">=</span> myBuffer</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>VkDeviceAddress gpuAddress <span class="op">=</span> vkGetBufferDeviceAddress<span class="op">(</span>device<span class="op">,</span> <span class="op">&amp;</span>addressInfo<span class="op">);</span></span></code></pre></div></li>
+<li><p><strong>Passing Addresses to Shaders:</strong> The retrieved
+<code>VkDeviceAddress</code> is simply a 64-bit unsigned integer
+(<code>uint64_t</code>). It can be passed to the GPU using push
+constants, stored within uniform buffers, or embedded inside another
+storage buffer as a pointer to secondary data.</p></li>
+</ol>
+<h3 id="the-spir-v-side-physical-storage-buffer-model">The SPIR-V Side:
+Physical Storage Buffer Model</h3>
+<p>To consume raw 64-bit addresses, SPIR-V requires specific
+capabilities, addressing models, and storage classes.</p>
+<ul>
+<li><strong>Capability:</strong> The shader module declares
+<code>OpCapability PhysicalStorageBufferAddresses</code>.</li>
+<li><strong>Addressing Model:</strong> The SPIR-V module's
+<code>OpMemoryModel</code> must specify
+<code>PhysicalStorageBuffer64</code> instead of the standard
+<code>Logical</code> addressing model.</li>
+<li><strong>Storage Class:</strong> Pointers referencing raw device
+addresses use the <code>PhysicalStorageBuffer</code> storage class.</li>
+<li><strong>Alignment Constraints:</strong> Because hardware requires
+specific alignments for memory operations, types within this storage
+class must specify explicit memory alignments using the
+<code>Aligned</code> operand in <code>OpLoad</code> and
+<code>OpStore</code> instructions.</li>
+</ul>
+<p>In high-level shading languages like GLSL, this functionality is
+accessed via <code>GL_EXT_buffer_reference</code>. A buffer reference
+type compiles into an
+<code>OpTypePointer PhysicalStorageBuffer &lt;StructType&gt;</code> in
+SPIR-V, allowing developers to define nested structures where one buffer
+contains pointers to others.</p>
+<h3 id="interaction-and-execution-flow">Interaction and Execution
+Flow</h3>
+<p>When a shader executes an instruction targeting a physical storage
+buffer address, the interaction proceeds through several stages:</p>
+<ol type="1">
+<li><strong>Address Ingestion:</strong> The shader retrieves the 64-bit
+base address from a push constant or uniform register.</li>
+<li><strong>Pointer Casting:</strong> In SPIR-V, an
+<code>OpConvertUToPtr</code> instruction converts the raw 64-bit integer
+into a pointer of storage class <code>PhysicalStorageBuffer</code>.</li>
+<li><strong>Offsetting and Arithmetic:</strong> Shaders can perform
+pointer arithmetic using <code>OpAccessChain</code> or
+<code>OpInBoundsAccessChain</code>, calculating offsets based on struct
+layouts and array indices directly in GPU registers without descriptor
+lookups.</li>
+<li><strong>Direct Memory Access:</strong> Memory operations execute via
+standard <code>OpLoad</code> and <code>OpStore</code> operations on the
+dereferenced pointer. The GPU memory controller routes the request
+directly to the physical address.</li>
+</ol>
+<h3 id="synchronization-and-memory-considerations">Synchronization and
+Memory Considerations</h3>
+<p>Using physical storage buffer addressing shifts the responsibility of
+safety and synchronization entirely to the developer:</p>
+<ul>
+<li><strong>Pipeline Barriers:</strong> Because descriptors are
+bypassed, the Vulkan application cannot rely on descriptor-based
+tracking. Synchronization must be handled using pipeline barriers
+(<code>VkMemoryBarrier2</code> or <code>VkBufferMemoryBarrier2</code>)
+with <code>VK_PIPELINE_STAGE_ALL_COMMANDS_BIT</code> (or specific shader
+stages) and access masks like
+<code>VK_ACCESS_2_SHADER_STORAGE_READ_BIT</code> and
+<code>VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT</code>.</li>
+<li><strong>Bounds Checking:</strong> Physical addressing removes
+automatic API-level bounds checking. Accessing an unaligned or invalid
+device address results in undefined behavior, device loss
+(<code>VK_ERROR_DEVICE_LOST</code>), or memory corruption. The Vulkan
+validation layers provide GPU-assisted validation
+(<code>VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT</code>) to catch
+out-of-bounds pointer reads and writes during development.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

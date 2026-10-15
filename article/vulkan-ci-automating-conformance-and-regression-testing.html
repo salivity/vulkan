@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan CI: Automating Conformance and Regression Testing - vulkan</title>
+    <meta name="description" content="This article explores how Continuous Integration (CI) pipelines automate conformance and regression testing for applications built with the Vulkan graphics and compute API. It covers the core challenges of cross-vendor GPU testing, the integration of Vulk">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-ci-automating-conformance-and-regression-testing">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan CI: Automating Conformance and Regression Testing - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-ci-automating-conformance-and-regression-testing" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explores how Continuous Integration (CI) pipelines automate conformance and regression testing for applications built with the Vulkan graphics and compute API. It covers the core challenges of cross-vendor GPU testing, the integration of Vulk" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-ci-automating-conformance-and-regression-testing">Vulkan
+CI: Automating Conformance and Regression Testing</h1>
+<p>This article explores how Continuous Integration (CI) pipelines
+automate conformance and regression testing for applications built with
+the Vulkan graphics and compute API. It covers the core challenges of
+cross-vendor GPU testing, the integration of Vulkan Validation Layers
+and the Khronos Conformance Test Suite (CTS), visual regression testing
+methodologies, and how to configure runner infrastructure spanning
+software rasterizers to bare-metal hardware.</p>
+<hr />
+<h3 id="the-challenge-of-testing-vulkan-applications">The Challenge of
+Testing Vulkan Applications</h3>
+<p>Vulkan provides explicit, low-level control over the GPU, minimizing
+driver overhead and offering cross-platform support. However, this
+explicit design shifts the burden of synchronization, memory management,
+and state tracking directly to the developer. Because Vulkan runs on
+diverse hardware architectures—including AMD, NVIDIA, Intel, ARM, and
+Qualcomm—implementations can behave differently depending on the driver,
+platform, and operating system.</p>
+<p>Continuous Integration automates the verification process across
+these variables, ensuring that code changes do not break API
+specifications, degrade performance, or produce visual artifacts.</p>
+<h3 id="incorporating-vulkan-validation-layers-in-ci">Incorporating
+Vulkan Validation Layers in CI</h3>
+<p>The first line of defense in a Vulkan CI pipeline is the automated
+execution of Vulkan Validation Layers. During development, developers
+manually enable these layers, but CI ensures they run against every pull
+request:</p>
+<ol type="1">
+<li><strong>Standard Validation:</strong> Pipelines run the application
+or test suite with <code>VK_LAYER_KHRONOS_validation</code>
+enabled.</li>
+<li><strong>Crash-on-Error Configuration:</strong> Using custom
+<code>VkDebugUtilsMessengerCreateInfoEXT</code> callbacks or configuring
+the layer via <code>vk_layer_settings.txt</code>, the test runner treats
+any validation error or warning as a hard failure, returning a non-zero
+exit code.</li>
+<li><strong>Synchronization Validation:</strong> Advanced
+synchronization validation checks (such as detecting hazards like
+read-after-write conflicts) are enabled during nightly runs to catch
+complex multithreaded command buffer issues that standard unit tests
+miss.</li>
+</ol>
+<h3 id="automating-conformance-testing">Automating Conformance
+Testing</h3>
+<p>Vulkan conformance ensures an application or driver strictly follows
+the Khronos Group specifications without relying on undefined behavior
+or vendor-specific quirks.</p>
+<ul>
+<li><strong>Khronos Vulkan CTS:</strong> When building engine-level
+abstractions or custom drivers, pipelines integrate the open-source
+Vulkan Conformance Test Suite (VK-GL-CTS / <code>deqp</code>). The CI
+pipeline builds the CTS binaries and triggers test sets tailored to the
+Vulkan versions and extensions supported by the target project.</li>
+<li><strong>Feature and Extension Audits:</strong> Automated test
+harnesses run queries (e.g.,
+<code>vkEnumerateDeviceExtensionProperties</code> and
+<code>vkGetPhysicalDeviceFeatures2</code>) to verify that the
+application properly handles unsupported extensions or missing features
+with graceful fallbacks rather than crashing.</li>
+</ul>
+<h3 id="automating-functional-and-visual-regression-testing">Automating
+Functional and Visual Regression Testing</h3>
+<p>Vulkan applications rely heavily on visual output, making traditional
+unit tests insufficient on their own. CI pipelines implement automated
+functional and visual regression testing through:</p>
+<h4 id="1-deterministic-frame-capture">1. Deterministic Frame
+Capture</h4>
+<p>To eliminate non-determinism caused by variable delta times and
+dynamic input:</p>
+<ul>
+<li>The application is executed with a fixed-timestep loop and a fixed
+pseudo-random seed.</li>
+<li>Specific frames are rendered offscreen into a <code>VkBuffer</code>
+or exported via <code>VkImage</code> memory.</li>
+</ul>
+<h4 id="2-golden-image-comparison">2. Golden Image Comparison</h4>
+<ul>
+<li>The pipeline saves offscreen buffers as lossless images (e.g., PNG
+or raw binary).</li>
+<li>These outputs are compared against baseline "golden images" using
+perceptual image difference metrics (e.g., SSIM, FLIP, or pixel-delta
+thresholds) to account for minor floating-point variations between
+driver versions.</li>
+<li>Tests fail if the image difference exceeds an acceptable tolerance
+threshold.</li>
+</ul>
+<h4 id="3-headless-trace-replay">3. Headless Trace Replay</h4>
+<p>Pipelines can integrate tools like RenderDoc in headless mode. By
+recording Vulkan command stream replays, the CI system can replay
+captures headlessly, validating that shaders compile and render the
+expected geometry across different driver environments.</p>
+<h3 id="ci-runner-infrastructure-software-vs-hardware">CI Runner
+Infrastructure: Software vs. Hardware</h3>
+<p>Executing graphics-heavy tests in CI requires dedicated execution
+environments:</p>
+<h4 id="software-emulation-scalable-and-low-cost">Software Emulation
+(Scalable and Low-Cost)</h4>
+<p>For fast pull-request verification, CI systems often use
+software-based Vulkan implementations:</p>
+<ul>
+<li><strong>Lavapipe (Mesa):</strong> Translates Vulkan commands to CPU
+instructions via LLVMpipe.</li>
+<li><strong>SwiftShader (Google):</strong> A CPU-based implementation of
+the Vulkan specification.</li>
+</ul>
+<p><em>Advantages:</em> Can run in standard containerized environments
+(Docker, Kubernetes) and cloud VMs without physical GPUs.<br />
+<em>Disadvantages:</em> Incomplete feature sets for advanced hardware
+extensions, and significantly slower execution speeds.</p>
+<h4 id="bare-metal-hardware-runners-vendor-accurate">Bare-Metal Hardware
+Runners (Vendor-Accurate)</h4>
+<p>To test vendor-specific behavior, synchronization, and performance
+regressions:</p>
+<ul>
+<li>Self-hosted CI agents equipped with discrete and integrated GPUs
+(AMD, NVIDIA, Intel, Apple Silicon via MoltenVK).</li>
+<li>The pipeline schedules jobs targeting specific GPU labels.</li>
+<li>Test runners track frame times, pipeline compilation times, and GPU
+memory usage to flag performance regressions over time.</li>
+</ul>
+<h3 id="pipeline-execution-strategy">Pipeline Execution Strategy</h3>
+<p>An effective Vulkan CI workflow balances test speed and hardware
+coverage using a tiered approach:</p>
+<ol type="1">
+<li><strong>Commit Stage (Fast Feedback):</strong> Fast builds with
+Validation Layers enabled, run against a software rasterizer
+(Lavapipe/SwiftShader) to catch API misuses and syntax issues within
+minutes.</li>
+<li><strong>Integration Stage (Functional &amp; Visual Checks):</strong>
+Headless runs on real GPUs to execute short deterministically rendered
+sequences, comparing output images against reference images.</li>
+<li><strong>Nightly Stage (Conformance &amp; Stress):</strong> Deep test
+runs executing full Vulkan CTS subsets, heavy synchronization
+validation, memory-leak detection with tools like AddressSanitizer, and
+performance benchmarking across all supported hardware
+configurations.</li>
+</ol></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

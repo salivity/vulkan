@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Sharing Modes: Concurrent vs Exclusive - vulkan</title>
+    <meta name="description" content="In the Vulkan graphics and compute API, resource sharing modes define how buffers and images are accessed across different queue families. When creating a resource, developers must specify either VKSHARINGMODEEXCLUSIVE or VKSHARINGMODECONCURRENT. This art">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-sharing-modes-concurrent-vs-exclusive">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Sharing Modes: Concurrent vs Exclusive - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-sharing-modes-concurrent-vs-exclusive" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In the Vulkan graphics and compute API, resource sharing modes define how buffers and images are accessed across different queue families. When creating a resource, developers must specify either VKSHARINGMODEEXCLUSIVE or VKSHARINGMODECONCURRENT. This art" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-sharing-modes-concurrent-vs-exclusive">Vulkan Sharing
+Modes: Concurrent vs Exclusive</h1>
+<p>In the Vulkan graphics and compute API, resource sharing modes define
+how buffers and images are accessed across different queue families.
+When creating a resource, developers must specify either
+<code>VK_SHARING_MODE_EXCLUSIVE</code> or
+<code>VK_SHARING_MODE_CONCURRENT</code>. This article explains the
+fundamental differences between these two modes, their performance
+implications, and how they dictate the synchronization overhead required
+to pass data between multiple queue families.</p>
+<h3 id="queue-families-and-resource-ownership">Queue Families and
+Resource Ownership</h3>
+<p>Vulkan exposes different queue families for distinct types of
+workloads, such as graphics, compute, and transfer (copy) operations.
+When an application utilizes multiple queue families, it must handle how
+resources are referenced and modified across those queues. Vulkan
+handles this through explicit resource ownership, which is governed by
+the sharing mode selected at resource creation.</p>
+<h3 id="vk_sharing_mode_exclusive">VK_SHARING_MODE_EXCLUSIVE</h3>
+<p>In exclusive sharing mode, a resource is owned by exactly one queue
+family at any given time. This is the default and most widely used
+sharing mode in Vulkan.</p>
+<ul>
+<li><strong>Ownership Transfers:</strong> Before another queue family
+can access the resource, ownership must be explicitly transferred from
+the source queue family to the destination queue family. This transfer
+requires two pipeline barriers: a release barrier recorded in a command
+buffer submitted to the source queue, and an acquire barrier recorded in
+a command buffer submitted to the destination queue.</li>
+<li><strong>Performance:</strong> Exclusive mode provides the highest
+potential performance. Because the driver knows only one queue family
+will access the data at a time, it can apply aggressive memory
+optimizations, such as specialized cache compression techniques and
+vendor-specific layouts.</li>
+<li><strong>Synchronization Complexity:</strong> The developer is
+responsible for manually synchronizing and transferring ownership.
+Failing to properly release and acquire resources results in undefined
+behavior and validation layer errors.</li>
+</ul>
+<h3 id="vk_sharing_mode_concurrent">VK_SHARING_MODE_CONCURRENT</h3>
+<p>In concurrent sharing mode, a resource can be accessed by multiple
+queue families simultaneously or non-concurrently without transferring
+ownership between them.</p>
+<ul>
+<li><strong>Upfront Declaration:</strong> When creating a resource with
+concurrent mode, the developer must explicitly define the list of queue
+families that will access the resource by providing
+<code>queueFamilyIndexCount</code> and
+<code>pQueueFamilyIndices</code>.</li>
+<li><strong>No Ownership Transfers:</strong> Pipeline barriers to
+transfer ownership (release and acquire operations) are not needed. Any
+queue family specified in the creation array can read from or write to
+the resource, provided standard execution dependencies (such as
+semaphores or pipeline barriers) are satisfied.</li>
+<li><strong>Performance Overhead:</strong> Concurrent mode may reduce
+performance compared to exclusive mode. Drivers often have to disable
+certain hardware-level optimizations, such as compressed color or
+depth/stencil layouts, to ensure the resource remains intelligible to
+different types of queue hardware without reformatting.</li>
+<li><strong>Data Hazards:</strong> While ownership does not need to be
+transferred, developers must still prevent traditional read/write and
+write/write hazards between queues using semaphores or fences.</li>
+</ul>
+<h3 id="key-differences-summary">Key Differences Summary</h3>
+<ul>
+<li><strong>Ownership Requirement:</strong> Exclusive mode restricts
+access to one queue family until explicit transfer barriers are
+executed. Concurrent mode allows specified queue families to access the
+resource without ownership transfers.</li>
+<li><strong>Creation Requirements:</strong> Exclusive mode only requires
+the mode flag. Concurrent mode requires the mode flag plus an explicit
+array of all queue families that will access the resource.</li>
+<li><strong>Driver Optimization:</strong> Exclusive mode allows the GPU
+to utilize optimal layout and compression strategies. Concurrent mode
+may force the driver into a lower-performance, uncompressed, or generic
+layout to remain compatible across distinct queue architectures.</li>
+<li><strong>Standard Use Case:</strong> Exclusive mode is recommended
+for performance-critical resources and resources that are rarely shared.
+Concurrent mode is typically reserved for scenarios where frequent
+queue-crossing makes ownership transfers overly complex, or where
+resources (like staging buffers) already exist in linear, uncompressed
+formats.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

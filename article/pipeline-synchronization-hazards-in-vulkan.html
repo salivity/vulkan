@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pipeline Synchronization Hazards in Vulkan - vulkan</title>
+    <meta name="description" content="This article explains the underlying causes of pipeline synchronization hazards—specifically Read-After-Write (RAW), Write-After-Read (WAR), and Write-After-Write (WAW)—within the Vulkan graphics and compute API. Because Vulkan is an explicit API that pro">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/pipeline-synchronization-hazards-in-vulkan">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Pipeline Synchronization Hazards in Vulkan - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/pipeline-synchronization-hazards-in-vulkan" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains the underlying causes of pipeline synchronization hazards—specifically Read-After-Write (RAW), Write-After-Read (WAR), and Write-After-Write (WAW)—within the Vulkan graphics and compute API. Because Vulkan is an explicit API that pro" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="pipeline-synchronization-hazards-in-vulkan">Pipeline
+Synchronization Hazards in Vulkan</h1>
+<p>This article explains the underlying causes of pipeline
+synchronization hazards—specifically Read-After-Write (RAW),
+Write-After-Read (WAR), and Write-After-Write (WAW)—within the Vulkan
+graphics and compute API. Because Vulkan is an explicit API that
+provides minimal automatic driver intervention, the developer is
+directly responsible for managing execution order and memory access.
+Readers will learn how the GPU's asynchronous execution architecture,
+multiple pipeline stages, and decentralized memory caching systems
+inherently cause these hazards unless explicit synchronization
+mechanisms are employed.</p>
+<h3 id="the-explicit-synchronization-model">The Explicit Synchronization
+Model</h3>
+<p>In legacy APIs like OpenGL or Direct3D 11, graphics drivers invisibly
+track resource dependencies and inject memory flushes and execution
+stalls to ensure data integrity. Vulkan removes this overhead, operating
+on an explicit execution model.</p>
+<p>When commands are submitted to a Vulkan queue via command buffers,
+the GPU does not process them strictly sequentially from start to
+finish. Instead, commands are launched asynchronously. The GPU will
+overlap operations whenever hardware resources are available, unless the
+developer explicitly tells it to wait.</p>
+<h3 id="asynchronous-pipeline-stages">Asynchronous Pipeline Stages</h3>
+<p>The GPU pipeline is divided into multiple stages—such as transfer,
+vertex shading, fragment shading, and compute shading. Different stages
+run on distinct functional units within the hardware.</p>
+<p>Because these stages operate independently:</p>
+<ul>
+<li>An operation dispatched later in a command buffer may reach its
+execution stage before an earlier command finishes its work.</li>
+<li>Two separate dispatches or draw calls can execute their respective
+stages concurrently.</li>
+</ul>
+<p>Without explicit barriers, there is no guarantee of execution order
+between operations in different pipeline stages, even if they are
+submitted sequentially in the same command buffer.</p>
+<h3 id="gpu-memory-architectures-and-caching">GPU Memory Architectures
+and Caching</h3>
+<p>Execution order is only half of the problem; memory visibility is the
+other. Modern GPUs utilize hierarchical, non-coherent caches distributed
+across compute units, texture processing clusters, and memory
+controllers.</p>
+<p>When a pipeline stage writes data:</p>
+<ol type="1">
+<li>The data initially resides in a local cache (e.g., an L1 cache or
+write buffer) and is not instantly written back to shared memory or
+global L2 cache.</li>
+<li>Other pipeline stages reading from different hardware units
+reference their own local caches, which may hold stale data.</li>
+</ol>
+<p>In Vulkan, writing data does not automatically make it
+<em>available</em> (flushed from the writer's local cache), nor does
+reading data automatically make it <em>visible</em> (invalidating the
+reader's cache to pull fresh data).</p>
+<h3 id="how-hazards-occur">How Hazards Occur</h3>
+<p>The combination of out-of-order execution stages and non-coherent
+caches causes classic pipeline hazards:</p>
+<h4 id="1-read-after-write-raw-hazards">1. Read-After-Write (RAW)
+Hazards</h4>
+<p>A RAW hazard occurs when a command needs to read data written by an
+earlier command, but the read occurs before the write is complete, or
+before the written data is made visible.</p>
+<ul>
+<li><strong>Cause:</strong> A compute shader writes results to a storage
+buffer, and an immediately following draw call reads that buffer as a
+vertex buffer. If no synchronization is defined, the vertex fetch stage
+may run before the compute shader completes, reading incomplete data.
+Even if the compute shader finishes, the vertex hardware might read
+stale values if the compute unit's write cache was not flushed.</li>
+</ul>
+<h4 id="2-write-after-read-war-hazards">2. Write-After-Read (WAR)
+Hazards</h4>
+<p>A WAR hazard happens when an operation writes to a memory location
+before a previous operation has finished reading from it.</p>
+<ul>
+<li><strong>Cause:</strong> A fragment shader is currently sampling from
+a texture. A subsequent transfer command (such as
+<code>vkCmdCopyBufferToImage</code>) is submitted to update that same
+texture for a future frame. Because transfer operations can execute
+faster than heavy fragment workloads, the transfer might overwrite the
+texture memory while the fragment shader is still actively reading it,
+resulting in visual artifacts or tearing.</li>
+</ul>
+<h4 id="3-write-after-write-waw-hazards">3. Write-After-Write (WAW)
+Hazards</h4>
+<p>A WAW hazard occurs when two commands write to the same memory
+location, and the operations complete out of order.</p>
+<ul>
+<li><strong>Cause:</strong> Two consecutive compute dispatches write to
+the same storage image. If the second dispatch completes faster than the
+first, the first dispatch’s output will overwrite the second’s. The
+final state of the memory becomes non-deterministic.</li>
+</ul>
+<h3 id="preventing-hazards-in-vulkan">Preventing Hazards in Vulkan</h3>
+<p>To prevent these hazards, developers must coordinate both execution
+flow and memory domains using Vulkan's synchronization primitives:</p>
+<ul>
+<li><strong>Execution Dependencies:</strong> Specify which pipeline
+stages (<code>srcStageMask</code>) must complete before other stages
+(<code>dstStageMask</code>) are permitted to start. This prevents
+operations from overlapping in time.</li>
+<li><strong>Memory Dependencies:</strong> Specify access types
+(<code>srcAccessMask</code> and <code>dstAccessMask</code>) to govern
+cache behavior. A source access mask flushes written data to make it
+available to the GPU, while a destination access mask invalidates reader
+caches to ensure fresh data is fetched.</li>
+</ul>
+<p>These dependencies are deployed through pipeline barriers
+(<code>vkCmdPipelineBarrier</code>), subpass dependencies within render
+passes, or timeline semaphores across queues, providing the necessary
+boundaries that eliminate pipeline synchronization hazards.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

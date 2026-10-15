@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Why Vulkan Mipmapping Requires Blit Flags - vulkan</title>
+    <meta name="description" content="Generating mipmaps dynamically at runtime in Vulkan requires downsampling an image through a sequence of blit operations, typically executed with vkCmdBlitImage. Because this standard mipmap generation technique reads from a higher-resolution mip level an">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/why-vulkan-mipmapping-requires-blit-flags">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Why Vulkan Mipmapping Requires Blit Flags - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/why-vulkan-mipmapping-requires-blit-flags" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Generating mipmaps dynamically at runtime in Vulkan requires downsampling an image through a sequence of blit operations, typically executed with vkCmdBlitImage. Because this standard mipmap generation technique reads from a higher-resolution mip level an" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="why-vulkan-mipmapping-requires-blit-flags">Why Vulkan Mipmapping
+Requires Blit Flags</h1>
+<p>Generating mipmaps dynamically at runtime in Vulkan requires
+downsampling an image through a sequence of blit operations, typically
+executed with <code>vkCmdBlitImage</code>. Because this standard mipmap
+generation technique reads from a higher-resolution mip level and writes
+to the next lower-resolution level, the chosen image format must
+explicitly support both <code>VK_FORMAT_FEATURE_BLIT_SRC_BIT</code> and
+<code>VK_FORMAT_FEATURE_BLIT_DST_BIT</code>. Without these two
+capabilities supported by the physical device, attempting to use the
+blit command to downsample the texture will result in undefined behavior
+or validation layer errors.</p>
+<h2 id="the-role-of-vkcmdblitimage-in-mipmap-generation">The Role of
+vkCmdBlitImage in Mipmap Generation</h2>
+<p>Unlike APIs like OpenGL that offer built-in functions such as
+<code>glGenerateMipmap</code>, Vulkan gives low-level control and
+requires developers to implement their own mipmapping pipeline. The
+standard approach involves iteratively downsampling the base texture
+level-by-level until all mip levels are populated:</p>
+<ol type="1">
+<li>Level <span class="math inline">\(i\)</span> is transitioned to
+<code>VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL</code>.</li>
+<li>Level <span class="math inline">\(i+1\)</span> is transitioned to
+<code>VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL</code>.</li>
+<li><code>vkCmdBlitImage</code> copies and downsamples level <span
+class="math inline">\(i\)</span> to level <span
+class="math inline">\(i+1\)</span> using linear filtering.</li>
+<li>Level <span class="math inline">\(i\)</span> is transitioned to
+<code>VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL</code> for shader
+sampling.</li>
+<li>The process repeats with level <span
+class="math inline">\(i+1\)</span> becoming the new source for level
+<span class="math inline">\(i+2\)</span>.</li>
+</ol>
+<p>Because each mip level (except the first and last) acts as both a
+target for writing and a source for subsequent reading, the image format
+must satisfy the hardware requirements for both roles.</p>
+<h2 id="why-vk_format_feature_blit_src_bit-is-required">Why
+VK_FORMAT_FEATURE_BLIT_SRC_BIT Is Required</h2>
+<p>During downsampling, the source mip level must be read and filtered
+by the graphics hardware's fixed-function texture filtering units.</p>
+<p>When you specify <code>VK_FORMAT_FEATURE_BLIT_SRC_BIT</code>, you are
+verifying that the hardware can read this specific format as an input
+for a blit command. In addition, blitting generally requires
+<code>VK_FILTER_LINEAR</code> to perform a smooth downsampling step,
+which demands that the format can be sampled using linear interpolation
+during transfer operations. If this flag is missing, the GPU cannot
+safely sample or filter pixels from that format.</p>
+<h2 id="why-vk_format_feature_blit_dst_bit-is-required">Why
+VK_FORMAT_FEATURE_BLIT_DST_BIT Is Required</h2>
+<p>The blit destination represents the smaller target mip level that
+receives the filtered pixel data.</p>
+<p>The <code>VK_FORMAT_FEATURE_BLIT_DST_BIT</code> flag verifies that
+the GPU has the hardware capability to write interpolated pixel data
+directly into the specified image format. Not every format natively
+supports hardware-accelerated writes or conversions during a blit
+operation. Without destination blit support, the GPU cannot store the
+filtered output into the target mip slice.</p>
+<h2 id="checking-format-capabilities">Checking Format Capabilities</h2>
+<p>Before attempting to create an image intended for blit-based
+mipmapping, applications must query the physical device using
+<code>vkGetPhysicalDeviceFormatProperties</code>.</p>
+<p>The returned <code>VkFormatProperties</code> struct contains
+<code>optimalTilingFeatures</code>. The application must verify
+that:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="op">(</span>formatProperties<span class="op">.</span>optimalTilingFeatures <span class="op">&amp;</span> VK_FORMAT_FEATURE_BLIT_SRC_BIT<span class="op">)</span> <span class="op">&amp;&amp;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="op">(</span>formatProperties<span class="op">.</span>optimalTilingFeatures <span class="op">&amp;</span> VK_FORMAT_FEATURE_BLIT_DST_BIT<span class="op">)</span></span></code></pre></div>
+<p>If both flags are not present for the selected format under optimal
+tiling, <code>vkCmdBlitImage</code> cannot be used.</p>
+<h2 id="alternatives-when-blit-flags-are-not-supported">Alternatives
+When Blit Flags Are Not Supported</h2>
+<p>If a format lacks either <code>VK_FORMAT_FEATURE_BLIT_SRC_BIT</code>
+or <code>VK_FORMAT_FEATURE_BLIT_DST_BIT</code>, mipmaps must be
+generated through alternative pipelines:</p>
+<ul>
+<li><strong>Compute Shaders:</strong> Use a compute shader to manually
+sample level <span class="math inline">\(i\)</span> and write to level
+<span class="math inline">\(i+1\)</span> via storage images
+(<code>VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT</code>).</li>
+<li><strong>Graphics Render Passes:</strong> Render a fullscreen quad
+where each mip level is bound as a color attachment
+(<code>VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT</code>) and the preceding
+level is sampled as a standard texture.</li>
+<li><strong>Precomputed Mipmaps:</strong> Generate all mip levels
+offline during asset preparation and upload them directly into the image
+subresources, avoiding any runtime generation on the GPU.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

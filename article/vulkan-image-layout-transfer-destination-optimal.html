@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Image Layout Transfer Destination Optimal - vulkan</title>
+    <meta name="description" content="This article provides an overview of the VKIMAGELAYOUTTRANSFERDSTOPTIMAL layout in the Vulkan graphics API, detailing its purpose, internal mechanics, and mandatory use cases. You will learn how this specific layout optimizes memory access patterns for wr">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-image-layout-transfer-destination-optimal">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Image Layout Transfer Destination Optimal - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-image-layout-transfer-destination-optimal" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article provides an overview of the VKIMAGELAYOUTTRANSFERDSTOPTIMAL layout in the Vulkan graphics API, detailing its purpose, internal mechanics, and mandatory use cases. You will learn how this specific layout optimizes memory access patterns for wr" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-image-layout-transfer-destination-optimal">Vulkan Image
+Layout Transfer Destination Optimal</h1>
+<p>This article provides an overview of the
+<code>VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL</code> layout in the Vulkan
+graphics API, detailing its purpose, internal mechanics, and mandatory
+use cases. You will learn how this specific layout optimizes memory
+access patterns for write operations during data transfer commands, when
+it must be transitioned to, and how to execute the transition using
+pipeline barriers.</p>
+<h3 id="what-is-vk_image_layout_transfer_dst_optimal">What is
+VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL?</h3>
+<p>In Vulkan, image data in device memory can be arranged in several
+hardware-dependent memory layouts. Because GPUs handle data differently
+depending on whether an image is being sampled, rendered to, or
+transferred, Vulkan requires developers to explicitly specify how an
+image's underlying memory is laid out.</p>
+<p><code>VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL</code> is an image layout
+specifically designed to optimize memory for incoming write operations
+from transfer commands. In this layout, the GPU arranges image texels to
+maximize the bandwidth and throughput of direct data writes, bypassing
+caching mechanisms or arrangement overhead associated with shader
+sampling or color attachment operations.</p>
+<h3 id="when-must-it-be-applied">When Must It Be Applied?</h3>
+<p>An image subresource must be transitioned into
+<code>VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL</code> whenever it serves as
+the destination for transfer (copy) commands. The Vulkan specification
+strictly requires this layout (or the less performant
+<code>VK_IMAGE_LAYOUT_GENERAL</code>) for the target image in the
+following operations:</p>
+<ul>
+<li><strong>Buffer-to-Image Copies:</strong> When uploading texture data
+from a CPU-visible staging buffer to GPU-only device memory using
+<code>vkCmdCopyBufferToImage</code>.</li>
+<li><strong>Image-to-Image Copies:</strong> When duplicating pixel data
+from another image using <code>vkCmdCopyImage</code>, the receiving
+image must be in this layout.</li>
+<li><strong>Blit Operations:</strong> When an image receives scaled,
+converted, or filtered texels as the destination of a
+<code>vkCmdBlitImage</code> command.</li>
+<li><strong>Clear Commands:</strong> When clearing color or
+depth/stencil aspects of an image outside of a render pass via
+<code>vkCmdClearColorImage</code> or
+<code>vkCmdClearDepthStencilImage</code>.</li>
+<li><strong>Resolve Operations:</strong> When resolving a multisampled
+image into a single-sampled destination image using
+<code>vkCmdResolveImage</code>.</li>
+</ul>
+<p>Attempting to execute any of these commands on an image that is not
+in <code>VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL</code> (or
+<code>VK_IMAGE_LAYOUT_GENERAL</code>) violates the Vulkan specification
+and results in undefined behavior or validation layer errors.</p>
+<h3 id="transitioning-to-transfer-destination-optimal">Transitioning to
+Transfer Destination Optimal</h3>
+<p>To move an image into this layout, you must record a pipeline barrier
+using <code>vkCmdPipelineBarrier</code> (or
+<code>vkCmdPipelineBarrier2</code> in Vulkan 1.3) with an image memory
+barrier structure (<code>VkImageMemoryBarrier</code>).</p>
+<p>When performing this transition:</p>
+<ul>
+<li>Set <code>oldLayout</code> to the current layout (e.g.,
+<code>VK_IMAGE_LAYOUT_UNDEFINED</code> for newly created images).</li>
+<li>Set <code>newLayout</code> to
+<code>VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL</code>.</li>
+<li>Set <code>dstAccessMask</code> to
+<code>VK_ACCESS_TRANSFER_WRITE_BIT</code>.</li>
+<li>Set the destination pipeline stage mask to
+<code>VK_PIPELINE_STAGE_TRANSFER_BIT</code>.</li>
+</ul>
+<p>Once the transfer operation completes, the image is typically
+transitioned again—often into
+<code>VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL</code> for sampling
+inside a shader, or
+<code>VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL</code> for rendering.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

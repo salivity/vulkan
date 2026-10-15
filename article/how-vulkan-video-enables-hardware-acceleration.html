@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How Vulkan Video Enables Hardware Acceleration - vulkan</title>
+    <meta name="description" content="Vulkan Video extensions provide a cross-platform, low-overhead standard that integrates hardware-accelerated video decoding and encoding directly into the Vulkan API. By treating video operations as first-class GPU workloads alongside graphics and compute">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/how-vulkan-video-enables-hardware-acceleration">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How Vulkan Video Enables Hardware Acceleration - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/how-vulkan-video-enables-hardware-acceleration" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Vulkan Video extensions provide a cross-platform, low-overhead standard that integrates hardware-accelerated video decoding and encoding directly into the Vulkan API. By treating video operations as first-class GPU workloads alongside graphics and compute" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-vulkan-video-enables-hardware-acceleration">How Vulkan Video
+Enables Hardware Acceleration</h1>
+<p>Vulkan Video extensions provide a cross-platform, low-overhead
+standard that integrates hardware-accelerated video decoding and
+encoding directly into the Vulkan API. By treating video operations as
+first-class GPU workloads alongside graphics and compute tasks, these
+extensions allow applications to offload intensive compression and
+decompression routines directly to dedicated on-chip hardware blocks.
+This article breaks down the architecture of Vulkan Video, explains how
+it controls dedicated silicon, and highlights the performance benefits
+of a unified GPU memory pipeline.</p>
+<h2 id="the-architecture-of-vulkan-video">The Architecture of Vulkan
+Video</h2>
+<p>Historically, developers relied on vendor-specific or
+platform-dependent APIs—such as NVIDIA NVCODEC, Intel VA-API, or
+Microsoft DirectX Video Acceleration (DXVA)—to access dedicated hardware
+encoders and decoders. Vulkan Video standardizes this access under the
+Khronos Group umbrella through a modular extension model.</p>
+<p>The framework is built upon a core foundation:</p>
+<ul>
+<li><strong><code>VK_KHR_video_queue</code></strong>: Defines the shared
+structures, session objects, capabilities, and parameters required to
+interface with dedicated video processing queues on the GPU.</li>
+</ul>
+<p>Layered on top of this foundation are operational and codec-specific
+extensions:</p>
+<ul>
+<li><strong>Decoding Extensions</strong>:
+<code>VK_KHR_video_decode_queue</code> pairs with codec-specific
+extensions such as <code>VK_KHR_video_decode_h264</code>,
+<code>VK_KHR_video_decode_h265</code>, and
+<code>VK_KHR_video_decode_av1</code>.</li>
+<li><strong>Encoding Extensions</strong>:
+<code>VK_KHR_video_encode_queue</code> pairs with profiles such as
+<code>VK_KHR_video_encode_h264</code>,
+<code>VK_KHR_video_encode_h265</code>, and modern AV1 encoding
+profiles.</li>
+</ul>
+<h2 id="interfacing-with-dedicated-hardware-asics">Interfacing with
+Dedicated Hardware (ASICs)</h2>
+<p>Modern GPUs contain fixed-function Application-Specific Integrated
+Circuits (ASICs) engineered specifically for processing video
+bitstreams, such as AMD’s VCN, NVIDIA’s NVENC/NVDEC, and Intel’s Quick
+Sync Video.</p>
+<p>Vulkan Video targets these fixed-function blocks directly rather than
+using programmable compute shaders for processing:</p>
+<ol type="1">
+<li><strong>Queue Family Separation</strong>: Vulkan drivers expose
+distinct video decode and video encode queue families alongside
+traditional graphics and compute queues.</li>
+<li><strong>Command Buffer Recording</strong>: Video operations are
+recorded into standard Vulkan command buffers using dedicated entry
+points (such as <code>vkCmdDecodeVideoKHR</code> or
+<code>vkCmdEncodeVideoKHR</code>).</li>
+<li><strong>Execution Offloading</strong>: When command buffers are
+submitted to a video queue, the hardware’s scheduler routes the
+instructions directly to the independent fixed-function video engine,
+leaving compute and graphics cores free to handle other tasks
+simultaneously.</li>
+</ol>
+<h2 id="zero-copy-memory-pipelines">Zero-Copy Memory Pipelines</h2>
+<p>One of the most significant advantages of Vulkan Video is memory
+co-location. In traditional workflows, video frames are decoded via an
+external multimedia framework and then copied over PCIe or across
+host-allocated boundaries into graphics memory to be sampled as
+textures.</p>
+<p>Vulkan Video eliminates this overhead through a zero-copy
+architecture:</p>
+<ul>
+<li><strong>Direct Surface Referencing</strong>: The uncompressed video
+frames (Decoded Picture Buffer, or DPB) reside in native
+<code>VkImage</code> allocations.</li>
+<li><strong>Native Synchronization</strong>: Because video commands
+share the Vulkan memory and synchronization system, developers use
+standard Vulkan semaphores and barriers. A video stream can be decoded
+into a <code>VkImage</code> and immediately sampled in a graphics or
+compute pipeline (for UI rendering, shading, or machine learning
+inference) without transferring data between different APIs or GPU-host
+boundaries.</li>
+</ul>
+<h2 id="low-level-bitstream-parsing-and-control">Low-Level Bitstream
+Parsing and Control</h2>
+<p>Vulkan Video operates at an intermediate, low-level abstraction
+layer. It does not include high-level demuxers, container parsers (like
+MP4 or MKV splitters), or software bitstream decoders.</p>
+<p>Instead, the host CPU remains responsible for parsing the high-level
+container and extracting raw slice headers and sequence parameters. The
+application then feeds these parsed parameters and the compressed
+bitstream data into Vulkan Video structures. This gives developers
+granular, deterministic control over reference picture management,
+latency, memory budgeting, and frame scheduling—making it ideal for
+high-performance applications such as game streaming, video editing
+suites, and real-time communication tools.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

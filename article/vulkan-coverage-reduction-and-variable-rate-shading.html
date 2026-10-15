@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Coverage Reduction and Variable Rate Shading - vulkan</title>
+    <meta name="description" content="This article examines how coverage reduction modes interact with Variable Rate Shading (VRS) in the Vulkan API. It details the functional pipeline stages where these two features intersect, covering sample coverage evaluation, coarse fragment execution, d">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-coverage-reduction-and-variable-rate-shading">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Coverage Reduction and Variable Rate Shading - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-coverage-reduction-and-variable-rate-shading" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article examines how coverage reduction modes interact with Variable Rate Shading (VRS) in the Vulkan API. It details the functional pipeline stages where these two features intersect, covering sample coverage evaluation, coarse fragment execution, d" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-coverage-reduction-and-variable-rate-shading">Vulkan
+Coverage Reduction and Variable Rate Shading</h1>
+<p>This article examines how coverage reduction modes interact with
+Variable Rate Shading (VRS) in the Vulkan API. It details the functional
+pipeline stages where these two features intersect, covering sample
+coverage evaluation, coarse fragment execution, depth/stencil handling,
+and the resulting performance and fidelity trade-offs when combining
+sample-count reduction with coarse-rate shading.</p>
+<h3 id="core-concepts-in-vulkan">Core Concepts in Vulkan</h3>
+<p>Variable Rate Shading in Vulkan (standardized via
+<code>VK_KHR_fragment_shading_rate</code>) decouples the fragment shader
+execution frequency from the rasterization resolution. Instead of
+executing the fragment shader once per pixel or once per MSAA sample,
+VRS allows a single fragment shader invocation to process a region of
+pixels (such as 1x2, 2x1, 2x2, or 4x4) known as a coarse pixel.</p>
+<p>Coverage reduction modes (typically managed through
+<code>VK_NV_coverage_reduction_mode</code>) decouple the number of
+coverage samples from the number of stored color and depth/stencil
+samples. This allows the rasterizer to test geometry coverage at a high
+sample count while writing to a lower sample count surface, reducing
+memory bandwidth during multisample antialiasing (MSAA) workloads.</p>
+<h3 id="the-rasterization-pipeline-sequence">The Rasterization Pipeline
+Sequence</h3>
+<p>When coverage reduction and VRS operate simultaneously, the graphics
+pipeline executes specific stages in a defined order:</p>
+<ol type="1">
+<li><strong>Primitive Generation and Coverage Determination:</strong>
+The rasterizer tests the primitive against the pixel grid using the
+coverage sample count specified by the active coverage reduction
+mode.</li>
+<li><strong>Coarse Shading Rate Allocation:</strong> The shading rate
+for the primitive or screen tile is determined through pipeline state,
+primitive attributes, or a shading rate image.</li>
+<li><strong>Fragment Shader Invocation:</strong> A single fragment
+shader runs for the coarse pixel area.</li>
+<li><strong>Sample Write and Merging:</strong> The single output color
+from the fragment shader is broadcast and applied to all covered samples
+within that coarse footprint according to the coverage reduction
+rules.</li>
+</ol>
+<h3 id="interaction-mechanics">Interaction Mechanics</h3>
+<h4 id="1-coverage-mask-granularity">1. Coverage Mask Granularity</h4>
+<p>Coverage reduction alters how many sub-pixel points are evaluated for
+primitive containment. VRS does not reduce this coverage precision;
+coverage masks remain defined at the sample level. When a coarse
+fragment is evaluated (for instance, over a 2x2 pixel footprint), the
+rasterizer evaluates the high-frequency coverage mask for all pixels
+within that footprint. The coverage reduction mode determines how those
+individual sub-pixel coverage tests map to the reduced set of physical
+color and depth samples.</p>
+<h4 id="2-fragment-output-broadcasting">2. Fragment Output
+Broadcasting</h4>
+<p>The fragment shader executes once per coarse pixel, yielding one set
+of output data (color, user attributes). Vulkan then broadcasts this
+output to every sample that passed the coverage test within the coarse
+pixel's footprint. If the coverage reduction mode specifies fewer color
+targets than coverage samples, the color write only applies to the
+surviving color samples, but coverage tracking remains intact for
+antialiasing resolves.</p>
+<h4 id="3-centroid-and-sample-interpolation">3. Centroid and Sample
+Interpolation</h4>
+<p>VRS alters attribute interpolation. Standard pixel-center
+interpolation evaluates attributes at the center of the coarse pixel. If
+centroid interpolation is used alongside coverage reduction, the
+interpolation point must lie within the intersection of the primitive
+and the covered samples. Because coverage reduction can alter which
+sub-pixel locations correspond to actual storage samples, the centroid
+location is evaluated based on the active, reduced sample locations
+rather than the full coverage grid.</p>
+<h4 id="4-depth-and-stencil-testing">4. Depth and Stencil Testing</h4>
+<p>Coverage reduction directly governs the physical resolution of depth
+and stencil testing. When VRS is active, depth testing can still occur
+per sample to preserve geometric edge sharpness. The coverage reduction
+mode defines the actual number of depth comparisons performed. VRS does
+not coarsen the depth buffer resolution; it only coarsens the invocation
+frequency of the fragment shader. Consequently, depth-stencil operations
+retain the precision configured by the coverage reduction mode.</p>
+<h3 id="visual-quality-and-bandwidth-implications">Visual Quality and
+Bandwidth Implications</h3>
+<p>Combining coverage reduction with VRS targets two different
+bottlenecks simultaneously:</p>
+<ul>
+<li><strong>ALU Bound Stages:</strong> VRS reduces mathematical and
+texture sampling overhead by lowering fragment invocations over areas
+with low geometric or texture variation.</li>
+<li><strong>ROP and Bandwidth Bound Stages:</strong> Coverage reduction
+minimizes the bandwidth required to write and store multisample buffers
+without dropping back to standard single-sample rasterization.</li>
+</ul>
+<p>When combined properly, geometric edge definition remains high due to
+coverage testing, depth precision is preserved according to the coverage
+reduction specification, and shading complexity is scaled down where
+high-frequency color detail is unnecessary. Artifacts can occur if
+coarse shading rates are too large over complex, thin geometry where
+coverage reduction has already minimized the sample footprint,
+potentially leading to temporal shimmering or aliasing on high-contrast
+edges.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

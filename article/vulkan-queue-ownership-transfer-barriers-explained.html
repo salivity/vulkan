@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Queue Ownership Transfer Barriers Explained - vulkan</title>
+    <meta name="description" content="In Vulkan, transferring resource ownership between distinct queue families requires a two-step handshake: a release operation submitted to the source queue and a matching acquire operation submitted to the destination queue. This article explains why the">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-queue-ownership-transfer-barriers-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Queue Ownership Transfer Barriers Explained - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-queue-ownership-transfer-barriers-explained" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Vulkan, transferring resource ownership between distinct queue families requires a two-step handshake: a release operation submitted to the source queue and a matching acquire operation submitted to the destination queue. This article explains why the" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-queue-ownership-transfer-barriers-explained">Vulkan Queue
+Ownership Transfer Barriers Explained</h1>
+<p>In Vulkan, transferring resource ownership between distinct queue
+families requires a two-step handshake: a release operation submitted to
+the source queue and a matching acquire operation submitted to the
+destination queue. This article explains why the Vulkan specification
+mandates matching memory barriers across both queues, detailing how
+independent hardware schedulers, disjoint cache hierarchies, and memory
+availability and visibility operations necessitate this dual-barrier
+approach for resources utilizing exclusive sharing mode.</p>
+<h3 id="the-purpose-of-queue-family-ownership-transfers">The Purpose of
+Queue Family Ownership Transfers</h3>
+<p>When a <code>VkBuffer</code> or <code>VkImage</code> is created with
+<code>VK_SHARING_MODE_EXCLUSIVE</code>, it can only be accessed by one
+queue family at a time. This constraint allows Vulkan drivers to
+optimize resource layouts and cache access for the specific hardware
+engine executing the work. To safely pass access rights from a source
+queue family to a destination queue family, an explicit Queue Family
+Ownership Transfer (QFOT) must occur. This transfer requires two
+identical resource transition definitions: a release operation on the
+source queue and an acquire operation on the destination queue.</p>
+<h3 id="hardware-disjointness-and-independent-schedulers">Hardware
+Disjointness and Independent Schedulers</h3>
+<p>Vulkan queue families often map to physically distinct hardware
+execution units, such as a dedicated compute engine, a graphics pipe, or
+a DMA transfer engine. These independent engines:</p>
+<ul>
+<li>Operate under separate hardware scheduling mechanisms with no direct
+visibility into each other's execution streams.</li>
+<li>Possess separate local cache structures (such as independent L1
+caches or texture caches) that are not automatically kept coherent with
+one another.</li>
+</ul>
+<p>Because a command buffer is recorded and submitted to a specific
+queue family, a barrier recorded in that buffer can only dictate
+execution order and cache states on that specific hardware engine. A
+single barrier cannot simultaneously govern the cache flushing of one
+engine and the cache invalidation of another.</p>
+<h3 id="the-release-barrier-source-queue">The Release Barrier (Source
+Queue)</h3>
+<p>The release barrier is submitted to a queue in the source queue
+family. Its primary responsibilities are:</p>
+<ol type="1">
+<li><strong>Execution Synchronization:</strong> It ensures all preceding
+memory reads and writes directed at the resource on the source queue
+complete before the release is executed.</li>
+<li><strong>Memory Availability:</strong> It performs a cache flush,
+pushing modified data out of the source engine’s private caches (e.g.,
+L1 compute caches) and making it <em>available</em> to a common memory
+domain, such as shared L2 cache or system RAM.</li>
+<li><strong>Relinquishing Ownership:</strong> Setting the barrier's
+<code>srcQueueFamilyIndex</code> to the source and
+<code>dstQueueFamilyIndex</code> to the destination signals that the
+source queue family will no longer access this resource without a new
+transfer.</li>
+</ol>
+<h3 id="the-acquire-barrier-destination-queue">The Acquire Barrier
+(Destination Queue)</h3>
+<p>The acquire barrier is submitted to a queue in the destination queue
+family. Its responsibilities balance those of the release:</p>
+<ol type="1">
+<li><strong>Memory Visibility:</strong> It performs a cache invalidation
+on the destination engine's local caches, ensuring that any stale cached
+lines for that memory address are cleared so that the newly
+<em>available</em> memory from the release operation becomes
+<em>visible</em>.</li>
+<li><strong>Execution Synchronization:</strong> It stalls subsequent
+operations on the destination queue until the acquire operation
+finishes, preventing instructions from reading or writing data before it
+has been made fully coherent.</li>
+<li><strong>Accepting Ownership:</strong> It specifies matching
+<code>srcQueueFamilyIndex</code> and <code>dstQueueFamilyIndex</code>
+parameters, legally completing the transfer in the API state
+machine.</li>
+</ol>
+<h3 id="why-the-handshake-must-match">Why the Handshake Must Match</h3>
+<p>The Vulkan specification requires the parameters of both the release
+and acquire barriers (the resource handle, subresource range, and queue
+family indices) to match exactly. This matching pair acts as a
+contract:</p>
+<ul>
+<li><strong>Separation of Execution and Memory:</strong> A cross-queue
+execution dependency is established using a synchronization primitive
+like a <code>VkSemaphore</code>. However, the semaphore only guarantees
+<em>when</em> the destination queue starts relative to the source queue;
+it does not dictate <em>how</em> memory caches are synchronized.</li>
+<li><strong>Layout Transitions:</strong> For images, if a layout
+transition is specified (e.g., from
+<code>VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL</code> to
+<code>VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL</code>), the transition
+happens only once across the release/acquire pair. Vulkan mandates that
+the transition can occur in either the release barrier or the acquire
+barrier, or be identical across both, to avoid conflicting layout
+transformations on hardware that uses specialized data compression.</li>
+</ul>
+<p>Submitting only one of the two barriers results in undefined
+behavior. Omitting the release barrier leaves writes lingering in the
+source engine's caches, while omitting the acquire barrier causes the
+destination engine to read stale data or write to uninitialized memory
+domains. Both barriers are required to complete the memory lifecycle
+across disparate hardware engines.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

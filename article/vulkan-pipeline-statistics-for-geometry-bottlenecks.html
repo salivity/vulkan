@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Pipeline Statistics for Geometry Bottlenecks - vulkan</title>
+    <meta name="description" content="Vulkan pipeline statistics querying provides low-overhead, hardware-level metrics that track how primitives and vertices move through each programmable and fixed-function stage of the graphics pipeline. By capturing exact counts of vertex invocations, pri">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-pipeline-statistics-for-geometry-bottlenecks">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Pipeline Statistics for Geometry Bottlenecks - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-pipeline-statistics-for-geometry-bottlenecks" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Vulkan pipeline statistics querying provides low-overhead, hardware-level metrics that track how primitives and vertices move through each programmable and fixed-function stage of the graphics pipeline. By capturing exact counts of vertex invocations, pri" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-pipeline-statistics-for-geometry-bottlenecks">Vulkan
+Pipeline Statistics for Geometry Bottlenecks</h1>
+<p>Vulkan pipeline statistics querying provides low-overhead,
+hardware-level metrics that track how primitives and vertices move
+through each programmable and fixed-function stage of the graphics
+pipeline. By capturing exact counts of vertex invocations, primitive
+assembly, clipping behavior, and fragment generation, developers can
+evaluate the efficiency of their geometry pipeline. Comparing these
+metrics reveals severe geometry inefficiencies, such as excessive
+off-screen processing, micro-triangles, and inefficient shader
+amplification, allowing targeted optimizations.</p>
+<h3 id="understanding-pipeline-statistics-queries">Understanding
+Pipeline Statistics Queries</h3>
+<p>Vulkan exposes GPU counters directly via query pools configured with
+the <code>VK_QUERY_TYPE_PIPELINE_STATISTICS</code> type. When creating a
+query pool, the application specifies flags
+(<code>VkQueryPipelineStatisticFlags</code>) to determine which metrics
+the hardware records.</p>
+<p>To measure specific draw commands, the application sandwiches draw
+calls between <code>vkCmdBeginQuery</code> and
+<code>vkCmdEndQuery</code> within a command buffer. Once the GPU
+completes the work, results are retrieved on the CPU using
+<code>vkGetQueryPoolResults</code> or copied to a buffer on the GPU
+using <code>vkCmdCopyQueryPoolResults</code>.</p>
+<h3 id="key-metrics-for-geometry-analysis">Key Metrics for Geometry
+Analysis</h3>
+<p>Geometry bottlenecks occur when the GPU spends disproportionate time
+processing, transforming, and culling vertices rather than rasterizing
+visible pixels. Several specific query flags are essential for
+diagnosing these issues:</p>
+<ul>
+<li><strong><code>VK_QUERY_PIPELINE_STATISTIC_INPUT_ASSEMBLY_VERTICES_BIT</code></strong>:
+Tracks the total raw vertices consumed by the input assembler.</li>
+<li><strong><code>VK_QUERY_PIPELINE_STATISTIC_INPUT_ASSEMBLY_PRIMITIVES_BIT</code></strong>:
+Measures how many primitives (triangles, lines, points) were
+assembled.</li>
+<li><strong><code>VK_QUERY_PIPELINE_STATISTIC_VERTEX_SHADER_INVOCATIONS_BIT</code></strong>:
+Tracks vertex shader executions, which helps verify the efficiency of
+the post-transform cache.</li>
+<li><strong><code>VK_QUERY_PIPELINE_STATISTIC_CLIPPING_INVOCATIONS_BIT</code>
+and <code>..._CLIPPING_PRIMITIVES_BIT</code></strong>: Measures the
+geometry sent to the clipping stage and how many viable primitives
+survived clipping.</li>
+<li><strong><code>VK_QUERY_PIPELINE_STATISTIC_GEOMETRY_SHADER_INVOCATIONS_BIT</code>
+and <code>..._PRIMITIVES_BIT</code></strong>: Tracks invocation and
+amplification factors if geometry shaders are used.</li>
+<li><strong><code>VK_QUERY_PIPELINE_STATISTIC_FRAGMENT_SHADER_INVOCATIONS_BIT</code></strong>:
+Used in correlation with primitive metrics to determine primitive
+density.</li>
+</ul>
+<h3 id="diagnosing-specific-bottlenecks">Diagnosing Specific
+Bottlenecks</h3>
+<h4 id="1-inefficient-culling-high-clipping-discard">1. Inefficient
+Culling (High Clipping Discard)</h4>
+<p>A classic geometry bottleneck is feeding the GPU triangles that never
+contribute to the final image.</p>
+<p>By comparing
+<code>VK_QUERY_PIPELINE_STATISTIC_INPUT_ASSEMBLY_PRIMITIVES_BIT</code>
+to <code>VK_QUERY_PIPELINE_STATISTIC_CLIPPING_PRIMITIVES_BIT</code>, you
+obtain the survival rate of your primitives. If the input assembly
+counts are drastically higher than the primitives output by the clipper,
+the pipeline is wasting compute cycles transforming vertices outside the
+camera frustum or occluded by other geometry.</p>
+<p><strong>Remedy</strong>: Introduce coarse CPU-side bounding-box
+culling or a GPU compute-based culling pass (such as frustum and Hi-Z
+occlusion culling) before the draw calls.</p>
+<h4 id="2-sub-pixel--micro-triangle-overhead">2. Sub-Pixel /
+Micro-Triangle Overhead</h4>
+<p>Modern GPUs struggle when triangles are smaller than a single pixel
+or quad-fragment (2x2 pixels), as helper lanes in compute
+warps/wavefronts are underutilized.</p>
+<p>To identify this, compare
+<code>VK_QUERY_PIPELINE_STATISTIC_CLIPPING_PRIMITIVES_BIT</code> with
+<code>VK_QUERY_PIPELINE_STATISTIC_FRAGMENT_SHADER_INVOCATIONS_BIT</code>.
+If the ratio shows an extremely low number of fragment shader
+invocations per survived primitive, the scene suffers from
+micro-triangles.</p>
+<p><strong>Remedy</strong>: Implement a Level of Detail (LOD) system to
+swap in lower-polygon meshes at distance, or apply normal maps instead
+of modeling minute geometric details.</p>
+<h4 id="3-poor-post-transform-cache-utilization">3. Poor Post-Transform
+Cache Utilization</h4>
+<p>When using indexed drawing, the post-transform cache prevents
+re-executing vertex shaders for duplicate vertices shared across
+triangles.</p>
+<p>Comparing
+<code>VK_QUERY_PIPELINE_STATISTIC_INPUT_ASSEMBLY_VERTICES_BIT</code>
+with
+<code>VK_QUERY_PIPELINE_STATISTIC_VERTEX_SHADER_INVOCATIONS_BIT</code>
+reveals caching behavior. If the invocation count closely matches the
+assembly count on shared-vertex meshes, the index buffer order is
+suboptimal.</p>
+<p><strong>Remedy</strong>: Reorder index and vertex buffers using
+cache-optimizing algorithms (such as Tom Forsyth's algorithm or modern
+tools like <code>meshoptimizer</code>) to maximize vertex reuse.</p>
+<h4 id="4-geometry-shader-amplification-penalties">4. Geometry Shader
+Amplification Penalties</h4>
+<p>Geometry shaders that generate a high number of new primitives can
+quickly saturate memory bandwidth and pipeline throughput.</p>
+<p>Comparing
+<code>VK_QUERY_PIPELINE_STATISTIC_GEOMETRY_SHADER_INVOCATIONS_BIT</code>
+to
+<code>VK_QUERY_PIPELINE_STATISTIC_GEOMETRY_SHADER_PRIMITIVES_BIT</code>
+measures the amplification factor. An excessive output count can stall
+downstream rasterization stages.</p>
+<p><strong>Remedy</strong>: Offload complex amplification to
+tessellation shaders, compute shaders generating indirect draws, or mesh
+shaders (<code>VK_EXT_mesh_shader</code>), which offer greater control
+over on-chip memory.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

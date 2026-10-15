@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Compute Shader controlBarrier Explained - vulkan</title>
+    <meta name="description" content="In Vulkan compute shaders, controlBarrier() synchronizes the execution flow and memory operations of invocations within a specified scope. It acts as both a sequence synchronization point and a memory barrier, ensuring that all participating threads reach">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-compute-shader-control-barrier-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Compute Shader controlBarrier Explained - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-compute-shader-control-barrier-explained" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Vulkan compute shaders, controlBarrier() synchronizes the execution flow and memory operations of invocations within a specified scope. It acts as both a sequence synchronization point and a memory barrier, ensuring that all participating threads reach" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-compute-shader-controlbarrier-explained">Vulkan Compute
+Shader controlBarrier Explained</h1>
+<p>In Vulkan compute shaders, <code>controlBarrier()</code> synchronizes
+the execution flow and memory operations of invocations within a
+specified scope. It acts as both a sequence synchronization point and a
+memory barrier, ensuring that all participating threads reach the same
+instruction before any proceed, while simultaneously enforcing memory
+ordering and visibility for shared or global data across the workgroup
+or subgroup.</p>
+<h3 id="dual-role-of-controlbarrier">Dual Role of controlBarrier()</h3>
+<p>In the underlying SPIR-V intermediate representation targeted by
+Vulkan, <code>controlBarrier()</code> compiles directly to the
+<code>OpControlBarrier</code> instruction. This instruction executes two
+distinct synchronization functions at the hardware level:</p>
+<ol type="1">
+<li><strong>Execution Synchronization:</strong> Pauses invocations so
+that no thread in the defined execution scope proceeds past the barrier
+until every other thread in that scope has reached it.</li>
+<li><strong>Memory Synchronization:</strong> Flushes and invalidates
+memory caches according to specified memory semantics and scopes,
+guaranteeing that previous writes are made visible to subsequent
+reads.</li>
+</ol>
+<h3 id="execution-scope">Execution Scope</h3>
+<p>The execution scope dictates which set of shader invocations must
+wait for each other. In Vulkan compute pipelines, the execution scope is
+typically set to one of the following:</p>
+<ul>
+<li><strong>Workgroup Scope (<code>ScopeWorkgroup</code>):</strong> All
+invocations within the same local compute workgroup must arrive at the
+barrier before any can continue. This is the standard behavior for
+coordinating shared resources.</li>
+<li><strong>Subgroup Scope (<code>ScopeSubgroup</code>):</strong> Only
+invocations within the same hardware SIMD unit (subgroup/wavefront)
+synchronize. This is lighter on execution latency than a full workgroup
+sync.</li>
+</ul>
+<h3 id="memory-scope-and-semantics">Memory Scope and Semantics</h3>
+<p>Beyond controlling program execution flow,
+<code>controlBarrier()</code> ensures memory consistency across
+invocations. Without explicit memory semantics, modern GPU architectures
+may reorder reads and writes or leave data in local L1/register
+caches.</p>
+<p>When executing, the barrier takes three memory parameters:</p>
+<ul>
+<li><strong>Memory Scope:</strong> Defines the boundary of invocations
+that will observe the memory operations (e.g.,
+<code>ScopeWorkgroup</code>, <code>ScopeDevice</code>, or
+<code>ScopeQueueFamily</code>).</li>
+<li><strong>Memory Semantics:</strong> Specifies the ordering rules,
+typically using Acquire/Release semantics:
+<ul>
+<li><strong>Release:</strong> Ensures all memory stores made by the
+calling invocation before the barrier are made visible before the
+barrier completes.</li>
+<li><strong>Acquire:</strong> Ensures all memory loads made after the
+barrier observe values made visible prior to or at the barrier.</li>
+<li><strong>AcquireRelease:</strong> Combines both, creating a full
+bidirectional memory fence.</li>
+</ul></li>
+<li><strong>Storage Class Flags:</strong> Identifies which types of
+memory the barrier applies to, such as Workgroup Shared Memory
+(<code>WorkgroupMemory</code>), Storage Buffers
+(<code>UniformMemory</code> or <code>StorageBuffer</code>), or Storage
+Images (<code>ImageMemory</code>).</li>
+</ul>
+<h3 id="practical-execution-example">Practical Execution Example</h3>
+<p>Consider a parallel reduction in a compute shader where threads write
+partial sums to workgroup shared memory:</p>
+<ol type="1">
+<li>Invocations write their initial values into shared memory
+arrays.</li>
+<li><code>controlBarrier()</code> is called with a workgroup execution
+scope, workgroup memory scope, and AcquireRelease semantics.</li>
+<li>Fast-executing invocations stall at the barrier instruction.</li>
+<li>The GPU enforces that all pending writes to shared memory are
+committed and visible to all other invocations in the workgroup.</li>
+<li>Once the last invocation hits the barrier, all threads are released
+simultaneously to begin the reduction step, safely reading the
+initialized values without read-after-write hazards.</li>
+</ol>
+<h3 id="divergence-and-deadlocks">Divergence and Deadlocks</h3>
+<p>When <code>controlBarrier()</code> is executed, all invocations
+within the target execution scope must be capable of reaching it. If a
+barrier is placed inside divergent control flow—such as a dynamic
+<code>if</code> branch that only a subset of the workgroup executes—the
+shader enters an undefined state, typically resulting in a GPU hang or
+device loss error (<code>VK_ERROR_DEVICE_LOST</code>).</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

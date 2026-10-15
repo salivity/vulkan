@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Cull Mode and Front Face in Vulkan - vulkan</title>
+    <meta name="description" content="In Vulkan, rendering state is traditionally baked into immutable Pipeline State Objects (PSOs), which can lead to pipeline explosion when small rasterization changes are required. By utilizing dynamic states—specifically VKDYNAMICSTATECULLMODE and VKDYNAM">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/dynamic-cull-mode-and-front-face-in-vulkan">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Dynamic Cull Mode and Front Face in Vulkan - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/dynamic-cull-mode-and-front-face-in-vulkan" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Vulkan, rendering state is traditionally baked into immutable Pipeline State Objects (PSOs), which can lead to pipeline explosion when small rasterization changes are required. By utilizing dynamic states—specifically VKDYNAMICSTATECULLMODE and VKDYNAM" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamic-cull-mode-and-front-face-in-vulkan">Dynamic Cull Mode
+and Front Face in Vulkan</h1>
+<p>In Vulkan, rendering state is traditionally baked into immutable
+Pipeline State Objects (PSOs), which can lead to pipeline explosion when
+small rasterization changes are required. By utilizing dynamic
+states—specifically <code>VK_DYNAMIC_STATE_CULL_MODE</code> and
+<code>VK_DYNAMIC_STATE_FRONT_FACE</code> introduced via
+<code>VK_EXT_extended_dynamic_state</code> and promoted to Vulkan 1.3
+core—developers can modify geometry culling behavior and vertex winding
+order dynamically within a command buffer. This capability enables
+efficient bidirectional rendering adjustments, allowing applications to
+flip face orientation, toggle between front and back rendering, handle
+inverted projection matrices, and render dual-sided surfaces without
+swapping pipelines or incurring pipeline compilation overhead.</p>
+<h3 id="the-static-pipeline-bottleneck">The Static Pipeline
+Bottleneck</h3>
+<p>In baseline Vulkan 1.0, rasterization states such as polygon cull
+mode (<code>cullMode</code>) and front-facing orientation
+(<code>frontFace</code>) are static members of
+<code>VkPipelineRasterizationStateCreateInfo</code>. If a scene requires
+rendering both sides of an object separately—such as rendering back
+faces first for interior shading or depth sorting, followed by front
+faces—a developer would historically have to create and bind two
+distinct pipelines.</p>
+<p>Pipeline switching introduces overhead by interrupting batch
+execution, causing driver state validation, and expanding the
+application's PSO footprint.</p>
+<h3 id="enabling-dynamic-culling-and-winding-states">Enabling Dynamic
+Culling and Winding States</h3>
+<p>To bypass static compilation requirements, developers configure the
+<code>VkPipelineDynamicStateCreateInfo</code> structure to include:</p>
+<ul>
+<li><code>VK_DYNAMIC_STATE_CULL_MODE</code></li>
+<li><code>VK_DYNAMIC_STATE_FRONT_FACE</code></li>
+</ul>
+<p>When these flags are enabled during pipeline creation, the static
+values in <code>VkPipelineRasterizationStateCreateInfo</code> are
+ignored during draw calls. Instead, the rasterizer takes state
+parameters directly from command buffer execution using two
+commands:</p>
+<ul>
+<li><code>vkCmdSetCullMode(VkCommandBuffer commandBuffer, VkCullModeFlags cullMode)</code></li>
+<li><code>vkCmdSetFrontFace(VkCommandBuffer commandBuffer, VkFrontFace frontFace)</code></li>
+</ul>
+<h3 id="mechanisms-of-bidirectional-rendering-adjustments">Mechanisms of
+Bidirectional Rendering Adjustments</h3>
+<p>Bidirectional rendering adjustments refer to operations where
+rendering orientation must alternate or invert relative to the camera
+perspective. Dynamic culling and winding order support these adjustments
+across several key workflows:</p>
+<h4 id="1-inverted-projection-matrices-and-reflection-passes">1.
+Inverted Projection Matrices and Reflection Passes</h4>
+<p>Planar reflections (such as water surfaces or mirrors) invert one
+axis of the transformation matrix, reversing the apparent winding order
+of vertices from Counter-Clockwise (CCW) to Clockwise (CW). With static
+pipelines, inverted geometry requires an alternative pipeline to avoid
+being culled entirely.</p>
+<p>Using dynamic front-face control, an application can keep the same
+pipeline bound and simply flip the expected front face:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Standard rendering</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>vkCmdSetFrontFace<span class="op">(</span>commandBuffer<span class="op">,</span> VK_FRONT_FACE_COUNTER_CLOCKWISE<span class="op">);</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>vkCmdDrawIndexed<span class="op">(...);</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="co">// Reflection pass with an inverted matrix determinant</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>vkCmdSetFrontFace<span class="op">(</span>commandBuffer<span class="op">,</span> VK_FRONT_FACE_CLOCKWISE<span class="op">);</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>vkCmdDrawIndexed<span class="op">(...);</span></span></code></pre></div>
+<h4 id="2-two-pass-double-sided-rendering">2. Two-Pass Double-Sided
+Rendering</h4>
+<p>Complex, semi-transparent, or non-convex double-sided meshes (such as
+foliage, cloth, or glass) often require bidirectional depth passes to
+avoid self-sorting artifacts. The geometry's back faces must be drawn
+before the front faces:</p>
+<ol type="1">
+<li><strong>Back-Face Pass:</strong> Set dynamic culling to
+<code>VK_CULL_MODE_FRONT_BIT</code> to rasterize only the interior/back
+surfaces.</li>
+<li><strong>Front-Face Pass:</strong> Switch dynamic culling to
+<code>VK_CULL_MODE_BACK_BIT</code> using <code>vkCmdSetCullMode</code>
+to rasterize the exterior/front surfaces.</li>
+</ol>
+<p>Because the cull state changes inline, this operation avoids pipeline
+re-binding and preserves pipeline cache locality.</p>
+<h4 id="3-shadow-map-acne-prevention">3. Shadow Map Acne Prevention</h4>
+<p>Directional shadow mapping commonly uses front-face culling instead
+of back-face culling to eliminate shadow acne on solid, closed geometry.
+Dynamic cull mode lets an engine reuse the primary mesh depth-only
+pipeline by setting:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>vkCmdSetCullMode<span class="op">(</span>commandBuffer<span class="op">,</span> VK_CULL_MODE_FRONT_BIT<span class="op">);</span></span></code></pre></div>
+<p>This draws only back faces into the shadow depth buffer, preventing
+"Peter Panning" artifacts without generating specialized shadow
+pipelines for every mesh configuration.</p>
+<h3 id="architectural-and-performance-benefits">Architectural and
+Performance Benefits</h3>
+<p>Dynamic adjustment of cull mode and front face decouples geometry
+definition from rasterization logic. The primary benefits include:</p>
+<ul>
+<li><strong>Zero PSO Thrashing:</strong> Draw calls that change
+orientation can execute sequentially within the same render pass under a
+single bound pipeline.</li>
+<li><strong>Reduced Memory Footprint:</strong> Eliminates redundant
+permutations of graphics pipelines, reducing RAM/VRAM usage and compile
+times during application startup.</li>
+<li><strong>Simplified Engine Abstractions:</strong> High-level
+materials do not need separate pipeline variants to handle two-sided
+rendering, mirrored transforms, or negative-scale nodes in scene
+graphs.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

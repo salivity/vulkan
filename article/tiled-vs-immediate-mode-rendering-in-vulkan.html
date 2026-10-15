@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tiled vs Immediate Mode Rendering in Vulkan - vulkan</title>
+    <meta name="description" content="This article examines the architectural differences between Immediate Mode Rendering (IMR) and Tile-Based (Deferred) Rendering (TBR/TBDR) when executing commands via the Vulkan graphics API. It details how the physical hardware differences between desktop">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/tiled-vs-immediate-mode-rendering-in-vulkan">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Tiled vs Immediate Mode Rendering in Vulkan - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/tiled-vs-immediate-mode-rendering-in-vulkan" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article examines the architectural differences between Immediate Mode Rendering (IMR) and Tile-Based (Deferred) Rendering (TBR/TBDR) when executing commands via the Vulkan graphics API. It details how the physical hardware differences between desktop" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="tiled-vs-immediate-mode-rendering-in-vulkan">Tiled vs Immediate
+Mode Rendering in Vulkan</h1>
+<p>This article examines the architectural differences between Immediate
+Mode Rendering (IMR) and Tile-Based (Deferred) Rendering (TBR/TBDR) when
+executing commands via the Vulkan graphics API. It details how the
+physical hardware differences between desktop and mobile GPUs dictate
+memory bandwidth usage, explains the importance of Vulkan render passes
+and subpasses, and highlights best practices for optimizing pipeline
+efficiency across both paradigms.</p>
+<h3 id="understanding-the-hardware-architectures">Understanding the
+Hardware Architectures</h3>
+<p><strong>Immediate Mode Rendering (IMR)</strong> is the traditional
+architecture used by modern desktop GPUs (such as AMD and NVIDIA). In an
+IMR pipeline, draw calls are processed sequentially in real-time.
+Geometry is transformed, immediately rasterized, shaded, and written
+directly to the target framebuffers residing in high-bandwidth dedicated
+video memory (VRAM). Depth, stencil, and color tests occur per-primitive
+or per-fragment as the geometry flows through the pipeline.</p>
+<p><strong>Tile-Based Rendering (TBR and TBDR)</strong> is the dominant
+architecture in mobile and low-power hardware (such as ARM Mali,
+Qualcomm Adreno, Apple Silicon, and Imagination PowerVR). TBR divides
+the screen into small grids called tiles (typically 16x16 or 32x32
+pixels). The workload is executed in two primary phases:</p>
+<ol type="1">
+<li><strong>Binning/Tiling Pass:</strong> The GPU processes vertex data
+for the entire scene and determines which primitives intersect with
+which screen-space tiles, building a per-tile command list.</li>
+<li><strong>Rasterization/Render Pass:</strong> The GPU processes each
+tile individually. Pixel data, depth buffers, and color buffers are held
+in ultra-fast, on-chip tile memory (SRAM). Once processing for a tile is
+finished, the resolved pixels are written out to system memory
+(DRAM).</li>
+</ol>
+<p><em>Tile-Based Deferred Rendering (TBDR)</em> extends this by
+performing hidden surface removal (HSR) across all overlapping fragments
+within the tile memory <em>before</em> running fragment shaders,
+eliminating overdraw.</p>
+<h3 id="impact-on-vulkan-render-passes">Impact on Vulkan Render
+Passes</h3>
+<p>The Vulkan API was deliberately designed with explicit
+<code>VkRenderPass</code> and <code>VkSubpass</code> abstractions
+specifically to accommodate tiled architectures without penalizing
+immediate mode hardware.</p>
+<ul>
+<li><strong>Load and Store Operations:</strong> In IMR,
+<code>loadOp</code> and <code>storeOp</code> simply determine whether to
+clear or preserve VRAM contents. On TBR/TBDR hardware, setting
+<code>VK_ATTACHMENT_LOAD_OP_LOAD</code> forces the GPU to read the
+tile's contents from high-latency system memory into on-chip cache.
+Using <code>VK_ATTACHMENT_LOAD_OP_CLEAR</code> or
+<code>VK_ATTACHMENT_LOAD_OP_DONT_CARE</code> prevents this round-trip,
+keeping work localized to on-chip memory. Similarly,
+<code>VK_ATTACHMENT_STORE_OP_DONT_CARE</code> instructs tiled hardware
+to discard transient data (such as depth or stencil buffers) directly
+from on-chip memory without flushing it to DRAM.</li>
+<li><strong>Subpasses and Input Attachments:</strong> Vulkan subpasses
+allow sequential rendering operations within the same render pass. For
+TBR/TBDR, reading an attachment from a previous subpass via a subpass
+input allows the data to remain entirely in on-chip tile memory. On IMR
+GPUs, reading an attachment typically requires a traditional texture
+sample operation backed by the GPU's L1/L2 cache and VRAM.</li>
+</ul>
+<h3 id="memory-allocation-and-bandwidth">Memory Allocation and
+Bandwidth</h3>
+<p>The architectural divergence drastically influences memory
+consumption and memory bandwidth:</p>
+<ul>
+<li><strong>Transient Attachments:</strong> In deferred shading or
+multi-pass setups, intermediate attachments (such as G-buffers) are
+required. On tiled architectures, these images can be flagged with
+<code>VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT</code> and backed by
+<code>VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT</code>. This indicates
+that physical DRAM does not need to be allocated, as the data exists
+exclusively within the on-chip tile memory for the duration of the pass.
+On IMR GPUs, lazy allocations usually fall back to full VRAM
+allocations.</li>
+<li><strong>Memory Bandwidth:</strong> IMR hardware relies on wide
+memory buses and high-power VRAM (e.g., GDDR6, HBM) to sustain large
+volumes of reads and writes per fragment. TBR/TBDR hardware reduces
+external bandwidth requirements by up to 90%, making it far more
+power-efficient, though it introduces latency due to the prerequisite
+geometry binning phase.</li>
+</ul>
+<h3
+id="synchronization-and-compute-pipeline-interactions">Synchronization
+and Compute Pipeline Interactions</h3>
+<p>Because IMR operates as an immediate stream, transitioning between
+compute and graphics workloads typically incurs low pipeline latency,
+provided memory barriers are satisfied.</p>
+<p>On tiled hardware, interleaving compute dispatches that write to
+resources needed by a graphics pass requires the binning phase or the
+tile-rasterization phase to wait. Mid-frame compute operations can force
+a premature flush of on-chip tile memory to DRAM, effectively negating
+the power and performance advantages of the tiled architecture.
+Consequently, tiled renderers benefit significantly from grouping all
+compute workloads before or after complete render passes.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

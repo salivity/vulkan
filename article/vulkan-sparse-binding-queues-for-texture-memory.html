@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Sparse Binding Queues for Texture Memory - vulkan</title>
+    <meta name="description" content="In the Vulkan API, sparse binding queues enable fine-grained, asynchronous physical memory management for large texture assets, allowing applications to allocate massive virtual textures without committing physical VRAM upfront. This process works by subm">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-sparse-binding-queues-for-texture-memory">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Sparse Binding Queues for Texture Memory - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-sparse-binding-queues-for-texture-memory" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In the Vulkan API, sparse binding queues enable fine-grained, asynchronous physical memory management for large texture assets, allowing applications to allocate massive virtual textures without committing physical VRAM upfront. This process works by subm" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-sparse-binding-queues-for-texture-memory">Vulkan Sparse
+Binding Queues for Texture Memory</h1>
+<p>In the Vulkan API, sparse binding queues enable fine-grained,
+asynchronous physical memory management for large texture assets,
+allowing applications to allocate massive virtual textures without
+committing physical VRAM upfront. This process works by submitting
+binding updates to a queue that supports sparse operations, mapping
+discrete physical memory allocations (<code>VkDeviceMemory</code>) to
+specific sub-regions or tiles within a sparse image
+(<code>VkImage</code>). By decoupling virtual allocation from physical
+backing, Vulkan enables techniques like virtual texturing and on-demand
+streaming of high-resolution mip levels.</p>
+<h3 id="1-enabling-sparse-resources">1. Enabling Sparse Resources</h3>
+<p>To use sparse textures, the device must support sparse features (such
+as <code>sparseBinding</code> and <code>sparseResidencyImage2DD</code>).
+When creating the texture via <code>vkCreateImage</code>, specific flags
+must be set in <code>VkImageCreateInfo::flags</code>:</p>
+<ul>
+<li><code>VK_IMAGE_CREATE_SPARSE_BINDING_BIT</code>: Signals that the
+image's memory will be bound non-contiguously using sparse binding
+commands.</li>
+<li><code>VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT</code>: Allows only
+portions of the image to be backed by physical memory, leaving unmapped
+regions empty.</li>
+</ul>
+<h3 id="2-querying-sparse-tile-granularity">2. Querying Sparse Tile
+Granularity</h3>
+<p>Sparse images are divided into standard-sized blocks known as tiles.
+Before binding memory, the application must query the driver’s tile
+dimensions by calling <code>vkGetImageSparseMemoryRequirements</code>.
+This function returns one or more
+<code>VkSparseImageMemoryRequirements</code> structures that define:</p>
+<ul>
+<li><strong><code>formatProperties.imageGranularity</code></strong>: The
+dimensions (width, height, depth) of a single memory tile in
+texels.</li>
+<li><strong><code>imageMipTailFirstLod</code></strong>: The first mip
+level that is smaller than the tile size, which collectively shares a
+packed "mip tail."</li>
+<li><strong><code>imageMipTailSize</code> and
+<code>imageMipTailOffset</code></strong>: The memory requirements to
+bind the entire mip tail.</li>
+</ul>
+<h3 id="3-the-sparse-binding-queue">3. The Sparse Binding Queue</h3>
+<p>Sparse memory mappings modify page tables on the GPU. Instead of
+blocking the host via standard API calls, Vulkan executes these updates
+asynchronously on a command queue that includes the
+<code>VK_QUEUE_SPARSE_BINDING_BIT</code> flag.</p>
+<p>Any queue family advertising <code>VK_QUEUE_SPARSE_BINDING_BIT</code>
+can process memory commits. Dedicated transfer or compute queues often
+support this flag, permitting background memory updates without stalling
+the main graphics pipeline.</p>
+<h3 id="4-committing-memory-with-vkqueuebindsparse">4. Committing Memory
+with <code>vkQueueBindSparse</code></h3>
+<p>Memory page commitment occurs via the <code>vkQueueBindSparse</code>
+function, which submits a batch of <code>VkBindSparseInfo</code>
+structures directly to a sparse binding queue:</p>
+<ol type="1">
+<li><strong>Allocate Memory</strong>: Allocate
+<code>VkDeviceMemory</code> via <code>vkAllocateMemory</code> with
+proper alignment matching the sparse memory requirements.</li>
+<li><strong>Configure Bind Structures</strong>: Populate a
+<code>VkSparseImageMemoryBind</code> structure defining:
+<ul>
+<li><code>subresource</code>: Target mip level and array layer.</li>
+<li><code>offset</code>: The top-left texel coordinates of the region
+(aligned to <code>imageGranularity</code>).</li>
+<li><code>extent</code>: The dimensions of the region to back (aligned
+to <code>imageGranularity</code>, or clamped to image bounds).</li>
+<li><code>memory</code>: The <code>VkDeviceMemory</code> object
+providing the physical backing.</li>
+<li><code>memoryOffset</code>: The byte offset within the device memory
+block.</li>
+</ul></li>
+<li><strong>Handle Mip Tails</strong>: If binding levels at or below
+<code>imageMipTailFirstLod</code>, populate
+<code>VkSparseImageOpaqueMemoryBindInfo</code> to bind the packed tail
+as raw bytes rather than tile-aligned regions.</li>
+<li><strong>Queue Submission</strong>: Pass the bind info to
+<code>vkQueueBindSparse</code>.</li>
+</ol>
+<p>To unbind physical pages (for instance, when unloading mip levels to
+free VRAM), the same process is repeated with the <code>memory</code>
+handle set to <code>VK_NULL_HANDLE</code>.</p>
+<h3 id="5-synchronization">5. Synchronization</h3>
+<p>Because page table updates submitted through
+<code>vkQueueBindSparse</code> run asynchronously with respect to other
+queue submissions, synchronization is required. The
+<code>VkBindSparseInfo</code> structure supports signal and wait
+semaphores as well as an optional <code>VkFence</code>. Subsequent draw
+or compute commands that sample the sparse image must wait on the
+semaphore signaled by <code>vkQueueBindSparse</code> to prevent access
+to uncommitted or transitioning memory addresses.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

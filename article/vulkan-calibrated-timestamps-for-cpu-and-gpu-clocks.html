@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Calibrated Timestamps for CPU and GPU Clocks - vulkan</title>
+    <meta name="description" content="Calibrated timestamping in the Vulkan API provides a standardized mechanism to simultaneously sample execution clocks across both the host CPU and the graphics device GPU. This article examines the necessity of clock correlation in modern graphics pipelin">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-calibrated-timestamps-for-cpu-and-gpu-clocks">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Calibrated Timestamps for CPU and GPU Clocks - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-calibrated-timestamps-for-cpu-and-gpu-clocks" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Calibrated timestamping in the Vulkan API provides a standardized mechanism to simultaneously sample execution clocks across both the host CPU and the graphics device GPU. This article examines the necessity of clock correlation in modern graphics pipelin" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-calibrated-timestamps-for-cpu-and-gpu-clocks">Vulkan
+Calibrated Timestamps for CPU and GPU Clocks</h1>
+<p>Calibrated timestamping in the Vulkan API provides a standardized
+mechanism to simultaneously sample execution clocks across both the host
+CPU and the graphics device GPU. This article examines the necessity of
+clock correlation in modern graphics pipelines, the mechanics of the
+<code>VK_EXT_calibrated_timestamps</code> extension, how clock domains
+are queried and synchronized, and how developers utilize this data to
+construct unified profiling timelines and optimize frame pacing.</p>
+<h3 id="the-problem-of-independent-clock-domains">The Problem of
+Independent Clock Domains</h3>
+<p>In modern computing architectures, the CPU and the GPU operate on
+independent crystal oscillators. Because these hardware timers run on
+different frequencies, start at different base offsets, and experience
+independent thermal drift over time, their native time values cannot be
+directly compared.</p>
+<p>Standard Vulkan pipeline profiling relies on
+<code>vkCmdWriteTimestamp</code>, which writes GPU execution ticks into
+a query pool. While this provides accurate relative durations for
+GPU-only workloads, it does not reveal precisely when an event occurred
+relative to CPU actions, such as user input processing, physics
+calculations, or command buffer recording. Without a way to synchronize
+these domains, correlating CPU-side dispatch with GPU-side execution
+involves significant estimation errors.</p>
+<h3 id="what-is-calibrated-timestamping">What Is Calibrated
+Timestamping?</h3>
+<p>Calibrated timestamping solves this clock disparity by allowing the
+Vulkan driver to read both a CPU clock and a GPU clock
+near-simultaneously at the hardware layer. This functionality is exposed
+primarily through the <code>VK_EXT_calibrated_timestamps</code> device
+extension.</p>
+<p>Instead of writing a timestamp inside a recorded command buffer,
+calibrated timestamps are queried on the host timeline. The driver
+attempts to sample the requested time domains with minimal latency
+between reads, returning a snapshot of both clocks along with an
+estimate of the measurement error.</p>
+<h3 id="supported-time-domains">Supported Time Domains</h3>
+<p>Vulkan categorizes system and hardware timers into distinct time
+domains. Before reading timestamps, applications query which domains the
+underlying driver and operating system support using
+<code>vkGetPhysicalDeviceCalibrateableTimeDomainsEXT</code>. Common time
+domains include:</p>
+<ul>
+<li><strong><code>VK_TIME_DOMAIN_DEVICE_EXT</code></strong>: The
+internal hardware clock of the GPU. This is the same clock used by
+standard Vulkan pipeline timestamp queries
+(<code>vkCmdWriteTimestamp</code>).</li>
+<li><strong><code>VK_TIME_DOMAIN_CLOCK_MONOTONIC_EXT</code></strong>:
+The POSIX <code>CLOCK_MONOTONIC</code> clock, commonly used on Linux and
+Android systems.</li>
+<li><strong><code>VK_TIME_DOMAIN_CLOCK_MONOTONIC_RAW_EXT</code></strong>:
+A non-adjustable monotonic clock available on POSIX systems that is not
+subject to NTP frequency adjustments.</li>
+<li><strong><code>VK_TIME_DOMAIN_QUERY_PERFORMANCE_COUNTER_EXT</code></strong>:
+The high-resolution performance counter (<code>QPC</code>) on Windows
+platforms.</li>
+</ul>
+<h3 id="the-calibration-process">The Calibration Process</h3>
+<p>To establish a correlation between the CPU and the GPU, the
+application calls <code>vkGetCalibratedTimestampsEXT</code>. The
+function accepts an array of <code>VkCalibratedTimestampInfoEXT</code>
+structures, where the developer specifies the target domains—typically
+pairing <code>VK_TIME_DOMAIN_DEVICE_EXT</code> with the operating
+system’s primary high-resolution CPU counter.</p>
+<p>The function returns two critical outputs:</p>
+<ol type="1">
+<li><strong>The Timestamps:</strong> An array of 64-bit integer values
+representing the clock states at the moment of sampling.</li>
+<li><strong><code>maxDeviation</code>:</strong> A 64-bit integer
+representing the maximum possible error, expressed in nanoseconds. This
+value measures the time window it took the driver to read all requested
+domains. A lower deviation indicates a tighter, more accurate
+correlation between the sampled values.</li>
+</ol>
+<h3 id="correlating-the-clocks-in-practice">Correlating the Clocks in
+Practice</h3>
+<p>Once simultaneous samples from both domains are obtained, the
+application can project GPU timestamps onto the CPU's timeline.</p>
+<ol type="1">
+<li><p><strong>GPU Tick Normalization:</strong> GPU ticks are converted
+to nanoseconds using the physical device’s <code>timestampPeriod</code>
+(retrieved from <code>VkPhysicalDeviceLimits</code>). The duration in
+nanoseconds equals the raw GPU ticks multiplied by
+<code>timestampPeriod</code>.</p></li>
+<li><p><strong>Offset Calculation:</strong> The CPU timestamp is
+converted to nanoseconds (e.g., dividing QPC counts by the system
+performance frequency). The difference between the CPU time and the
+normalized GPU timestamp establishes a base offset:</p>
+<p><span class="math display">\[\text{Offset} = \text{Time}_{\text{CPU}}
+- (\text{Ticks}_{\text{GPU}} \times
+\text{timestampPeriod})\]</span></p></li>
+<li><p><strong>Mapping Pipeline Queries:</strong> When
+<code>vkCmdWriteTimestamp</code> writes a value during frame rendering,
+that raw GPU tick value can now be translated to the CPU timeline:</p>
+<p><span class="math display">\[\text{Time}_{\text{Event}} =
+(\text{Ticks}_{\text{Event}} \times \text{timestampPeriod}) +
+\text{Offset}\]</span></p></li>
+</ol>
+<p>Because hardware clocks experience physical drift over time due to
+temperature changes and clock frequency fluctuations, applications
+should periodically call <code>vkGetCalibratedTimestampsEXT</code> to
+recalibrate and calculate a linear regression model that accounts for
+drift.</p>
+<h3 id="core-applications">Core Applications</h3>
+<p>Correlated timestamps are vital for advanced engine engineering and
+profiling:</p>
+<ul>
+<li><strong>Unified Timeline Profiling:</strong> Developer tools (such
+as GPU profilers and system traces) can display CPU thread traces
+alongside GPU hardware queue traces on a single, perfectly aligned
+timeline.</li>
+<li><strong>Latency Tracking:</strong> Developers can precisely
+calculate frame latency from the exact microsecond an input event
+occurred on the CPU to the exact microsecond the corresponding frame
+finished rendering on the GPU.</li>
+<li><strong>Dynamic Workload Balancing and Pacing:</strong> Real-time
+awareness of how long commands spend waiting between CPU submission and
+GPU execution allows graphics engines to dynamically tune frame pacing
+and minimize input lag.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

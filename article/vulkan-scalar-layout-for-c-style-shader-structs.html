@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Scalar Layout for C-Style Shader Structs - vulkan</title>
+    <meta name="description" content="Sharing complex C-style data structures between host memory and shader code in Vulkan has historically introduced friction due to rigid memory alignment standards. The introduction of scalar block layout rules simplifies this process by aligning data type">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-scalar-layout-for-c-style-shader-structs">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Scalar Layout for C-Style Shader Structs - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-scalar-layout-for-c-style-shader-structs" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Sharing complex C-style data structures between host memory and shader code in Vulkan has historically introduced friction due to rigid memory alignment standards. The introduction of scalar block layout rules simplifies this process by aligning data type" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-scalar-layout-for-c-style-shader-structs">Vulkan Scalar
+Layout for C-Style Shader Structs</h1>
+<p>Sharing complex C-style data structures between host memory and
+shader code in Vulkan has historically introduced friction due to rigid
+memory alignment standards. The introduction of scalar block layout
+rules simplifies this process by aligning data types according to the
+size of their fundamental scalar components rather than rounded vector
+sizes. This alignment model matches native C and C++ compiler packing
+rules, eliminating the need for manual padding, reducing memory
+overhead, and enabling direct memory copies from the CPU to the GPU.</p>
+<h3 id="the-limitation-of-legacy-alignment-models">The Limitation of
+Legacy Alignment Models</h3>
+<p>In standard Vulkan SPIR-V layouts, developers traditionally rely on
+the <code>std140</code> and <code>std430</code> packing rules:</p>
+<ul>
+<li><strong>std140:</strong> Used primarily for Uniform Buffer Objects
+(UBOs). It enforces strict, conservative alignment rules. For example, a
+three-component vector (<code>vec3</code>) is aligned to and occupies 16
+bytes, and every structure inside an array is padded to a multiple of 16
+bytes.</li>
+<li><strong>std430:</strong> Available for Shader Storage Buffer Objects
+(SSBOs). While it allows tighter packing for arrays of basic types, it
+still requires that vector types be aligned to their total byte size
+rounded up to power-of-two multiples (a <code>vec3</code> still aligns
+to 16 bytes).</li>
+</ul>
+<p>These constraints conflict with standard C and C++ compilers. On the
+CPU, a struct containing a <code>vec3</code> (typically represented as
+<code>float[3]</code>) and a single <code>float</code> would naturally
+pack into 16 contiguous bytes with 4-byte alignment. Under
+<code>std140</code>, a shader expects the <code>vec3</code> to consume
+16 bytes on its own, offset by the scalar. Consequently, developers were
+forced to manually insert dummy padding fields into C++ structures or
+maintain separate CPU and GPU definitions.</p>
+<h3 id="how-scalar-block-layout-works">How Scalar Block Layout
+Works</h3>
+<p>Scalar block layout—introduced via the
+<code>VK_EXT_scalar_block_layout</code> extension and integrated into
+the Vulkan 1.2 core specification—fundamentally changes these
+constraints. In GLSL, this feature is enabled via the
+<code>GL_EXT_scalar_block_layout</code> extension.</p>
+<p>Under scalar layout rules, memory alignment is determined strictly by
+the underlying scalar primitive type:</p>
+<ul>
+<li>A 32-bit <code>float</code> requires 4-byte alignment.</li>
+<li>A <code>vec2</code>, <code>vec3</code>, or <code>vec4</code> of
+32-bit floats also requires only 4-byte alignment.</li>
+<li>A <code>vec3</code> occupies exactly 12 bytes rather than 16
+bytes.</li>
+<li>Matrices are treated simply as contiguous arrays of vectors with
+scalar alignment.</li>
+<li>64-bit primitives (<code>double</code>, 64-bit integers) align to 8
+bytes, while 8-bit and 16-bit types align to 1 and 2 bytes,
+respectively.</li>
+</ul>
+<h3 id="practical-benefits-for-developers">Practical Benefits for
+Developers</h3>
+<ol type="1">
+<li><strong>Direct Binary Compatibility:</strong> Because default C and
+C++ struct alignment aligns aggregate types to the size of their largest
+constituent scalar member, scalar block layout creates an exact 1:1
+memory layout match between host code and shader code.</li>
+<li><strong>Simplified Memory Transfers:</strong> Host applications can
+transfer data directly to Vulkan buffers using <code>memcpy</code> or
+mapped pointers without preprocessing, serializing, or remapping fields
+on the CPU.</li>
+<li><strong>Complex Nested Structs:</strong> Nested structures and
+arrays of irregular data types maintain natural ordering and tight
+bounds on both sides of the pipeline, avoiding edge cases where implicit
+padding causes runtime data corruption.</li>
+<li><strong>Bandwidth and Cache Efficiency:</strong> Eliminating
+mandatory 16-byte alignment padding for 3-component vectors reduces the
+memory footprint of uniform and storage buffers, leading to better GPU
+memory bandwidth utilization and cache line efficiency.</li>
+</ol></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

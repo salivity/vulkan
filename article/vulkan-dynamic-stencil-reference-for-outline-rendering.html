@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Dynamic Stencil Reference for Outline Rendering - vulkan</title>
+    <meta name="description" content="In Vulkan, dynamic state allows specific pipeline configurations to be altered at command-recording time without rebuilding the pipeline object. In multi-pass outline rendering, the dynamic stencil reference state—enabled via VKDYNAMICSTATESTENCILREFERENC">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-dynamic-stencil-reference-for-outline-rendering">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Dynamic Stencil Reference for Outline Rendering - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-dynamic-stencil-reference-for-outline-rendering" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Vulkan, dynamic state allows specific pipeline configurations to be altered at command-recording time without rebuilding the pipeline object. In multi-pass outline rendering, the dynamic stencil reference state—enabled via VKDYNAMICSTATESTENCILREFERENC" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-dynamic-stencil-reference-for-outline-rendering">Vulkan
+Dynamic Stencil Reference for Outline Rendering</h1>
+<p>In Vulkan, dynamic state allows specific pipeline configurations to
+be altered at command-recording time without rebuilding the pipeline
+object. In multi-pass outline rendering, the dynamic stencil reference
+state—enabled via <code>VK_DYNAMIC_STATE_STENCIL_REFERENCE</code>—allows
+developers to update the stencil test's comparison and write reference
+values on the fly using <code>vkCmdSetStencilReference</code>. This
+article explains how this mechanism operates across multiple passes to
+isolate silhouettes and draw distinct outlines efficiently.</p>
+<h3 id="the-role-of-dynamic-stencil-reference-state">The Role of Dynamic
+Stencil Reference State</h3>
+<p>By default, graphics pipeline states in Vulkan are immutable once
+baked into a <code>VkPipeline</code> object. Stencil parameters like
+comparison operations, write masks, and reference values typically
+reside within the <code>VkPipelineDepthStencilStateCreateInfo</code>
+struct.</p>
+<p>When <code>VK_DYNAMIC_STATE_STENCIL_REFERENCE</code> is added to
+<code>VkPipelineDynamicStateCreateInfo</code>, the driver ignores the
+static reference values set during pipeline creation. Instead, the
+reference value becomes a command buffer state set directly via:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> vkCmdSetStencilReference<span class="op">(</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    VkCommandBuffer                             commandBuffer<span class="op">,</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    VkStencilFaceFlags                          faceMask<span class="op">,</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint32_t</span>                                    reference<span class="op">);</span></span></code></pre></div>
+<p>This dynamic control enables switching the active reference value
+between draw calls or passes without binding new pipeline objects,
+significantly reducing pipeline permutations and state transitions.</p>
+<h3 id="multi-pass-outline-workflow">Multi-Pass Outline Workflow</h3>
+<p>Outline rendering typically relies on a two-pass technique using the
+stencil buffer to mask the interior geometry:</p>
+<ol type="1">
+<li><strong>Pass 1: Object Masking</strong>
+<ul>
+<li>The base geometry is rendered using standard depth testing and
+writing.</li>
+<li>Stencil testing is enabled. The comparison operation is set to
+<code>VK_COMPARE_OP_ALWAYS</code>, and the pass operation is set to
+<code>VK_STENCIL_OP_REPLACE</code>.</li>
+<li>A reference value (e.g., <code>0x01</code> or a unique object ID) is
+recorded using
+<code>vkCmdSetStencilReference(commandBuffer, VK_STENCIL_FACE_FRONT_AND_BACK, 0x01)</code>.</li>
+<li>As fragments pass the depth test, the stencil buffer is populated
+with this reference value.</li>
+</ul></li>
+<li><strong>Pass 2: Outline Generation</strong>
+<ul>
+<li>An expanded version of the mesh is rendered (often extruded along
+vertex normals in the vertex shader), or an inverted-hull pass is
+executed.</li>
+<li>The stencil test condition changes to
+<code>VK_COMPARE_OP_NOT_EQUAL</code>.</li>
+<li>The reference value is supplied using
+<code>vkCmdSetStencilReference(commandBuffer, VK_STENCIL_FACE_FRONT_AND_BACK, 0x01)</code>.</li>
+<li>The stencil test evaluates the incoming fragment: if the stencil
+buffer already contains <code>0x01</code> from the first pass, the
+fragment is discarded. Fragments that extend beyond the silhouette
+succeed the test, rendering only the expanded border or outline.</li>
+</ul></li>
+</ol>
+<h3 id="command-buffer-execution-and-synchronization">Command Buffer
+Execution and Synchronization</h3>
+<p>During command recording, <code>vkCmdSetStencilReference</code> acts
+as a state update that applies to all subsequent draw calls until
+modified again.</p>
+<ul>
+<li><strong>Face Mask Control</strong>: The <code>faceMask</code>
+parameter can target <code>VK_STENCIL_FACE_FRONT_BIT</code>,
+<code>VK_STENCIL_FACE_BACK_BIT</code>, or
+<code>VK_STENCIL_FACE_FRONT_AND_BACK</code>. This allows two-sided
+stencil setups where front and back faces evaluate or write different
+dynamic references.</li>
+<li><strong>Per-Object Outlines</strong>: In scenes requiring individual
+outlines (such as color-coded object selection), each entity can be
+assigned a distinct dynamic reference ID via
+<code>vkCmdSetStencilReference</code> during the draw loop, without
+requiring distinct pipelines for each unique reference ID.</li>
+<li><strong>Mask Interaction</strong>: The dynamic reference value is
+bitwise AND-ed with the pipeline’s <code>compareMask</code> during the
+test and with the <code>writeMask</code> during the update. While the
+reference value is dynamic, ensure that the static
+<code>compareMask</code> and <code>writeMask</code> configured in the
+pipeline permit the bits used by the dynamic reference.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

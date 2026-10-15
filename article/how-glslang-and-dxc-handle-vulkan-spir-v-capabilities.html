@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How glslang and DXC Handle Vulkan SPIR-V Capabilities - vulkan</title>
+    <meta name="description" content="When compiling shaders for Vulkan, neither glslang nor the DirectX Shader Compiler (DXC) performs dynamic runtime queries against a physical GPU. Instead, both compilers rely on ahead-of-time static analysis, language-level extensions, and user-supplied t">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/how-glslang-and-dxc-handle-vulkan-spir-v-capabilities">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How glslang and DXC Handle Vulkan SPIR-V Capabilities - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/how-glslang-and-dxc-handle-vulkan-spir-v-capabilities" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="When compiling shaders for Vulkan, neither glslang nor the DirectX Shader Compiler (DXC) performs dynamic runtime queries against a physical GPU. Instead, both compilers rely on ahead-of-time static analysis, language-level extensions, and user-supplied t" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-glslang-and-dxc-handle-vulkan-spir-v-capabilities">How
+glslang and DXC Handle Vulkan SPIR-V Capabilities</h1>
+<p>When compiling shaders for Vulkan, neither glslang nor the DirectX
+Shader Compiler (DXC) performs dynamic runtime queries against a
+physical GPU. Instead, both compilers rely on ahead-of-time static
+analysis, language-level extensions, and user-supplied target
+environment flags to declare required SPIR-V capabilities
+(<code>OpCapability</code>). The generated capabilities represent a
+static contract that the Vulkan runtime validates when the application
+creates a shader module on the host device.</p>
+<h3 id="static-emission-versus-runtime-querying">Static Emission Versus
+Runtime Querying</h3>
+<p>Compilers operate independently of the Vulkan runtime execution
+environment. A compiler cannot directly query
+<code>VkPhysicalDeviceFeatures</code> or
+<code>vkGetPhysicalDeviceFeatures2</code> to inspect what the host GPU
+supports.</p>
+<p>Instead, SPIR-V capabilities are handled through a rule-based
+emission pipeline:</p>
+<ol type="1">
+<li><strong>Feature Inference:</strong> When syntax, types, or
+intrinsics in the source code require specific hardware functionality,
+the compiler implicitly attaches the corresponding
+<code>OpCapability</code>.</li>
+<li><strong>Explicit Target Constraints:</strong> Command-line flags
+configure the compiler with a maximum allowable SPIR-V and Vulkan
+environment version, constraining what capabilities can be legally
+emitted.</li>
+<li><strong>Driver-Side Validation:</strong> The actual "query" step
+occurs when the host application passes the compiled bytecode to
+<code>vkCreateShaderModule</code> or pipeline creation. The Vulkan
+driver checks the module’s declared <code>OpCapability</code>
+instructions against the features enabled on the
+<code>VkDevice</code>.</li>
+</ol>
+<hr />
+<h3 id="capability-handling-in-glslang">Capability Handling in
+glslang</h3>
+<p>glslang is the reference Khronos compiler for GLSL and HLSL to
+SPIR-V. It manages capabilities using direct source mappings and target
+environment flags.</p>
+<h4 id="1-target-environment-configuration">1. Target Environment
+Configuration</h4>
+<p>Using the <code>--target-env</code> flag (such as
+<code>--target-env vulkan1.2</code> or
+<code>--target-env vulkan1.3</code>), developers specify the baseline
+environment. glslang uses this target to determine:</p>
+<ul>
+<li>Which SPIR-V specification version to target (e.g., SPIR-V 1.5 for
+Vulkan 1.2).</li>
+<li>Which capabilities are core to that version versus which require
+optional extensions.</li>
+</ul>
+<h4 id="2-source-level-directives">2. Source-Level Directives</h4>
+<p>In GLSL, features often correspond to language extensions declared
+via preprocessor directives:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable</span></span></code></pre></div>
+<p>Enabling this extension signals glslang to permit 64-bit integer
+types and automatically inject <code>OpCapability Int64</code> into the
+SPIR-V preamble.</p>
+<h4 id="3-automatic-instruction-based-injection">3. Automatic
+Instruction-Based Injection</h4>
+<p>glslang traverses the Abstract Syntax Tree (AST) during code
+generation. If an operation inherently requires a capability, glslang
+adds it automatically:</p>
+<ul>
+<li>Declaring a 16-bit float introduces
+<code>OpCapability Float16</code>.</li>
+<li>Using image gather operations introduces
+<code>OpCapability ImageGatherExtended</code>.</li>
+<li>Ray tracing stages introduce
+<code>OpCapability RayTracingKHR</code>.</li>
+</ul>
+<hr />
+<h3 id="capability-handling-in-dxc">Capability Handling in DXC</h3>
+<p>DXC uses a Clang-based backend to translate HLSL into SPIR-V when
+invoked with the <code>-spirv</code> switch. Its handling of
+capabilities closely mirrors glslang but adapts to HLSL shader models
+and Microsoft's intrinsic system.</p>
+<h4 id="1-target-version-and-extension-control">1. Target Version and
+Extension Control</h4>
+<p>DXC controls the output target via specialized flags:</p>
+<ul>
+<li><code>-fspv-target-env=vulkan1.X</code>: Sets the target Vulkan
+environment version.</li>
+<li><code>-fspv-extension=...</code>: Explicitly allows or disallows
+specific SPIR-V extensions (e.g.,
+<code>-fspv-extension=SPV_KHR_ray_tracing</code>).</li>
+</ul>
+<p>If a shader requires an extension that has not been permitted via
+flags, DXC halts compilation with an error rather than emitting an
+unauthorized capability.</p>
+<h4 id="2-shader-model-to-capability-mapping">2. Shader Model to
+Capability Mapping</h4>
+<p>DXC maps HLSL shader models (<code>-T &lt;profile&gt;</code>, such as
+<code>cs_6_6</code>) to corresponding SPIR-V capability sets. For
+example:</p>
+<ul>
+<li>HLSL Wave Intrinsics map directly to Vulkan subgroup capabilities,
+such as <code>OpCapability GroupNonUniformBallot</code> or
+<code>OpCapability GroupNonUniformArithmetic</code>.</li>
+<li>Ray-tracing intrinsics (<code>TraceRay()</code>) automatically
+trigger <code>OpCapability RayTracingKHR</code>.</li>
+<li>Explicit 16-bit native types (e.g., <code>float16_t</code>) trigger
+<code>OpCapability Float16</code> and require the
+<code>-enable-16bit-types</code> flag.</li>
+</ul>
+<hr />
+<h3 id="summary-of-differences">Summary of Differences</h3>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Feature</th>
+<th style="text-align: left;">glslang</th>
+<th style="text-align: left;">DXC</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>Primary Input</strong></td>
+<td style="text-align: left;">GLSL (Reference) / HLSL</td>
+<td style="text-align: left;">HLSL</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Target Control</strong></td>
+<td style="text-align: left;"><code>--target-env vulkanX.Y</code></td>
+<td
+style="text-align: left;"><code>-fspv-target-env=vulkanX.Y</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Language Triggers</strong></td>
+<td style="text-align: left;"><code>#extension</code> directives and
+type usage</td>
+<td style="text-align: left;">Shader Model selection (<code>-T</code>)
+and HLSL intrinsics</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Extension Guards</strong></td>
+<td style="text-align: left;">Implicit via supported extensions</td>
+<td style="text-align: left;">Explicit via <code>-fspv-extension</code>
+parameters</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Hardware
+Interrogation</strong></td>
+<td style="text-align: left;">None (Static emission only)</td>
+<td style="text-align: left;">None (Static emission only)</td>
+</tr>
+</tbody>
+</table>
+<p>Both compilers emit all required <code>OpCapability</code>
+instructions at the top of the SPIR-V binary. If the target Vulkan
+device does not support every declared capability when loading the
+binary, the Vulkan implementation returns
+<code>VK_ERROR_FEATURE_NOT_PRESENT</code>. Application developers are
+responsible for ensuring that the capabilities generated by either
+compiler align with the features queried and enabled on the target
+<code>VkDevice</code>.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

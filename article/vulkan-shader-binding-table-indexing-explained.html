@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Shader Binding Table Indexing Explained - vulkan</title>
+    <meta name="description" content="The Vulkan Shader Binding Table (SBT) bridges the gap between hardware ray tracing pipelines and scene geometry by mapping pipeline shader stages to GPU memory buffers. This article explains how Vulkan organizes and calculates memory addresses to index Ra">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-shader-binding-table-indexing-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Shader Binding Table Indexing Explained - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-shader-binding-table-indexing-explained" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The Vulkan Shader Binding Table (SBT) bridges the gap between hardware ray tracing pipelines and scene geometry by mapping pipeline shader stages to GPU memory buffers. This article explains how Vulkan organizes and calculates memory addresses to index Ra" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-shader-binding-table-indexing-explained">Vulkan Shader
+Binding Table Indexing Explained</h1>
+<p>The Vulkan Shader Binding Table (SBT) bridges the gap between
+hardware ray tracing pipelines and scene geometry by mapping pipeline
+shader stages to GPU memory buffers. This article explains how Vulkan
+organizes and calculates memory addresses to index Ray Generation, Miss,
+and Hit shader groups during ray traversal, detailing the specific
+mathematical formulas defined by the
+<code>VK_KHR_ray_tracing_pipeline</code> extension.</p>
+<h3 id="the-anatomy-of-the-shader-binding-table">The Anatomy of the
+Shader Binding Table</h3>
+<p>An SBT is a standard <code>VkBuffer</code> populated with shader
+group handles retrieved via
+<code>vkGetRayTracingShaderGroupHandlesKHR</code>, optionally followed
+by inline parameters (root arguments or local resources). When executing
+<code>vkCmdTraceRaysKHR</code>, the developer provides four
+<code>VkStridedDeviceAddressRegionKHR</code> structures defining the
+base device address, stride, and size for:</p>
+<ol type="1">
+<li>Ray Generation shaders</li>
+<li>Miss shaders</li>
+<li>Hit groups (Intersection, Any-Hit, Closest-Hit)</li>
+<li>Callable shaders</li>
+</ol>
+<p>Each record within the table must align to properties specified in
+<code>VkPhysicalDeviceRayTracingPipelinePropertiesKHR</code>, primarily
+<code>shaderGroupHandleAlignment</code> and
+<code>shaderGroupBaseAlignment</code>.</p>
+<h3 id="indexing-ray-generation-shaders">Indexing Ray Generation
+Shaders</h3>
+<p>Ray Generation shaders initiate ray traversal and are the most
+straightforward to index.</p>
+<ul>
+<li><strong>Invocation:</strong> Ray generation shaders are triggered
+directly by the ray dispatch grid dimensions defined in
+<code>vkCmdTraceRaysKHR(width, height, depth)</code>.</li>
+<li><strong>Addressing:</strong> Typically, only one ray generation
+shader is executed per dispatch. Its memory location is defined directly
+by the base address:</li>
+</ul>
+<p><span class="math display">\[\text{Address} =
+\text{pRayGenShaderBindingTable}\rightarrow\text{deviceAddress}\]</span></p>
+<p>If an application provides multiple ray generation records, selection
+cannot be driven dynamically per ray from within the shader; the base
+pointer must simply be offset in the dispatch call to invoke a different
+ray generation shader.</p>
+<h3 id="indexing-miss-shaders">Indexing Miss Shaders</h3>
+<p>Miss shaders execute when a ray traversed through the Top-Level
+Acceleration Structure (TLAS) and Bottom-Level Acceleration Structure
+(BLAS) encounters no intersecting geometry, or when all intersections
+are rejected.</p>
+<ul>
+<li><strong>Invocation:</strong> Selected dynamically within a Ray
+Generation or Closest Hit shader via the <code>missIndex</code> argument
+passed to the shading language intrinsic (e.g.,
+<code>traceRayEXT(...)</code> in GLSL).</li>
+<li><strong>Addressing:</strong> The GPU computes the exact record
+address using a linear stride calculation:</li>
+</ul>
+<p><span class="math display">\[\text{Address} =
+\text{pMissShaderBindingTable}\rightarrow\text{deviceAddress} +
+(\text{missIndex} \times
+\text{pMissShaderBindingTable}\rightarrow\text{stride})\]</span></p>
+<p>This allows developers to map distinct miss behaviors—such as
+different skyboxes, ambient lighting, or shadow misses—by incrementing
+<code>missIndex</code>.</p>
+<h3 id="indexing-hit-groups">Indexing Hit Groups</h3>
+<p>Hit groups handle ray-primitive intersections and contain any
+combination of Intersection, Any-Hit, and Closest-Hit shaders. Because
+scene geometry varies by material, instance, and geometry index, hit
+group indexing combines static acceleration structure data with dynamic
+parameters passed at trace time.</p>
+<p>When an intersection is confirmed, the GPU calculates the index of
+the hit group record using the following standardized formula:</p>
+<p><span class="math display">\[\text{HitGroupIndex} =
+\text{instanceCustomIndexOffset} + (\text{geometryIndex} \times
+\text{sbtRecordStride}) + \text{sbtRecordOffset}\]</span></p>
+<p>Where:</p>
+<ul>
+<li><strong><code>instanceCustomIndexOffset</code></strong> is the
+<code>instanceShaderBindingTableRecordOffset</code> defined per-instance
+inside the <code>VkAccelerationStructureInstanceKHR</code>
+descriptor.</li>
+<li><strong><code>geometryIndex</code></strong> is the implicit,
+zero-based index of the geometry within a given BLAS.</li>
+<li><strong><code>sbtRecordStride</code></strong> is the stride
+multiplier passed into the trace function (e.g.,
+<code>sbtRecordStride</code> parameter in <code>traceRayEXT</code>).
+This is commonly used to allocate consecutive records for different ray
+types (such as radiance rays vs. shadow rays).</li>
+<li><strong><code>sbtRecordOffset</code></strong> is the dynamic offset
+passed into the trace call, selecting which ray-type slot to use for the
+hit.</li>
+</ul>
+<p>Once the integer <code>HitGroupIndex</code> is calculated, the
+physical memory address in the SBT is derived:</p>
+<p><span class="math display">\[\text{Address} =
+\text{pHitShaderBindingTable}\rightarrow\text{deviceAddress} +
+(\text{HitGroupIndex} \times
+\text{pHitShaderBindingTable}\rightarrow\text{stride})\]</span></p>
+<h3 id="summary-of-indexing-flow">Summary of Indexing Flow</h3>
+<p>During ray execution, the SBT acts as a dynamic function lookup
+table. Ray Generation uses a direct address lookup to launch work. Miss
+shaders use a single dynamic index passed at the trace call site. Hit
+groups reconcile scene topology (instance offset and BLAS geometry
+index) with ray classifications (ray-type offset and stride) to locate
+the exact shader handle and inline resources required for shading.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

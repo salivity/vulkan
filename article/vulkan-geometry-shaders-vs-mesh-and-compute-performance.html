@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Geometry Shaders vs Mesh and Compute Performance - vulkan</title>
+    <meta name="description" content="Geometry shaders in the Vulkan graphics API have historically enabled dynamic primitive generation and modification, but they frequently introduce severe hardware-level performance bottlenecks. Modern GPU architectures struggle with the unpredictable ampl">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-geometry-shaders-vs-mesh-and-compute-performance">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Geometry Shaders vs Mesh and Compute Performance - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-geometry-shaders-vs-mesh-and-compute-performance" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Geometry shaders in the Vulkan graphics API have historically enabled dynamic primitive generation and modification, but they frequently introduce severe hardware-level performance bottlenecks. Modern GPU architectures struggle with the unpredictable ampl" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-geometry-shaders-vs-mesh-and-compute-performance">Vulkan
+Geometry Shaders vs Mesh and Compute Performance</h1>
+<p>Geometry shaders in the Vulkan graphics API have historically enabled
+dynamic primitive generation and modification, but they frequently
+introduce severe hardware-level performance bottlenecks. Modern GPU
+architectures struggle with the unpredictable amplification and
+serialization inherent to the traditional geometry pipeline.
+Consequently, developers increasingly rely on compute shaders for
+GPU-driven geometry processing or transition to the modern mesh shading
+pipeline (<code>VK_EXT_mesh_shader</code>), both of which significantly
+outperform geometry shaders by matching hardware parallelism and memory
+architectures more efficiently.</p>
+<h3 id="the-architectural-bottlenecks-of-geometry-shaders">The
+Architectural Bottlenecks of Geometry Shaders</h3>
+<p>Geometry shaders (GS) sit between the vertex (or tessellation
+evaluation) stage and the rasterizer. Their primary performance
+degradation stems from their execution model:</p>
+<ul>
+<li><strong>Unbalanced Amplification and Culling:</strong> A geometry
+shader can output a variable number of vertices per invocation. GPUs
+allocate internal scratch space based on the shader's declared
+<code>max_vertices</code>. If a shader declares a high maximum output
+but only generates a few vertices (e.g., for culling or particle
+expansion), substantial on-chip memory is reserved but wasted, severely
+limiting thread occupancy.</li>
+<li><strong>Primitive Assembly Serialization:</strong> Geometry shaders
+must output primitives in a strictly defined order to match the API's
+draw calls. Enforcing this primitive ordering requires synchronization
+barriers across execution units, which causes pipeline stalls and
+underutilizes compute execution units (ALUs).</li>
+<li><strong>Memory Spills:</strong> If the total payload of generated
+primitives exceeds dedicated on-chip parameter cache or scratch memory,
+the hardware must spill intermediate vertices to slower VRAM, turning a
+compute task into a high-latency memory bandwidth bottleneck.</li>
+</ul>
+<h3 id="compute-shaders-gpu-driven-geometry-processing">Compute Shaders:
+GPU-Driven Geometry Processing</h3>
+<p>Compute shaders provide a general-purpose, cooperative thread model
+that avoids the raster pipeline's rigid sequencing. While compute
+shaders cannot output primitives directly to the rasterizer without
+modern extensions, they dramatically outperform geometry shaders in data
+manipulation through GPU-driven pipelines.</p>
+<ul>
+<li><strong>GPU-Driven Culling:</strong> Instead of discarding triangles
+inside a geometry shader, a compute shader performs frustum, occlusion,
+and back-face culling upfront on compute threads. Valid indices and
+vertices are written to compact buffers, and arguments for subsequent
+draws are dispatched using <code>vkCmdDrawIndexedIndirect</code>.</li>
+<li><strong>Predictable Thread Allocation:</strong> Compute shaders
+operate over fixed workgroups (e.g., 64 or 128 threads), maximizing
+hardware occupancy and register reuse without reserving variable scratch
+space.</li>
+<li><strong>Shared Memory Usage:</strong> Compute shaders have access to
+high-speed shared memory (workgroup local storage), allowing threads to
+cooperate on tasks like bounding-box calculations or LOD selection with
+minimal bandwidth overhead.</li>
+</ul>
+<h3 id="mesh-shading-the-modern-replacement-for-geometry-shaders">Mesh
+Shading: The Modern Replacement for Geometry Shaders</h3>
+<p>The mesh shading pipeline, exposed in Vulkan via the
+<code>VK_EXT_mesh_shader</code> extension, replaces the fixed-function
+input assembly, vertex shader, and geometry shader with a two-stage
+cooperative pipeline: Task Shaders and Mesh Shaders.</p>
+<ul>
+<li><strong>Threadgroup-Centric Topology:</strong> Unlike geometry
+shaders, which process one primitive at a time, mesh shaders operate on
+small chunks of geometry known as <em>meshlets</em> (typically 32 to 64
+vertices and up to 126 primitives). The entire workgroup cooperatively
+calculates vertices and primitive topologies, completely removing the
+single-invocation amplification bottleneck.</li>
+<li><strong>On-Chip Allocation:</strong> Mesh shaders output fixed-size
+vertex and primitive arrays directly into on-chip cache memory,
+eliminating the memory spilling typical of geometry shaders.</li>
+<li><strong>Hierarchical Culling (Task Shaders):</strong> Task shaders
+act as an optional preprocessing stage capable of emitting variable
+counts of mesh shader workgroups. This allows developers to discard
+non-visible geometry at a coarse level before vertex processing or
+primitive assembly ever occurs, providing far higher throughput than
+geometry shader-based culling.</li>
+</ul>
+<h3 id="performance-summary">Performance Summary</h3>
+<p>In Vulkan rendering pipelines, geometry shaders should generally be
+avoided for performance-critical workloads. Compute shaders remain the
+standard choice for general-purpose mesh processing, physics, and GPU
+culling pipelines targeting broad hardware compatibility. For hardware
+that supports modern extensions, mesh shaders are the definitive
+successor to geometry shaders, offering linear scaling, high occupancy,
+and full developer control over geometry generation directly within the
+rasterization pipeline.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

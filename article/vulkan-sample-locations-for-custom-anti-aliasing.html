@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Sample Locations for Custom Anti-Aliasing - vulkan</title>
+    <meta name="description" content="In modern rendering with the Vulkan API, sample locations configuration gives developers programmatic control over the exact sub-pixel placement of multisample points, replacing standard, fixed hardware grids. Through the VKEXTsamplelocations extension, d">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-sample-locations-for-custom-anti-aliasing">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Sample Locations for Custom Anti-Aliasing - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-sample-locations-for-custom-anti-aliasing" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In modern rendering with the Vulkan API, sample locations configuration gives developers programmatic control over the exact sub-pixel placement of multisample points, replacing standard, fixed hardware grids. Through the VKEXTsamplelocations extension, d" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-sample-locations-for-custom-anti-aliasing">Vulkan Sample
+Locations for Custom Anti-Aliasing</h1>
+<p>In modern rendering with the Vulkan API, sample locations
+configuration gives developers programmatic control over the exact
+sub-pixel placement of multisample points, replacing standard, fixed
+hardware grids. Through the <code>VK_EXT_sample_locations</code>
+extension, developers can dynamically alter sample distributions per
+sub-pixel, per frame, or per render pass. This capability plays a
+critical role in custom anti-aliasing schemes, enabling optimized sample
+coverage, reduced edge shimmering, enhanced temporal accumulation
+techniques, and the elimination of structured geometric aliasing
+artifacts.</p>
+<h3 id="overcoming-fixed-hardware-limitations">Overcoming Fixed Hardware
+Limitations</h3>
+<p>Standard Multisample Anti-Aliasing (MSAA) relies on
+implementation-dependent, static sample positions. While these default
+patterns work adequately across general scenarios, they often produce
+noticeable aliasing along edges that align with the chosen grid
+axes.</p>
+<p>Configuring custom sample locations allows rendering engines to
+deploy mathematically optimal patterns, such as jittered grids, N-Rooks
+patterns, or Halton sequences. By redistributing sample points within
+each pixel, engines can effectively increase resolve accuracy across
+difficult edge angles without incurring the performance penalty of
+higher sample counts (e.g., matching the quality of 8x MSAA using an
+optimized 4x MSAA pattern).</p>
+<h3 id="enhancing-temporal-and-hybrid-anti-aliasing-taa">Enhancing
+Temporal and Hybrid Anti-Aliasing (TAA)</h3>
+<p>Custom sample locations serve as a foundational tool for advanced
+temporal anti-aliasing (TAA) and multisampled temporal anti-aliasing
+(TMAA) pipelines. Traditional TAA jitters the entire projection matrix
+on a per-frame basis, which often leads to texture blurring that
+requires post-process sharpening.</p>
+<p>By utilizing dynamic sample locations in Vulkan:</p>
+<ul>
+<li><strong>Frame-to-Frame Sample Jittering:</strong> Engines can
+maintain a stable projection matrix while shifting the sub-pixel sample
+points between consecutive frames.</li>
+<li><strong>Temporal Accumulation:</strong> The resolve pass combines
+multi-frame samples across varying sub-pixel coordinates, effectively
+multiplying the spatial coverage over time without sacrificing internal
+texture sharpness.</li>
+<li><strong>Ghosting Mitigation:</strong> Developers can tightly control
+how sub-pixel samples overlap, tailoring the sample layout to better
+match velocity vectors and temporal history rejection algorithms.</li>
+</ul>
+<h3 id="stochastic-and-adaptive-sampling">Stochastic and Adaptive
+Sampling</h3>
+<p>Vulkan allows sample locations to be adjusted dynamically during
+command buffer execution via commands like
+<code>vkCmdSetSampleLocationsEXT</code>. This functionality facilitates
+adaptive and stochastic anti-aliasing implementations:</p>
+<ul>
+<li><strong>Inter-Pixel Jittering:</strong> Adjacent pixels can use
+differing sample layouts, transforming coherent, structural aliasing
+along geometry boundaries into high-frequency noise. This noise is
+significantly easier for modern spatial denoisers and temporal filters
+to resolve than standard stair-stepping artifacts.</li>
+<li><strong>Content-Adaptive MSAA:</strong> Compute passes can analyze
+edge density across the screen and apply targeted sample configurations
+to geometric boundaries while leaving flat surfaces untouched.</li>
+</ul>
+<h3 id="pipeline-and-render-pass-integration">Pipeline and Render Pass
+Integration</h3>
+<p>Implementing custom sample configurations in Vulkan requires
+coordination across multiple pipeline states. The
+<code>VK_EXT_sample_locations</code> extension introduces sample
+location support at the pipeline creation level via
+<code>VkPipelineSampleLocationsStateCreateInfoEXT</code>, during render
+pass definition, and dynamically inside command buffers.</p>
+<p>To maintain correct edge depiction, the rasterization state,
+depth/stencil tests, and color resolve operations must all share
+knowledge of the chosen coordinates. Vulkan guarantees that when custom
+sample locations are bound, depth-buffer interpolations and multisample
+coverage masks evaluate consistently against the specified layout,
+ensuring seamless integration into both forward and deferred custom
+reconstruction passes.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

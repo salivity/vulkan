@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Why Vulkan Swapchain Image Acquire Needs Semaphores - vulkan</title>
+    <meta name="description" content="In the Vulkan graphics API, acquiring a swapchain image via vkAcquireNextImageKHR is an asynchronous operation executed across the CPU, GPU, and the window system&#39;s presentation engine. This article explains why synchronization semaphores are required dur">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/why-vulkan-swapchain-image-acquire-needs-semaphores">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Why Vulkan Swapchain Image Acquire Needs Semaphores - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/why-vulkan-swapchain-image-acquire-needs-semaphores" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In the Vulkan graphics API, acquiring a swapchain image via vkAcquireNextImageKHR is an asynchronous operation executed across the CPU, GPU, and the window system&#39;s presentation engine. This article explains why synchronization semaphores are required dur" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="why-vulkan-swapchain-image-acquire-needs-semaphores">Why Vulkan
+Swapchain Image Acquire Needs Semaphores</h1>
+<p>In the Vulkan graphics API, acquiring a swapchain image via
+<code>vkAcquireNextImageKHR</code> is an asynchronous operation executed
+across the CPU, GPU, and the window system's presentation engine. This
+article explains why synchronization semaphores are required during
+swapchain image acquisition, focusing on the asynchronous handoff
+between the operating system compositor and the GPU, the prevention of
+race conditions, and how semaphores maintain continuous rendering
+performance without CPU stalls.</p>
+<h2 id="the-asynchronous-presentation-pipeline">The Asynchronous
+Presentation Pipeline</h2>
+<p>In Vulkan, the swapchain is managed by the Window System Integration
+(WSI) layer and the display server or presentation engine. When your
+application calls <code>vkAcquireNextImageKHR</code>, the function
+identifies which image index you can use next. However, returning the
+index to the CPU does not mean the underlying memory is immediately
+available for writing.</p>
+<p>The image may still be in use:</p>
+<ul>
+<li>It might be actively scanned out to the monitor.</li>
+<li>It might be queued or read by an operating system compositor (such
+as DWM on Windows or Wayland on Linux).</li>
+<li>Previous GPU rendering tasks associated with an earlier frame might
+still be processing.</li>
+</ul>
+<p>Because the CPU function returns almost immediately to avoid stalling
+the application thread, the GPU needs a mechanism to know when the
+presentation engine has completely finished reading the image.</p>
+<h2 id="decoupling-cpu-and-gpu-execution">Decoupling CPU and GPU
+Execution</h2>
+<p>Vulkan avoids implicit synchronization to maximize hardware
+utilization. If <code>vkAcquireNextImageKHR</code> blocked the CPU until
+the surface was completely free, the CPU could not prepare and submit
+future command buffers.</p>
+<p>To prevent this bottleneck, Vulkan uses a GPU-to-GPU synchronization
+mechanism: the binary semaphore. You pass an unsignaled semaphore into
+<code>vkAcquireNextImageKHR</code>. The presentation engine takes
+ownership of this semaphore and signals it internally on the GPU
+timeline the exact moment the acquired image is released and safe to
+modify.</p>
+<h2 id="how-the-semaphore-protects-image-data">How the Semaphore
+Protects Image Data</h2>
+<p>When submitting rendering commands to a queue with
+<code>vkQueueSubmit</code>, you provide the same semaphore in the
+<code>pWaitSemaphores</code> array, specifying a pipeline wait stage
+such as <code>VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT</code>.</p>
+<p>This setup creates a strict dependency:</p>
+<ol type="1">
+<li>Early pipeline stages (such as vertex shading) can proceed
+immediately.</li>
+<li>The pipeline execution halts right before writing color data to the
+swapchain image.</li>
+<li>Once the presentation engine signals the semaphore, the wait
+condition resolves, and the GPU writes the new color outputs.</li>
+</ol>
+<p>Without this semaphore, the GPU would immediately begin executing the
+submitted command buffer. If the monitor or compositor were still
+reading from that image buffer, the hardware would read and write to the
+same memory simultaneously. This race condition leads to visible
+artifacts such as screen tearing, frame flickering, or memory access
+faults.</p>
+<h2 id="summary">Summary</h2>
+<p>Acquiring a swapchain image requires a semaphore because the CPU-side
+call only reserves an image index, while the physical image memory
+remains tied to the asynchronous presentation engine. The semaphore
+ensures that rendering commands wait entirely on the GPU timeline until
+the presentation engine finishes reading the buffer, protecting visual
+integrity while keeping CPU and GPU pipelines fully saturated.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

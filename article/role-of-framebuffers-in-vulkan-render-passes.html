@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Role of Framebuffers in Vulkan Render Passes - vulkan</title>
+    <meta name="description" content="In the Vulkan graphics API, a framebuffer (VkFramebuffer) serves as the explicit link connecting the abstract attachment definitions in a render pass to the actual memory-backed image views that store pixel data. While a render pass defines the structure,">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/role-of-framebuffers-in-vulkan-render-passes">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Role of Framebuffers in Vulkan Render Passes - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/role-of-framebuffers-in-vulkan-render-passes" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In the Vulkan graphics API, a framebuffer (VkFramebuffer) serves as the explicit link connecting the abstract attachment definitions in a render pass to the actual memory-backed image views that store pixel data. While a render pass defines the structure," />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="role-of-framebuffers-in-vulkan-render-passes">Role of
+Framebuffers in Vulkan Render Passes</h1>
+<p>In the Vulkan graphics API, a framebuffer
+(<code>VkFramebuffer</code>) serves as the explicit link connecting the
+abstract attachment definitions in a render pass to the actual
+memory-backed image views that store pixel data. While a render pass
+defines the structure, formats, and synchronization requirements of
+render targets, it does not hold any memory itself. The framebuffer
+bridges this gap by supplying concrete <code>VkImageView</code> handles
+that match the render pass specification, enabling the GPU to direct its
+drawing operations to specific textures and display buffers.</p>
+<h3 id="decoupling-structure-from-memory">Decoupling Structure from
+Memory</h3>
+<p>Vulkan strictly separates the configuration of rendering phases from
+the memory resources they manipulate. A render pass
+(<code>VkRenderPass</code>) outlines what types of attachments are
+required—such as color, depth, or resolve buffers—along with their
+formats, sample counts, and load/store operations. However, the render
+pass does not dictate <em>which</em> specific textures are drawn to.</p>
+<p>The framebuffer provides those concrete resources. When creating a
+<code>VkFramebuffer</code>, you provide an array of
+<code>VkImageView</code> objects. These image views must strictly match
+the attachment count, formats, and sample counts defined in the
+associated <code>VkRenderPass</code>. This separation allows a single
+render pass to be reused across multiple framebuffers without
+re-declaring the rendering pipeline architecture.</p>
+<h3 id="binding-image-views-via-vkframebuffercreateinfo">Binding Image
+Views via <code>VkFramebufferCreateInfo</code></h3>
+<p>The binding process occurs during framebuffer creation through the
+<code>VkFramebufferCreateInfo</code> structure. The key components
+include:</p>
+<ul>
+<li><strong><code>renderPass</code></strong>: The compatible render pass
+with which the framebuffer will be used.</li>
+<li><strong><code>pAttachments</code></strong>: An array of
+<code>VkImageView</code> handles representing the actual image
+allocations. The indices of this array correspond directly to the
+attachment indices defined within the render pass.</li>
+<li><strong><code>attachmentCount</code></strong>: The number of image
+views, which must equal the number of attachments declared in the render
+pass.</li>
+<li><strong><code>width</code>, <code>height</code>, and
+<code>layers</code></strong>: The spatial dimensions of the render area,
+which must be within the bounds of the provided image views.</li>
+</ul>
+<p>Once instantiated, the framebuffer encapsulates these image views
+into a single, immutable state object optimized for the GPU.</p>
+<h3 id="dynamic-binding-during-command-execution">Dynamic Binding During
+Command Execution</h3>
+<p>The actual binding of the framebuffer to the rendering pipeline takes
+place when recording draw commands. When calling
+<code>vkCmdBeginRenderPass</code>, the application passes a
+<code>VkRenderPassBeginInfo</code> structure containing both the
+<code>VkRenderPass</code> handle and the specific
+<code>VkFramebuffer</code> to target.</p>
+<p>At this point, Vulkan binds the underlying memory surfaces
+represented by the image views to the rasterizer. Any subsequent draw
+calls within that render pass instance output their color, depth, and
+stencil data directly to the images encapsulated by that
+framebuffer.</p>
+<h3 id="managing-swapchains-and-multiple-buffering">Managing Swapchains
+and Multiple Buffering</h3>
+<p>Framebuffers are crucial for swapchain management. Because a
+swapchain typically contains two or three presentable images (for double
+or triple buffering), an application cannot bind a single static image
+to the render pass.</p>
+<p>Instead, the application creates a separate
+<code>VkFramebuffer</code> for each swapchain image view, paired with a
+shared depth-stencil view if applicable. At runtime, the application
+acquires the index of the next available swapchain image, selects the
+corresponding framebuffer, and passes it to
+<code>vkCmdBeginRenderPass</code>. This allows the rendering commands to
+write to the correct back-buffer while another image is being presented
+to the display.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

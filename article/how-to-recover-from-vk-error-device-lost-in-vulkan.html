@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How to Recover from VK_ERROR_DEVICE_LOST in Vulkan - vulkan</title>
+    <meta name="description" content="The VKERRORDEVICELOST error indicates that the logical device has become unavailable due to a hardware hang, driver crash, operating system timeout (such as Windows TDR), or physical hardware removal. Gracefully recovering from this error requires an appl">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/how-to-recover-from-vk-error-device-lost-in-vulkan">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How to Recover from VK_ERROR_DEVICE_LOST in Vulkan - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/how-to-recover-from-vk-error-device-lost-in-vulkan" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The VKERRORDEVICELOST error indicates that the logical device has become unavailable due to a hardware hang, driver crash, operating system timeout (such as Windows TDR), or physical hardware removal. Gracefully recovering from this error requires an appl" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-to-recover-from-vk_error_device_lost-in-vulkan">How to
+Recover from VK_ERROR_DEVICE_LOST in Vulkan</h1>
+<p>The <code>VK_ERROR_DEVICE_LOST</code> error indicates that the
+logical device has become unavailable due to a hardware hang, driver
+crash, operating system timeout (such as Windows TDR), or physical
+hardware removal. Gracefully recovering from this error requires an
+application to detect the failure immediately, decouple the graphics
+backend from the engine's core state, safely tear down the invalidated
+Vulkan objects, recreate the rendering pipeline from scratch, and resume
+execution without crashing or terminating the host process.</p>
+<h3 id="detect-and-isolate-the-error">Detect and Isolate the Error</h3>
+<p>The error can be returned synchronously or asynchronously by nearly
+any Vulkan API call that submits work, checks synchronization, or
+presents to a surface (e.g., <code>vkQueueSubmit</code>,
+<code>vkWaitForFences</code>, <code>vkAcquireNextImageKHR</code>, or
+<code>vkQueuePresentKHR</code>). Once <code>VK_ERROR_DEVICE_LOST</code>
+is returned, the application must transition to an internal recovery
+state and halt any new command recording or queue submissions across all
+threads.</p>
+<h3 id="diagnose-the-root-cause">Diagnose the Root Cause</h3>
+<p>Before destroying the context, capture diagnostic telemetry to log
+what caused the crash. Vulkan provides diagnostic extensions that can be
+queried even after device loss occurs:</p>
+<ul>
+<li><strong><code>VK_EXT_device_fault</code></strong>: Allows querying
+specific hardware and memory fault descriptions directly from the
+driver.</li>
+<li><strong><code>VK_NV_device_diagnostic_checkpoints</code></strong> or
+<strong><code>VK_AMD_buffer_marker</code></strong>: Injects markers into
+the command stream to pinpoint the exact draw call, dispatch, or
+pipeline execution that triggered the GPU freeze.</li>
+</ul>
+<h3 id="isolate-the-host-side-state">Isolate the Host-Side State</h3>
+<p>A successful recovery model relies on a strict architectural
+separation between the high-level application state (such as scene
+graphs, camera positions, game logic, and CPU-side asset caches) and
+low-level Vulkan objects. If vertex data, textures, and shader binaries
+remain cached in system RAM or on disk, the application can rebuild the
+rendering context without re-executing core application logic.</p>
+<h3 id="safely-destroy-stale-vulkan-objects">Safely Destroy Stale Vulkan
+Objects</h3>
+<p>Once a device is lost, synchronization commands like
+<code>vkDeviceWaitIdle</code> or <code>vkQueueWaitIdle</code> will
+either return <code>VK_ERROR_DEVICE_LOST</code> or hang. Applications
+must bypass normal GPU synchronization and proceed directly to
+destroying resources.</p>
+<p>According to the Vulkan specification, most <code>vkDestroy*</code>
+functions remain valid to call on a lost device. The application must
+iterate through and destroy:</p>
+<ol type="1">
+<li>Pipelines, pipeline layouts, and descriptor sets.</li>
+<li>Framebuffers, render passes, and image views.</li>
+<li>Buffers, images, and their backing <code>VkDeviceMemory</code>
+allocations.</li>
+<li>Command pools and synchronization primitives (fences,
+semaphores).</li>
+<li>The swapchain (<code>VkSwapchainKHR</code>).</li>
+<li>The <code>VkDevice</code> itself.</li>
+</ol>
+<p>The <code>VkInstance</code> and the native window's
+<code>VkSurfaceKHR</code> typically remain valid and do not need to be
+destroyed unless the underlying physical GPU was disconnected.</p>
+<h3 id="re-enumerate-and-recreate-the-device">Re-enumerate and Recreate
+the Device</h3>
+<p>Query <code>vkEnumeratePhysicalDevices</code> to verify the state of
+the hardware. If a dynamic GPU switch occurred or an external GPU was
+unplugged, the application must select an alternate compatible physical
+device or wait for the driver to recover.</p>
+<p>Once a valid physical device is confirmed:</p>
+<ol type="1">
+<li>Call <code>vkCreateDevice</code> to obtain a fresh
+<code>VkDevice</code>.</li>
+<li>Retrieve new queue handles using <code>vkGetDeviceQueue</code>.</li>
+<li>Re-initialize memory allocators (such as Vulkan Memory
+Allocator).</li>
+<li>Recreate the swapchain associated with the existing
+<code>VkSurfaceKHR</code>.</li>
+</ol>
+<h3 id="reload-assets-and-rebuild-pipelines">Reload Assets and Rebuild
+Pipelines</h3>
+<p>Using the preserved CPU-side data, restore the rendering
+pipeline:</p>
+<ol type="1">
+<li>Recompile or reload cached pipeline states and pipeline caches.</li>
+<li>Reallocate GPU memory and upload geometry, materials, and uniform
+data back to device-local memory.</li>
+<li>Reallocate and update descriptor pools and descriptor sets.</li>
+<li>Recreate command pools and allocate new command buffers for each
+frame in flight.</li>
+</ol>
+<h3 id="re-synchronize-and-resume-execution">Re-synchronize and Resume
+Execution</h3>
+<p>Instantiate new synchronization primitives (fences and semaphores) in
+their appropriate initial states. Reset all frame indices and swapchain
+counters to zero. Once all resources are re-bound and validated, resume
+the primary render loop and begin submitting frames using the newly
+initialized device.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

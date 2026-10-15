@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Querying Compacted AS Size with Vulkan Query Pools - vulkan</title>
+    <meta name="description" content="Compacting acceleration structures in Vulkan allows developers to significantly reduce video memory consumption by shrinking bottom-level acceleration structures (BLAS) to their true post-build footprint. Because the final compacted size cannot be calcula">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/querying-compacted-as-size-with-vulkan-query-pools">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Querying Compacted AS Size with Vulkan Query Pools - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/querying-compacted-as-size-with-vulkan-query-pools" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Compacting acceleration structures in Vulkan allows developers to significantly reduce video memory consumption by shrinking bottom-level acceleration structures (BLAS) to their true post-build footprint. Because the final compacted size cannot be calcula" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="querying-compacted-as-size-with-vulkan-query-pools">Querying
+Compacted AS Size with Vulkan Query Pools</h1>
+<p>Compacting acceleration structures in Vulkan allows developers to
+significantly reduce video memory consumption by shrinking bottom-level
+acceleration structures (BLAS) to their true post-build footprint.
+Because the final compacted size cannot be calculated statically,
+applications must query the required memory size from the GPU after the
+initial build step. This article details the sequential steps to set up,
+record, and retrieve compacted acceleration structure sizes using Vulkan
+query pools.</p>
+<h3 id="1-enable-required-extensions-and-features">1. Enable Required
+Extensions and Features</h3>
+<p>Ensure the instance and device enable the
+<code>VK_KHR_acceleration_structure</code> extension and its
+dependencies (<code>VK_KHR_deferred_host_operations</code>). When
+creating the logical device, enable the
+<code>accelerationStructure</code> feature in
+<code>VkPhysicalDeviceAccelerationStructureFeaturesKHR</code>.</p>
+<h3 id="2-create-an-acceleration-structure-query-pool">2. Create an
+Acceleration Structure Query Pool</h3>
+<p>Create a dedicated query pool configured to hold size query
+results:</p>
+<ul>
+<li>Populate a <code>VkQueryPoolCreateInfo</code> structure.</li>
+<li>Set <code>queryType</code> to
+<code>VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR</code>.</li>
+<li>Set <code>queryCount</code> to the number of acceleration structures
+you intend to query simultaneously.</li>
+<li>Call <code>vkCreateQueryPool</code> to allocate the resource.</li>
+</ul>
+<h3 id="3-build-the-initial-structure-with-compaction-flags">3. Build
+the Initial Structure with Compaction Flags</h3>
+<p>Before querying, the source acceleration structure must be built with
+compaction support:</p>
+<ul>
+<li>Set the <code>flags</code> field of
+<code>VkAccelerationStructureBuildGeometryInfoKHR</code> to include
+<code>VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR</code>.</li>
+<li>Allocate the initial uncompacted scratch and destination buffers
+using the sizes from
+<code>vkGetAccelerationStructureBuildSizesKHR</code>.</li>
+<li>Record the build command into a command buffer using
+<code>vkCmdBuildAccelerationStructuresKHR</code>.</li>
+</ul>
+<h3 id="4-insert-an-execution-and-memory-barrier">4. Insert an Execution
+and Memory Barrier</h3>
+<p>The query command cannot read the built structure until the build
+operations are complete. Insert a pipeline barrier into the command
+buffer:</p>
+<ul>
+<li>Source stage:
+<code>VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR</code></li>
+<li>Destination stage:
+<code>VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR</code></li>
+<li>Source access mask:
+<code>VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR</code></li>
+<li>Destination access mask:
+<code>VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR</code></li>
+</ul>
+<p>Call <code>vkCmdPipelineBarrier</code> (or
+<code>vkCmdPipelineBarrier2</code>) to enforce this synchronization.</p>
+<h3 id="5-reset-the-query-pool">5. Reset the Query Pool</h3>
+<p>Before emitting queries, reset the query pool indices that will be
+used:</p>
+<ul>
+<li>Call <code>vkCmdResetQueryPool</code> within the command buffer
+prior to writing queries, or call <code>vkResetQueryPool</code> on the
+host if the <code>hostQueryReset</code> feature is supported and
+enabled.</li>
+</ul>
+<h3 id="6-write-acceleration-structure-properties">6. Write Acceleration
+Structure Properties</h3>
+<p>Record the query command onto the command buffer:</p>
+<ul>
+<li>Call
+<code>vkCmdWriteAccelerationStructuresPropertiesKHR</code>.</li>
+<li>Pass the target acceleration structure handles in the
+<code>pAccelerationStructures</code> array.</li>
+<li>Set <code>queryType</code> to
+<code>VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR</code>.</li>
+<li>Specify the query pool handle and the <code>firstQuery</code>
+index.</li>
+</ul>
+<h3 id="7-retrieve-the-size-values">7. Retrieve the Size Values</h3>
+<p>Submit the command buffer to the compute or graphics queue. Once the
+query has completed, extract the result:</p>
+<ul>
+<li><strong>Host Retrieval:</strong> If allocating destination memory
+via the CPU, wait for the submission fence to signal, then call
+<code>vkGetQueryPoolResults</code>. Pass a <code>VkDeviceSize</code>
+array to receive the byte sizes, and set flags such as
+<code>VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT</code>.</li>
+<li><strong>Device Retrieval:</strong> If using device-side allocation
+routines, copy the query values directly to a buffer on the timeline
+using <code>vkCmdCopyQueryPoolResults</code>.</li>
+</ul>
+<h3 id="8-compact-the-structure">8. Compact the Structure</h3>
+<p>Using the queried size, create a new compact buffer and acceleration
+structure handle, then record
+<code>vkCmdCopyAccelerationStructureKHR</code> with <code>mode</code>
+set to <code>VK_COPY_ACCELERATION_STRUCTURE_MODE_COMPACT_KHR</code> to
+finalize the process.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

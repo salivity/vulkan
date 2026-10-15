@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VK_EXT_descriptor_buffer in Vulkan Explained - vulkan</title>
+    <meta name="description" content="The VKEXTdescriptorbuffer extension fundamentally alters resource binding in Vulkan by bypassing the driver-managed descriptor pool and descriptor set architecture, replacing them with direct memory management. Traditionally, Vulkan required applications">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vk-ext-descriptor-buffer-in-vulkan-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="VK_EXT_descriptor_buffer in Vulkan Explained - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vk-ext-descriptor-buffer-in-vulkan-explained" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The VKEXTdescriptorbuffer extension fundamentally alters resource binding in Vulkan by bypassing the driver-managed descriptor pool and descriptor set architecture, replacing them with direct memory management. Traditionally, Vulkan required applications" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="vk_ext_descriptor_buffer-in-vulkan-explained">VK_EXT_descriptor_buffer
+in Vulkan Explained</h1>
+<p>The <code>VK_EXT_descriptor_buffer</code> extension fundamentally
+alters resource binding in Vulkan by bypassing the driver-managed
+descriptor pool and descriptor set architecture, replacing them with
+direct memory management. Traditionally, Vulkan required applications to
+create descriptor pools, allocate opaque descriptor set handles, and
+update them through explicit driver API calls, which introduced
+noticeable CPU overhead and memory indirection. With
+<code>VK_EXT_descriptor_buffer</code>, descriptors are treated as plain
+binary data written directly into standard <code>VkBuffer</code>
+objects, bridging the gap between application-side memory management and
+the underlying GPU hardware.</p>
+<h3 id="the-limitation-of-traditional-descriptor-sets">The Limitation of
+Traditional Descriptor Sets</h3>
+<p>In standard Vulkan, binding resources like textures, samplers, and
+buffers requires <code>VkDescriptorPool</code> and
+<code>VkDescriptorSet</code>. Updating these sets requires calls to
+<code>vkUpdateDescriptorSets</code>, which forces the driver to
+translate resource handles into hardware-specific representations,
+validate bindings, and manage the underlying memory layouts.</p>
+<p>This model creates several performance bottlenecks:</p>
+<ul>
+<li><strong>Driver Overhead:</strong> The driver must manage internal
+allocations, validation, and synchronization for descriptor sets.</li>
+<li><strong>Multithreading Contention:</strong> Allocating and freeing
+descriptor sets from shared pools often requires synchronization across
+CPU threads.</li>
+<li><strong>Impedance Mismatch:</strong> Modern GPU hardware handles
+descriptors simply as pointers or compact data structures in
+GPU-accessible memory. The traditional API forces an unnecessary
+abstraction layer over a conceptually simple hardware mechanism.</li>
+</ul>
+<h3 id="how-direct-memory-allocation-replaces-descriptor-sets">How
+Direct Memory Allocation Replaces Descriptor Sets</h3>
+<p><code>VK_EXT_descriptor_buffer</code> exposes descriptors directly as
+raw byte data that applications write into standard GPU memory
+allocations (<code>VkBuffer</code>). Instead of interacting with
+driver-managed handles, applications manage the layout, lifecycle, and
+memory addresses of descriptors directly.</p>
+<h4 id="1-querying-descriptor-sizes-and-layouts">1. Querying Descriptor
+Sizes and Layouts</h4>
+<p>Because descriptors are hardware-specific binary structures, the
+driver provides their exact size and alignment requirements. Using
+functions like <code>vkGetDescriptorSetLayoutBindingOffsetEXT</code> and
+<code>vkGetDescriptorSetLayoutSizeEXT</code>, an application
+determines:</p>
+<ul>
+<li>The byte size of the entire descriptor set layout.</li>
+<li>The exact byte offset for each individual binding within that
+layout.</li>
+<li>The alignment rules required by the device for different descriptor
+types (e.g., samplers, storage buffers, uniform buffers).</li>
+</ul>
+<h4 id="2-writing-descriptors-directly-to-buffers">2. Writing
+Descriptors Directly to Buffers</h4>
+<p>Applications allocate standard <code>VkBuffer</code> objects with the
+<code>VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT</code> or
+<code>VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT</code> usage
+flags. This memory can be host-visible or device-local.</p>
+<p>To populate a descriptor, the application calls
+<code>vkGetDescriptorEXT</code>, which serializes the descriptor data
+(such as a view to an image or a buffer) into a raw memory blob provided
+by the developer. The application then memcpy-writes this blob directly
+into the mapped buffer at the previously queried byte offset. Because
+this is ordinary memory:</p>
+<ul>
+<li>Descriptors can be prepared asynchronously and in parallel across
+multiple CPU threads without lock contention.</li>
+<li>Descriptor tables can be pre-baked, cached, copied via GPU transfer
+commands, or streamed directly to the GPU.</li>
+</ul>
+<h4 id="3-binding-buffers-in-command-buffers">3. Binding Buffers in
+Command Buffers</h4>
+<p>Instead of calling <code>vkCmdBindDescriptorSets</code>, binding is
+split into two lightweight steps:</p>
+<ul>
+<li><strong>Binding the Buffers:</strong>
+<code>vkCmdBindDescriptorBuffersEXT</code> informs the GPU which
+<code>VkBuffer</code> objects contain the active descriptor data.</li>
+<li><strong>Setting Offsets:</strong>
+<code>vkCmdSetDescriptorBufferOffsetsEXT</code> pairs a specific
+pipeline layout's descriptor set index with a buffer index and a byte
+offset pointing to the start of the descriptor set data within that
+buffer.</li>
+</ul>
+<h3 id="architectural-impact">Architectural Impact</h3>
+<p>By transforming descriptor sets into raw memory buffers,
+<code>VK_EXT_descriptor_buffer</code> removes driver intervention from
+resource binding pipelines. Applications gain predictable memory
+footprints, standard buffer synchronization models (using fences,
+semaphores, and pipeline barriers), and full control over GPU resource
+table layouts, directly reflecting modern GPU execution models.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

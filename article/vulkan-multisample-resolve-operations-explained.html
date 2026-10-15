@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Multisample Resolve Operations Explained - vulkan</title>
+    <meta name="description" content="This article provides an overview of how Vulkan handles multisample resolve operations to downsample multisample attachments into standard, single-sample textures. In graphics rendering, Multisample Anti-Aliasing (MSAA) renders geometry to targets with mu">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-multisample-resolve-operations-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Multisample Resolve Operations Explained - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-multisample-resolve-operations-explained" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article provides an overview of how Vulkan handles multisample resolve operations to downsample multisample attachments into standard, single-sample textures. In graphics rendering, Multisample Anti-Aliasing (MSAA) renders geometry to targets with mu" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-multisample-resolve-operations-explained">Vulkan
+Multisample Resolve Operations Explained</h1>
+<p>This article provides an overview of how Vulkan handles multisample
+resolve operations to downsample multisample attachments into standard,
+single-sample textures. In graphics rendering, Multisample Anti-Aliasing
+(MSAA) renders geometry to targets with multiple samples per pixel to
+smooth jagged edges. To display this image on a standard display or use
+it as a standard texture in subsequent shader passes, these extra
+samples must be combined—or "resolved"—into a single color value per
+pixel. Vulkan provides efficient hardware-level paths within its render
+passes and transfer commands to perform this downsampling operation.</p>
+<h3 id="understanding-the-resolve-operation">Understanding the Resolve
+Operation</h3>
+<p>During multisampled rendering, color targets are allocated with
+sample counts greater than one (such as
+<code>VK_SAMPLE_COUNT_4_BIT</code>). A resolve operation averages the
+multiple color samples of each pixel into a single representative color
+using a standard box filter. On desktop and mobile GPUs, this is
+typically handled by dedicated hardware units or directly during the
+transition of tile memory to external memory, eliminating the need to
+execute manual fragment shader passes to compute sample averages.</p>
+<h3 id="in-subpass-resolving">In-Subpass Resolving</h3>
+<p>The standard and most efficient way to resolve attachments in Vulkan
+is during a render pass subpass using
+<code>VkSubpassDescription</code>:</p>
+<ol type="1">
+<li><strong>Attachment Pairing</strong>: The render pass configuration
+accepts an array of multisampled attachments in
+<code>pColorAttachments</code> and a corresponding array of
+single-sample attachments in <code>pResolveAttachments</code>.</li>
+<li><strong>One-to-One Mapping</strong>: There is a strict one-to-one
+mapping between color attachments and resolve attachments. If
+<code>pResolveAttachments</code> is provided, the entry at index
+<em>i</em> receives the downsampled output of the color attachment at
+index <em>i</em>. Both attachments must share compatible color
+formats.</li>
+<li><strong>Automatic Downsampling</strong>: When the subpass finishes
+execution, the GPU automatically downsamples the multisampled data into
+the resolve attachment.</li>
+<li><strong>Memory Optimization</strong>: The multisampled attachment
+can be set to <code>VK_ATTACHMENT_STORE_OP_DONT_CARE</code>, while the
+resolve attachment uses <code>VK_ATTACHMENT_STORE_OP_STORE</code>. On
+tile-based architectures (TBDR) common in mobile devices, this allows
+the high-bandwidth multisample buffer to live strictly within fast,
+on-chip tile memory, writing only the final single-sample image back to
+system RAM.</li>
+</ol>
+<h3 id="resolving-via-dynamic-rendering">Resolving via Dynamic
+Rendering</h3>
+<p>In Vulkan 1.3 or via the <code>VK_KHR_dynamic_rendering</code>
+extension, render passes can be executed without traditional render pass
+and framebuffer objects. In this workflow, resolves are configured
+directly within <code>VkRenderingAttachmentInfo</code>:</p>
+<ul>
+<li>The multisample attachment is bound to <code>imageView</code>.</li>
+<li>The target single-sample texture is bound to
+<code>resolveImageView</code>.</li>
+<li><code>resolveMode</code> is configured (commonly
+<code>VK_RESOLVE_MODE_AVERAGE_BIT</code> for color targets).</li>
+<li>The operation runs automatically upon completing the rendering pass
+defined by <code>vkCmdEndRendering</code>.</li>
+</ul>
+<h3 id="explicit-command-resolving-with-vkcmdresolveimage">Explicit
+Command Resolving with vkCmdResolveImage</h3>
+<p>If rendering and resolving cannot occur within the same subpass or
+dynamic rendering block, Vulkan provides an explicit command:
+<code>vkCmdResolveImage</code>.</p>
+<ul>
+<li><strong>Usage Flags</strong>: The source image must have
+<code>VK_IMAGE_USAGE_TRANSFER_SRC_BIT</code>, and the destination image
+requires <code>VK_IMAGE_USAGE_TRANSFER_DST_BIT</code>.</li>
+<li><strong>Layout Requirements</strong>: Before recording the command,
+the source image must be transitioned to
+<code>VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL</code> or
+<code>VK_IMAGE_LAYOUT_GENERAL</code>, and the destination image must be
+in <code>VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL</code> or
+<code>VK_IMAGE_LAYOUT_GENERAL</code>.</li>
+<li><strong>Execution</strong>: The command takes a
+<code>VkImageResolve</code> structure defining the source and
+destination mip levels, array layers, and regions to resolve. Unlike
+subpass resolves, this occurs as a separate transfer operation outside
+of the rasterization pipeline.</li>
+</ul>
+<h3 id="depth-and-stencil-resolves">Depth and Stencil Resolves</h3>
+<p>While color resolves use average blending, depth and stencil
+attachments require distinct handling because averaging depth values
+often causes depth-testing artifacts. Using the core Vulkan 1.2
+specification (or <code>VK_KHR_depth_stencil_resolve</code>), developers
+can resolve depth and stencil data by specifying resolve modes such
+as:</p>
+<ul>
+<li><code>VK_RESOLVE_MODE_SAMPLE_ZERO_BIT</code>: Retains the value of
+sample 0.</li>
+<li><code>VK_RESOLVE_MODE_MIN_BIT</code> /
+<code>VK_RESOLVE_MODE_MAX_BIT</code>: Takes the minimum or maximum
+sample value (ideal for shadow maps and depth bounds checks).</li>
+<li><code>VK_RESOLVE_MODE_AVERAGE_BIT</code>: Averages depth values
+(valid for depth, invalid for stencil).</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

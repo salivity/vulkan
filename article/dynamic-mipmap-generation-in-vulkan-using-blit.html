@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Mipmap Generation in Vulkan Using Blit - vulkan</title>
+    <meta name="description" content="Dynamic mipmap generation in Vulkan allows developers to generate lower-resolution levels of detail directly on the GPU at runtime rather than pre-computing them on the CPU or loading pre-baked mip chains from disk. This process utilizes the vkCmdBlitImag">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/dynamic-mipmap-generation-in-vulkan-using-blit">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Dynamic Mipmap Generation in Vulkan Using Blit - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/dynamic-mipmap-generation-in-vulkan-using-blit" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Dynamic mipmap generation in Vulkan allows developers to generate lower-resolution levels of detail directly on the GPU at runtime rather than pre-computing them on the CPU or loading pre-baked mip chains from disk. This process utilizes the vkCmdBlitImag" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamic-mipmap-generation-in-vulkan-using-blit">Dynamic Mipmap
+Generation in Vulkan Using Blit</h1>
+<p>Dynamic mipmap generation in Vulkan allows developers to generate
+lower-resolution levels of detail directly on the GPU at runtime rather
+than pre-computing them on the CPU or loading pre-baked mip chains from
+disk. This process utilizes the <code>vkCmdBlitImage</code> command
+inside an iterative loop, leveraging hardware downsampling and
+synchronization barriers to successively copy, filter, and transition
+each mip level from the one before it until the entire texture chain is
+complete and ready for shader sampling.</p>
+<h3 id="prerequisites-and-format-capabilities">Prerequisites and Format
+Capabilities</h3>
+<p>Before initiating dynamic mipmap generation, the target
+<code>VkImage</code> must be created with specific usage flags:
+<code>VK_IMAGE_USAGE_TRANSFER_SRC_BIT</code>,
+<code>VK_IMAGE_USAGE_TRANSFER_DST_BIT</code>, and
+<code>VK_IMAGE_USAGE_SAMPLED_BIT</code>. The total number of mip levels
+is calculated based on the base dimensions:</p>
+<p><span class="math display">\[\text{mipLevels} =
+\lfloor\log_2(\max(\text{width}, \text{height}))\rfloor + 1\]</span></p>
+<p>Because <code>vkCmdBlitImage</code> relies on hardware filtering, you
+must verify that the physical device supports linear filtering for the
+chosen format as a blit destination and source. Query this using
+<code>vkGetPhysicalDeviceFormatProperties</code> and check the
+<code>optimalTilingFeatures</code> field for both
+<code>VK_FORMAT_FEATURE_BLIT_SRC_BIT</code> and
+<code>VK_FORMAT_FEATURE_BLIT_DST_BIT</code>, along with
+<code>VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT</code>. If
+linear blitting is unsupported, alternative approaches such as custom
+compute shaders or software generation must be used.</p>
+<h3 id="the-blit-loop-mechanism">The Blit Loop Mechanism</h3>
+<p>Once the base texture data (mip level 0) is transferred from a
+staging buffer into the image, all mip levels exist in the
+<code>VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL</code> layout. Generating the
+remaining levels requires processing them sequentially from level 1 to
+<code>mipLevels - 1</code>.</p>
+<p>For each mip level <span class="math inline">\(i\)</span> (where
+<span class="math inline">\(i\)</span> ranges from 1 to <span
+class="math inline">\(\text{mipLevels} - 1\)</span>):</p>
+<ol type="1">
+<li><p><strong>Transition Source Level (<span class="math inline">\(i -
+1\)</span>):</strong> A pipeline barrier
+(<code>vkCmdPipelineBarrier</code>) transitions level <span
+class="math inline">\(i - 1\)</span> from
+<code>VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL</code> to
+<code>VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL</code>. The barrier specifies
+<code>srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT</code> and
+<code>dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT</code>, using
+<code>VK_PIPELINE_STAGE_TRANSFER_BIT</code> for both source and
+destination stages.</p></li>
+<li><p><strong>Execute the Blit:</strong> Populate a
+<code>VkImageBlit</code> struct defining the source and destination
+regions:</p>
+<ul>
+<li><strong>Source coordinates:</strong> From <code>(0, 0, 0)</code> to
+<code>(mipWidth, mipHeight, 1)</code> at
+<code>mipLevel = i - 1</code>.</li>
+<li><strong>Destination coordinates:</strong> From
+<code>(0, 0, 0)</code> to <code>(nextMipWidth, nextMipHeight, 1)</code>
+at <code>mipLevel = i</code>, where each dimension is calculated as
+<span class="math inline">\(\max(1, \lfloor\text{currentDimension} /
+2\rfloor)\)</span>.</li>
+</ul>
+<p>Invoke <code>vkCmdBlitImage</code>, specifying
+<code>VK_FILTER_LINEAR</code> for the filter parameter. This instructs
+the GPU's fixed-function texture hardware to filter and downsample the
+source region into the destination region.</p></li>
+<li><p><strong>Transition Source Level (<span class="math inline">\(i -
+1\)</span>) to Shader Read:</strong> A second pipeline barrier
+transitions level <span class="math inline">\(i - 1\)</span> from
+<code>VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL</code> to
+<code>VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL</code>. The access mask
+transitions from <code>VK_ACCESS_TRANSFER_READ_BIT</code> to
+<code>VK_ACCESS_SHADER_READ_BIT</code>, and the pipeline stage
+transitions from <code>VK_PIPELINE_STAGE_TRANSFER_BIT</code> to
+<code>VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT</code>.</p></li>
+<li><p><strong>Dimension Reduction:</strong> Update the width and height
+trackers by dividing them by 2 (ensuring values do not drop below 1) for
+the next iteration.</p></li>
+</ol>
+<h3 id="finalizing-the-chain">Finalizing the Chain</h3>
+<p>The final mip level (<code>mipLevels - 1</code>) never acts as a blit
+source; it only serves as the destination for the final blit. As a
+result, it remains in <code>VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL</code>
+after the loop completes.</p>
+<p>A final pipeline barrier must be submitted specifically for
+<code>mipLevels - 1</code>, transitioning it from
+<code>VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL</code> to
+<code>VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL</code>. This barrier
+uses:</p>
+<ul>
+<li><code>srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT</code></li>
+<li><code>dstAccessMask = VK_ACCESS_SHADER_READ_BIT</code></li>
+<li><code>srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT</code></li>
+<li><code>dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT</code></li>
+</ul>
+<p>Once this command buffer is submitted and execution finishes on the
+GPU queue, every subresource level within the <code>VkImage</code> will
+reside in <code>VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL</code>,
+completely initialized and synchronized for rendering pipelines.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

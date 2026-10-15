@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fragment Shading Rate with Multisample Resolve in Vulkan - vulkan</title>
+    <meta name="description" content="This article examines how the Fragment Shading Rate (FSR) extension (VKKHRfragmentshadingrate) interacts with multisample resolve operations in the Vulkan graphics API. It details how the rasterization pipeline decouples geometric coverage from fragment s">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/fragment-shading-rate-with-multisample-resolve-in-vulkan">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Fragment Shading Rate with Multisample Resolve in Vulkan - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/fragment-shading-rate-with-multisample-resolve-in-vulkan" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article examines how the Fragment Shading Rate (FSR) extension (VKKHRfragmentshadingrate) interacts with multisample resolve operations in the Vulkan graphics API. It details how the rasterization pipeline decouples geometric coverage from fragment s" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="fragment-shading-rate-with-multisample-resolve-in-vulkan">Fragment
+Shading Rate with Multisample Resolve in Vulkan</h1>
+<p>This article examines how the Fragment Shading Rate (FSR) extension
+(<code>VK_KHR_fragment_shading_rate</code>) interacts with multisample
+resolve operations in the Vulkan graphics API. It details how the
+rasterization pipeline decouples geometric coverage from fragment shader
+invocations, how coarse shading results populate multisampled
+attachments, and how the standard resolve stage processes these values
+to maintain edge anti-aliasing while reducing shading workload.</p>
+<h3 id="pipeline-decoupling-shading-rate-vs-coverage">Pipeline
+Decoupling: Shading Rate vs. Coverage</h3>
+<p>Fragment Shading Rate allows developers to shade a coarse pixel
+area—such as 2x1, 1x2, or 2x2 pixels—using a single fragment shader
+invocation. When combining FSR with Multisample Anti-Aliasing (MSAA),
+Vulkan decouples shading frequency from visibility testing.</p>
+<p>Visibility, depth, and stencil operations continue to execute at full
+sample resolution. For example, if a pipeline uses a 2x2 shading rate
+alongside 4x MSAA, a single fragment shader invocation can cover up to
+16 distinct sample locations across the four-pixel footprint. The
+coverage mask determines which of those 16 samples are covered by the
+incoming primitive. The fragment shader runs once for the coarse
+fragment, and the resulting color output is broadcast across every
+covered sample that passes the depth and stencil tests.</p>
+<h3 id="behavior-during-multisample-resolve">Behavior During Multisample
+Resolve</h3>
+<p>Multisample resolve takes place after rasterization and fragment
+shading, typically defined via <code>pResolveAttachments</code> within a
+subpass or explicitly triggered via <code>vkCmdResolveImage</code>.</p>
+<p>FSR does not alter the mathematical mechanics of the resolve
+operation itself. The resolve engine simply reads the values stored
+within the multisample attachment and reduces them to a single-sample
+destination (typically via a box-filter average for color attachments,
+or min/max operations when using
+<code>VK_KHR_depth_stencil_resolve</code>).</p>
+<p>Key interactions during this phase include:</p>
+<ul>
+<li><strong>Broadcasted Color Values:</strong> Interior samples of a
+primitive that share a coarse fragment receive identical color data.
+When resolved, averaging identical values results in the exact shaded
+color without filtering artifacts.</li>
+<li><strong>Geometric Edge Preservation:</strong> Along primitive
+silhouettes, coverage is determined at the sub-pixel sample level. Some
+samples within a coarse fragment will be covered by the primitive, while
+others will retain the clear color or values from background geometry.
+When the resolve operation combines these samples, it generates
+intermediate shades, preserving smooth anti-aliased geometric edges
+despite the reduced shading rate of the primitive's interior.</li>
+<li><strong>Centroid and Sample Interpolation:</strong> If shader inputs
+use <code>centroid</code> or per-sample interpolation qualifiers, the
+attribute evaluation point shifts based on the actual coverage of the
+coarse fragment. However, because FSR coarse fragments span multiple
+pixels, drivers clamp centroid evaluation to the intersection of the
+primitive coverage and the coarse fragment area.</li>
+</ul>
+<h3 id="subpass-resolves-and-performance-implications">Subpass Resolves
+and Performance Implications</h3>
+<p>Vulkan implementations heavily optimize subpass resolves when the
+multisample image resides in tile memory (on tile-based deferred
+renderers) or fast on-chip caches (on desktop GPUs). Using FSR alongside
+subpass resolves offers distinct performance benefits:</p>
+<ol type="1">
+<li><strong>Bandwidth Efficiency:</strong> Shading at a reduced rate
+decreases the compute load of complex fragment shaders, while resolving
+directly at the end of the subpass avoids writing multi-gigabyte
+multisample allocations out to VRAM.</li>
+<li><strong>Coarse Pixel Limitations:</strong> Implementations report
+capabilities through
+<code>VkPhysicalDeviceFragmentShadingRatePropertiesKHR</code>. Hardware
+may place limits on the maximum coarse shading rate when MSAA is active
+(for instance, limiting rates such that the product of
+<code>fragmentSize.width * fragmentSize.height * rasterizationSamples</code>
+does not exceed internal pipeline limits).</li>
+<li><strong>Resolve Attachment Shading Rates:</strong> Resolve
+operations do not apply shading rates to the resolve step itself.
+Shading rate attachments
+(<code>VkFragmentShadingRateAttachmentInfoKHR</code>) only dictate the
+invocation frequency of the rasterized fragments before they reach the
+multisample buffer.</li>
+</ol></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

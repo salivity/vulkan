@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Mesh Shader Vertex and Primitive Limits - vulkan</title>
+    <meta name="description" content="In the Vulkan graphics API, mesh shaders replace traditional vertex and primitive processing stages to allow flexible, compute-like generation of geometry via clusters called meshlets. When designing mesh shaders using the cross-vendor VKEXTmeshshader ext">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-mesh-shader-vertex-and-primitive-limits">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Mesh Shader Vertex and Primitive Limits - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-mesh-shader-vertex-and-primitive-limits" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In the Vulkan graphics API, mesh shaders replace traditional vertex and primitive processing stages to allow flexible, compute-like generation of geometry via clusters called meshlets. When designing mesh shaders using the cross-vendor VKEXTmeshshader ext" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-mesh-shader-vertex-and-primitive-limits">Vulkan Mesh
+Shader Vertex and Primitive Limits</h1>
+<p>In the Vulkan graphics API, mesh shaders replace traditional vertex
+and primitive processing stages to allow flexible, compute-like
+generation of geometry via clusters called meshlets. When designing mesh
+shaders using the cross-vendor <code>VK_EXT_mesh_shader</code>
+extension, developers must adhere to strict hardware limitations
+governing the maximum number of vertices and primitives a single meshlet
+workgroup can output. This article details the official specification
+minimums, property queries, and practical recommendations for vertex and
+primitive allocations per meshlet in Vulkan.</p>
+<h3 id="core-limits-in-vk_ext_mesh_shader">Core Limits in
+VK_EXT_mesh_shader</h3>
+<p>The output capabilities of a mesh shader workgroup are queried via
+the <code>VkPhysicalDeviceMeshShaderPropertiesEXT</code> structure
+passed to <code>vkGetPhysicalDeviceProperties2</code>. The primary
+properties defining the per-meshlet generation limits are:</p>
+<ul>
+<li><strong><code>maxMeshOutputVertices</code></strong>: The maximum
+number of vertices that a single mesh shader workgroup can emit. The
+Vulkan specification mandates that hardware supporting
+<code>VK_EXT_mesh_shader</code> must support at least
+<strong>256</strong> output vertices.</li>
+<li><strong><code>maxMeshOutputPrimitives</code></strong>: The maximum
+number of primitives (typically triangles or lines) that a single mesh
+shader workgroup can emit. The specification similarly mandates that
+implementations support at least <strong>256</strong> output
+primitives.</li>
+</ul>
+<p>Additionally, implementations define
+<code>maxMeshOutputComponents</code>, which restricts the total scalar
+components across all vertex outputs (guaranteed minimum of 16,384), and
+<code>maxMeshOutputLayers</code>, which limits render target layer
+rendering.</p>
+<h3 id="in-shader-declaration-constraints">In-Shader Declaration
+Constraints</h3>
+<p>Within GLSL (using <code>GL_EXT_mesh_shader</code>) or SPIR-V, a mesh
+shader must explicitly declare the maximum output size in its layout
+qualifiers. For example:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span>local_size_x <span class="op">=</span> <span class="dv">32</span><span class="op">)</span> <span class="dt">in</span><span class="op">;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">triangles</span><span class="op">,</span> <span class="dt">max_vertices</span> <span class="op">=</span> <span class="dv">64</span><span class="op">,</span> max_primitives <span class="op">=</span> <span class="dv">126</span><span class="op">)</span> <span class="dt">out</span><span class="op">;</span></span></code></pre></div>
+<p>The declared <code>max_vertices</code> and
+<code>max_primitives</code> values must not exceed the physical device's
+<code>maxMeshOutputVertices</code> and
+<code>maxMeshOutputPrimitives</code> respectively. Exceeding these
+values results in validation errors or undefined behavior.</p>
+<h3 id="architectural-best-practices">Architectural Best Practices</h3>
+<p>While hardware guarantees support for up to 256 vertices and 256
+primitives, maximizing these values can lead to suboptimal GPU
+occupancy. Each meshlet requires on-chip memory to store its output
+attributes before primitive assembly and rasterization.</p>
+<ul>
+<li><strong>Triangles per Meshlet:</strong> A common target for triangle
+geometry is 64 to 128 vertices and 126 to 256 triangles. A configuration
+of <strong>64 vertices and 126 primitives</strong> is widely regarded as
+a sweet spot across major desktop GPU architectures (including NVIDIA,
+AMD, and Intel), balancing memory footprint and hardware thread
+scheduling.</li>
+<li><strong>Workgroup Invocations:</strong> The number of invocations
+per workgroup (<code>maxMeshWorkGroupInvocations</code>, required
+minimum of 32) should generally be chosen to align with the GPU’s native
+subgroup (wave/warp) size to prevent idling threads when writing out
+vertex and index buffers.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

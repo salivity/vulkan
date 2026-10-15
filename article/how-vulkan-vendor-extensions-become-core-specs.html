@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How Vulkan Vendor Extensions Become Core Specs - vulkan</title>
+    <meta name="description" content="The Vulkan graphics and compute API evolves through a structured extension lifecycle governed by the Khronos Group. This article explains how innovative features originate as vendor-specific extensions, gain industry-wide consensus to become multi-vendor">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/how-vulkan-vendor-extensions-become-core-specs">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How Vulkan Vendor Extensions Become Core Specs - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/how-vulkan-vendor-extensions-become-core-specs" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The Vulkan graphics and compute API evolves through a structured extension lifecycle governed by the Khronos Group. This article explains how innovative features originate as vendor-specific extensions, gain industry-wide consensus to become multi-vendor" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-vulkan-vendor-extensions-become-core-specs">How Vulkan
+Vendor Extensions Become Core Specs</h1>
+<p>The Vulkan graphics and compute API evolves through a structured
+extension lifecycle governed by the Khronos Group. This article explains
+how innovative features originate as vendor-specific extensions, gain
+industry-wide consensus to become multi-vendor (EXT) or Khronos-ratified
+(KHR) extensions, and ultimately integrate into core Vulkan
+specification releases.</p>
+<h3 id="the-vulkan-extension-hierarchy">The Vulkan Extension
+Hierarchy</h3>
+<p>Vulkan organizes extensions into distinct tiers reflecting their
+maturity, scope, and level of industry consensus:</p>
+<ul>
+<li><strong>Vendor-Specific Extensions (<code>NV</code>,
+<code>AMD</code>, <code>INTEL</code>, etc.):</strong> Created
+independently by a single hardware vendor to expose proprietary hardware
+features or prototype new software paradigms without waiting for
+standards committee approval.</li>
+<li><strong>Multi-Vendor Extensions (<code>EXT</code>):</strong>
+Developed collaboratively by two or more vendors, or authored by a
+vendor for broader industry use, but not formally ratified as an
+official Khronos standard.</li>
+<li><strong>Khronos Approved Extensions (<code>KHR</code>):</strong>
+Formally reviewed, finalized, and ratified by the Khronos Vulkan Working
+Group. These represent industry-wide consensus and are intended for
+universal cross-vendor deployment.</li>
+<li><strong>Core Specifications:</strong> Features mandated in major or
+minor milestone releases of Vulkan (such as Vulkan 1.2 or 1.3),
+requiring conforming drivers to support them natively without extension
+queries.</li>
+</ul>
+<h3 id="phase-1-incubation-and-real-world-testing">Phase 1: Incubation
+and Real-World Testing</h3>
+<p>The transition pipeline begins when a single hardware vendor
+identifies a new GPU capability or optimization path. Instead of
+delaying deployment through standards bureaucracy, the vendor drafts an
+extension prefixed with its tag (e.g.,
+<code>VK_NV_ray_tracing</code>).</p>
+<p>During this incubation phase, game engines and graphics developers
+integrate the vendor extension into production software. This exposes
+implementation challenges, validates performance gains, and determines
+developer demand.</p>
+<h3 id="phase-2-multi-vendor-alignment-and-khr-ratification">Phase 2:
+Multi-Vendor Alignment and KHR Ratification</h3>
+<p>When competing hardware architectures introduce similar capabilities
+(for example, when multiple GPU vendors supported hardware-accelerated
+ray tracing), the Khronos Vulkan Working Group initiates
+standardization.</p>
+<ol type="1">
+<li><strong>Interface Harmonization:</strong> Representatives from
+participating vendors collaborate within Khronos working sub-groups to
+reconcile architectural differences between their implementations.</li>
+<li><strong>API Generalization:</strong> Proprietary data structures,
+function calls, and hardware-specific assumptions are abstracted into a
+generalized, vendor-agnostic interface.</li>
+<li><strong>Specification Drafting:</strong> The unified feature set is
+authored under the <code>KHR</code> prefix (e.g.,
+<code>VK_KHR_ray_tracing_pipeline</code>), along with official SPIR-V
+and GLSL/HLSL shading language integrations.</li>
+<li><strong>Ratification and Validation:</strong> The working group
+ratifies the specification, updates the Vulkan Validation Layers, and
+requires participating members to pass official Conformance Test Suite
+(CTS) tests.</li>
+</ol>
+<h3 id="phase-3-promotion-to-the-core-specification">Phase 3: Promotion
+to the Core Specification</h3>
+<p>Once a <code>KHR</code> extension proves critical to the modern
+graphics ecosystem and achieves widespread hardware support, the Vulkan
+Working Group selects it for core promotion during the next scheduled
+minor version update (such as Vulkan 1.3).</p>
+<p>In this stage:</p>
+<ul>
+<li><strong>Syntax Unification:</strong> The extension functions and
+tokens lose their <code>KHR</code> suffixes (e.g.,
+<code>vkCmdDrawIndexedIndirectCountKHR</code> becomes
+<code>vkCmdDrawIndexedIndirectCount</code>).</li>
+<li><strong>Mandatory Conformance:</strong> The feature transitions from
+optional to mandatory baseline functionality for all devices conforming
+to that Vulkan version.</li>
+<li><strong>Roadmap Profiles:</strong> For features requiring
+cutting-edge hardware, Khronos may tie former extensions to specific
+Vulkan Roadmap profiles rather than universal baseline core specs,
+ensuring developers know exactly which hardware tiers support the
+feature.</li>
+</ul>
+<h3 id="backwards-compatibility">Backwards Compatibility</h3>
+<p>To maintain backward compatibility, drivers typically alias the
+original vendor and <code>KHR</code> function pointers to the core
+implementation. Existing binaries built against earlier vendor or
+<code>KHR</code> extensions continue to function seamlessly, while new
+applications target the cleaner core APIs.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

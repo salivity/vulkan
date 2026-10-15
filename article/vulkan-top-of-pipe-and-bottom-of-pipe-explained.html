@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan TOP_OF_PIPE and BOTTOM_OF_PIPE Explained - vulkan</title>
+    <meta name="description" content="In Vulkan synchronization, pipeline stages define logical points in an operation&#39;s lifecycle to control execution order and memory visibility. VKPIPELINESTAGETOPOFPIPEBIT and VKPIPELINESTAGEBOTTOMOFPIPEBIT act as the absolute boundary stages representing">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-top-of-pipe-and-bottom-of-pipe-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan TOP_OF_PIPE and BOTTOM_OF_PIPE Explained - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-top-of-pipe-and-bottom-of-pipe-explained" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Vulkan synchronization, pipeline stages define logical points in an operation&#39;s lifecycle to control execution order and memory visibility. VKPIPELINESTAGETOPOFPIPEBIT and VKPIPELINESTAGEBOTTOMOFPIPEBIT act as the absolute boundary stages representing" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-top_of_pipe-and-bottom_of_pipe-explained">Vulkan
+TOP_OF_PIPE and BOTTOM_OF_PIPE Explained</h1>
+<p>In Vulkan synchronization, pipeline stages define logical points in
+an operation's lifecycle to control execution order and memory
+visibility. <code>VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT</code> and
+<code>VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT</code> act as the absolute
+boundary stages representing the very beginning and the very end of
+command execution, respectively. This article breaks down how these two
+pseudo-stages function, how they behave when configured as source or
+destination stages, and how to correctly integrate them into
+synchronization chains without introducing pipeline bubbles or data
+hazards.</p>
+<h2 id="understanding-execution-and-memory-boundaries">Understanding
+Execution and Memory Boundaries</h2>
+<p>A Vulkan synchronization dependency consists of two parts: an
+execution dependency, which dictates when commands are allowed to
+progress through the hardware pipeline, and an optional memory
+dependency, which governs cache flushes and invalidations to make
+written data available and visible to subsequent operations.</p>
+<p>Neither <code>TOP_OF_PIPE</code> nor <code>BOTTOM_OF_PIPE</code>
+performs any actual memory access. Therefore, their associated
+<code>VkAccessFlags</code> must always be <code>0</code> (or
+<code>VK_ACCESS_2_NONE</code> in the Synchronization2 API). They
+function purely as execution markers within the driver and GPU
+scheduler.</p>
+<h2
+id="vk_pipeline_stage_top_of_pipe_bit">VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT</h2>
+<p><code>VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT</code> represents the
+earliest point at which the GPU parses and begins processing a
+command.</p>
+<ul>
+<li><strong>As a Source Stage (<code>srcStageMask</code>):</strong>
+Setting <code>TOP_OF_PIPE</code> as the source stage indicates that the
+dependency should wait for work occurring at the start of the preceding
+command. Because <code>TOP_OF_PIPE</code> finishes immediately upon
+command ingestion, the execution dependency resolves instantaneously.
+This makes <code>TOP_OF_PIPE</code> in <code>srcStageMask</code>
+effectively non-blocking: subsequent stages wait on zero actual
+execution work. Using it here is rarely intended, except when
+establishing an initial dependency that depends on no prior work.</li>
+<li><strong>As a Destination Stage (<code>dstStageMask</code>):</strong>
+Setting <code>TOP_OF_PIPE</code> as the destination stage blocks the
+entire subsequent command from starting its execution until the
+<code>srcStageMask</code> operations complete. Every stage in the target
+command depends on <code>TOP_OF_PIPE</code>, meaning no stage of that
+target command can execute until the dependency resolves.</li>
+</ul>
+<h2
+id="vk_pipeline_stage_bottom_of_pipe_bit">VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT</h2>
+<p><code>VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT</code> represents the
+final point after which all work generated by a command has executed and
+retired.</p>
+<ul>
+<li><strong>As a Source Stage (<code>srcStageMask</code>):</strong>
+Setting <code>BOTTOM_OF_PIPE</code> as the source stage forces the
+dependency to wait until every preceding stage of the source command has
+fully completed. This is commonly used when a subsequent command must
+wait for all prior work on the GPU to finish, regardless of whether that
+work was compute, transfer, or graphics shading.</li>
+<li><strong>As a Destination Stage (<code>dstStageMask</code>):</strong>
+Setting <code>BOTTOM_OF_PIPE</code> as the destination stage means that
+the dependency only blocks the final stage of the target command. The
+target command's earlier stages (such as vertex fetching, fragment
+shading, or compute dispatching) can begin executing immediately and
+concurrently with prior work. The target command will only pause right
+before it fully retires.</li>
+</ul>
+<h2 id="functionality-within-synchronization-chains">Functionality
+within Synchronization Chains</h2>
+<p>Synchronization chains link multiple operations across command
+buffers, queues, or passes via pipeline barriers, events, or
+semaphores.</p>
+<h3 id="chaining-with-semaphore-waits">Chaining with Semaphore
+Waits</h3>
+<p>When submitting command buffers via <code>vkQueueSubmit</code>, the
+<code>pWaitDstStageMask</code> parameter determines at what pipeline
+stage execution should pause until the semaphore signals:</p>
+<ul>
+<li>Passing <code>VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT</code> completely
+blocks command parsing and all subsequent work on the command buffer
+until the semaphore is signaled.</li>
+<li>Passing a later stage, such as
+<code>VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT</code>, allows the
+GPU to process earlier stages (like vertex transformations) while
+waiting for the semaphore to signal before writing color data.</li>
+</ul>
+<h3 id="chaining-across-memory-barriers">Chaining Across Memory
+Barriers</h3>
+<p>Because <code>TOP_OF_PIPE</code> and <code>BOTTOM_OF_PIPE</code>
+cannot be combined with memory access flags, they cannot directly
+guarantee memory availability or visibility on their own:</p>
+<ul>
+<li><strong>Layout Transitions:</strong> Image layout transitions
+perform read/write operations under the hood. Using
+<code>TOP_OF_PIPE</code> or <code>BOTTOM_OF_PIPE</code> directly for a
+layout transition is invalid if memory access flags are needed, as
+layout transitions require valid read or write stages.</li>
+<li><strong>Queue Family Transfers:</strong> Transferring ownership
+between queue families requires matching barrier definitions in both
+releasing and acquiring queues. Pairing <code>BOTTOM_OF_PIPE</code> as
+the release source stage with appropriate compute/graphics stages as the
+acquire destination stage ensures all work completes before the resource
+is handed over.</li>
+</ul>
+<h3 id="modern-alternative-synchronization2">Modern Alternative:
+Synchronization2</h3>
+<p>In Vulkan 1.3 and via the <code>VK_KHR_synchronization2</code>
+extension, <code>VK_PIPELINE_STAGE_2_NONE</code> directly replaces
+ambiguous usage of <code>TOP_OF_PIPE</code> and
+<code>BOTTOM_OF_PIPE</code> when specifying that zero stages or no
+memory accesses are involved. For instances requiring a barrier over all
+operations, <code>VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT</code> provides a
+clearer, explicit alternative to manual bottom-of-pipe signaling.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

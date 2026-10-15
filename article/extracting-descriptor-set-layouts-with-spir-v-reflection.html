@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Extracting Descriptor Set Layouts with SPIR-V Reflection - vulkan</title>
+    <meta name="description" content="SPIR-V reflection allows Vulkan applications to dynamically inspect compiled shader binaries at runtime to automatically generate pipeline layouts and descriptor set layouts. By parsing the bytecode stream, reflection tools extract resource metadata—such">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/extracting-descriptor-set-layouts-with-spir-v-reflection">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Extracting Descriptor Set Layouts with SPIR-V Reflection - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/extracting-descriptor-set-layouts-with-spir-v-reflection" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="SPIR-V reflection allows Vulkan applications to dynamically inspect compiled shader binaries at runtime to automatically generate pipeline layouts and descriptor set layouts. By parsing the bytecode stream, reflection tools extract resource metadata—such" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="extracting-descriptor-set-layouts-with-spir-v-reflection">Extracting
+Descriptor Set Layouts with SPIR-V Reflection</h1>
+<p>SPIR-V reflection allows Vulkan applications to dynamically inspect
+compiled shader binaries at runtime to automatically generate pipeline
+layouts and descriptor set layouts. By parsing the bytecode stream,
+reflection tools extract resource metadata—such as set indices, binding
+slots, descriptor types, array counts, and shader stage
+visibility—eliminating the need to manually duplicate shader interface
+definitions in C or C++ application code.</p>
+<h3 id="the-structure-of-spir-v-metadata">The Structure of SPIR-V
+Metadata</h3>
+<p>SPIR-V represents shaders as an array of 32-bit words arranged into
+discrete instructions, where each instruction contains an opcode and a
+word count. When a high-level shader (written in GLSL or HLSL) is
+compiled to SPIR-V, resource bindings declared in the source code are
+translated into standardized intermediate representations:</p>
+<ol type="1">
+<li><strong>Variables (<code>OpVariable</code>):</strong> Uniform
+buffers, storage buffers, textures, and samplers are declared as global
+variables with specific storage classes, such as <code>Uniform</code>,
+<code>StorageBuffer</code>, or <code>UniformConstant</code>.</li>
+<li><strong>Decorations (<code>OpDecorate</code>):</strong> Metadata is
+attached to variable IDs using decoration instructions. The compiler
+emits <code>DescriptorSet</code> and <code>Binding</code> decorations to
+denote the logical placement of the resource within the Vulkan
+descriptor architecture.</li>
+<li><strong>Type Declarations (<code>OpType*</code>):</strong> The data
+format of each variable is defined by type-generation instructions, such
+as <code>OpTypeImage</code>, <code>OpTypeSampledImage</code>,
+<code>OpTypeStruct</code>, and <code>OpTypeArray</code>.</li>
+</ol>
+<h3 id="the-extraction-process">The Extraction Process</h3>
+<p>Dynamic extraction follows a linear analysis pipeline that maps the
+bytecode's internal IDs to Vulkan-compatible structures:</p>
+<h4 id="1-instruction-parsing-and-decoration-collection">1. Instruction
+Parsing and Decoration Collection</h4>
+<p>The reflection engine traverses the binary stream sequentially. It
+reads the <code>OpDecorate</code> instructions to build a lookup table
+mapping internal SPIR-V IDs to their respective
+<code>DescriptorSet</code> and <code>Binding</code> integer values. If a
+variable lacks an explicit <code>DescriptorSet</code> decoration, it
+defaults to set index <code>0</code> according to the Vulkan
+specification.</p>
+<h4 id="2-variable-and-type-resolution">2. Variable and Type
+Resolution</h4>
+<p>The engine processes each <code>OpVariable</code> tied to an external
+resource. By tracking the type ID referenced by the variable, the parser
+navigates down the type hierarchy:</p>
+<ul>
+<li>An <code>OpTypeImage</code> with a runtime sampler translates to
+<code>VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE</code> or
+<code>VK_DESCRIPTOR_TYPE_STORAGE_IMAGE</code>, depending on its access
+qualifiers.</li>
+<li>An <code>OpTypeSampledImage</code> translates directly to
+<code>VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER</code>.</li>
+<li>An <code>OpTypeStruct</code> tagged with a <code>Block</code>
+decoration translates to <code>VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER</code>,
+while one decorated with <code>BufferBlock</code> (or within the
+<code>StorageBuffer</code> storage class) translates to
+<code>VK_DESCRIPTOR_TYPE_STORAGE_BUFFER</code>.</li>
+</ul>
+<h4 id="3-array-dimensions-and-counts">3. Array Dimensions and
+Counts</h4>
+<p>If a resource variable points to an <code>OpTypeArray</code> or
+<code>OpTypeRuntimeArray</code>, the parser extracts the element count.
+Fixed-size arrays define the <code>descriptorCount</code> field in the
+target <code>VkDescriptorSetLayoutBinding</code>. Unsized or runtime
+arrays (often used for bindless descriptor indexing) are marked with
+variable descriptor counts and require corresponding layout creation
+flags like
+<code>VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT</code>.</p>
+<h4 id="4-stage-flag-assignment">4. Stage Flag Assignment</h4>
+<p>Because descriptor set layouts can span multiple pipeline stages,
+reflection reads the <code>OpEntryPoint</code> instruction to identify
+the current shader stage (e.g., Vertex, Fragment, Compute). This stage
+is assigned to the <code>stageFlags</code> member of the binding
+definition.</p>
+<h3 id="merging-across-multiple-pipeline-stages">Merging Across Multiple
+Pipeline Stages</h3>
+<p>In graphics pipelines involving multiple shader stages, reflection is
+performed on each stage binary independently. The individual stage
+layouts are then merged:</p>
+<ul>
+<li><strong>Matching Sets and Bindings:</strong> If the same set and
+binding appear in multiple stages (such as a uniform buffer accessed by
+both vertex and fragment shaders), the engine ensures the descriptor
+types match.</li>
+<li><strong>Stage Flag Combination:</strong> The <code>stageFlags</code>
+fields are combined using a bitwise OR operation (e.g.,
+<code>VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT</code>).</li>
+<li><strong>Conflict Validation:</strong> If binding indices collide
+with incompatible descriptor types or differing array lengths, the
+reflection system flags a validation error before any Vulkan API call is
+made.</li>
+</ul>
+<h3 id="mapping-to-vulkan-api-calls">Mapping to Vulkan API Calls</h3>
+<p>Once the reflection data is aggregated and deduplicated, the
+resulting data structures map 1:1 to the native Vulkan structures:</p>
+<ul>
+<li>Individual bindings are converted to arrays of
+<code>VkDescriptorSetLayoutBinding</code>.</li>
+<li>Each set index becomes a distinct
+<code>VkDescriptorSetLayoutCreateInfo</code> populated with its
+respective bindings.</li>
+<li>The application calls <code>vkCreateDescriptorSetLayout</code> for
+each set index.</li>
+<li>The resulting <code>VkDescriptorSetLayout</code> handles are
+collected into an array and passed to
+<code>VkPipelineLayoutCreateInfo</code> to create the final
+<code>VkPipelineLayout</code> via
+<code>vkCreatePipelineLayout</code>.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

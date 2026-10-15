@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Partially Bound Descriptor Arrays Guide - vulkan</title>
+    <meta name="description" content="In Vulkan, managing large descriptor arrays efficiently often requires leaving unused indices empty without causing validation errors or device crashes. This article explains how to configure partially bound descriptor arrays using the descriptor indexing">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-partially-bound-descriptor-arrays-guide">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Partially Bound Descriptor Arrays Guide - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-partially-bound-descriptor-arrays-guide" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Vulkan, managing large descriptor arrays efficiently often requires leaving unused indices empty without causing validation errors or device crashes. This article explains how to configure partially bound descriptor arrays using the descriptor indexing" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-partially-bound-descriptor-arrays-guide">Vulkan Partially
+Bound Descriptor Arrays Guide</h1>
+<p>In Vulkan, managing large descriptor arrays efficiently often
+requires leaving unused indices empty without causing validation errors
+or device crashes. This article explains how to configure partially
+bound descriptor arrays using the descriptor indexing features
+introduced in Vulkan 1.2 (and the
+<code>VK_EXT_descriptor_indexing</code> extension). It highlights the
+specific descriptor binding flag
+required—<code>VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT</code>—alongside
+the physical device feature requirements and implementation details
+necessary to safely use unbound descriptors in your shaders.</p>
+<h3 id="the-required-descriptor-binding-flag">The Required Descriptor
+Binding Flag</h3>
+<p>To allow a descriptor array to contain unbound (null or
+uninitialized) elements, you must use the following flag when creating
+the descriptor set layout:</p>
+<ul>
+<li><strong><code>VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT</code></strong></li>
+</ul>
+<p>By default, the Vulkan specification dictates that every descriptor
+in a set accessed by a pipeline must be valid and bound to a resource
+before draw or dispatch commands are recorded. Setting
+<code>VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT</code> relaxes this
+restriction, allowing elements in an array to be left unbound as long as
+the shader dynamically does not access them during execution.</p>
+<h3 id="enabling-the-required-device-feature">Enabling the Required
+Device Feature</h3>
+<p>Before utilizing this flag, you must confirm support and enable the
+corresponding feature on the physical device. During device creation
+(<code>vkCreateDevice</code>), query and set the feature flag in the
+<code>VkPhysicalDeviceDescriptorIndexingFeatures</code> structure
+(promoted to core in Vulkan 1.2):</p>
+<ul>
+<li><strong><code>descriptorBindingPartiallyBound</code></strong>: Must
+be set to <code>VK_TRUE</code>.</li>
+</ul>
+<p>If using Vulkan 1.2 or later, this feature can also be passed via the
+<code>VkPhysicalDeviceVulkan12Features</code> struct chained to
+<code>VkDeviceCreateInfo::pNext</code>.</p>
+<h3 id="configuring-the-descriptor-set-layout">Configuring the
+Descriptor Set Layout</h3>
+<p>To apply the flag to a descriptor array, include a
+<code>VkDescriptorSetLayoutBindingFlagsCreateInfo</code> structure in
+the <code>pNext</code> chain of
+<code>VkDescriptorSetLayoutCreateInfo</code>:</p>
+<ol type="1">
+<li>Define an array of <code>VkDescriptorBindingFlags</code>, with one
+entry per binding in your layout.</li>
+<li>Assign <code>VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT</code> to the
+specific binding index corresponding to your descriptor array.</li>
+<li>Attach <code>VkDescriptorSetLayoutBindingFlagsCreateInfo</code> to
+<code>VkDescriptorSetLayoutCreateInfo::pNext</code>.</li>
+</ol>
+<p>For example, if binding 0 is a large texture array:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>VkDescriptorBindingFlags bindingFlags<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>VkDescriptorSetLayoutBindingFlagsCreateInfo bindingFlagsInfo <span class="op">=</span> <span class="op">{};</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>bindingFlagsInfo<span class="op">.</span>sType <span class="op">=</span> VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO<span class="op">;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>bindingFlagsInfo<span class="op">.</span>bindingCount <span class="op">=</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>bindingFlagsInfo<span class="op">.</span>pBindingFlags <span class="op">=</span> bindingFlags<span class="op">;</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>VkDescriptorSetLayoutCreateInfo layoutInfo <span class="op">=</span> <span class="op">{};</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>layoutInfo<span class="op">.</span>sType <span class="op">=</span> VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO<span class="op">;</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>layoutInfo<span class="op">.</span>pNext <span class="op">=</span> <span class="op">&amp;</span>bindingFlagsInfo<span class="op">;</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="co">// Configure remaining layoutInfo fields...</span></span></code></pre></div>
+<h3 id="shader-and-execution-constraints">Shader and Execution
+Constraints</h3>
+<p>While <code>VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT</code> permits
+unbound descriptors within an array, it does not allow a shader to
+execute memory operations on them:</p>
+<ul>
+<li><strong>Dynamic Non-Access</strong>: Any shader invocation that
+dynamically executes an instruction referencing an unbound descriptor
+results in undefined behavior (often causing GPU hangs or page
+faults).</li>
+<li><strong>Control Flow</strong>: You must ensure through shader
+control flow (such as conditionals, branch structures, or non-uniform
+dynamic indexing) that unbound descriptor slots are never sampled or
+read.</li>
+<li><strong>Complementary Flags</strong>: This flag is frequently paired
+with <code>VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT</code>, which
+allows updating bound descriptor indices after the set has already been
+bound to a command buffer.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

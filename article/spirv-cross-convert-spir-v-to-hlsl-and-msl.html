@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SPIRV-Cross: Convert SPIR-V to HLSL and MSL - vulkan</title>
+    <meta name="description" content="SPIRV-Cross is an open-source library and tool developed by the Khronos Group designed to parse, reflect, and decompile SPIR-V binary shader modules into high-level shading languages. This article explains what SPIRV-Cross is, how it operates as an interm">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/spirv-cross-convert-spir-v-to-hlsl-and-msl">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="SPIRV-Cross: Convert SPIR-V to HLSL and MSL - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/spirv-cross-convert-spir-v-to-hlsl-and-msl" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="SPIRV-Cross is an open-source library and tool developed by the Khronos Group designed to parse, reflect, and decompile SPIR-V binary shader modules into high-level shading languages. This article explains what SPIRV-Cross is, how it operates as an interm" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="spirv-cross-convert-spir-v-to-hlsl-and-msl">SPIRV-Cross: Convert
+SPIR-V to HLSL and MSL</h1>
+<p>SPIRV-Cross is an open-source library and tool developed by the
+Khronos Group designed to parse, reflect, and decompile SPIR-V binary
+shader modules into high-level shading languages. This article explains
+what SPIRV-Cross is, how it operates as an intermediate
+cross-compilation layer, and why it is essential for multi-API rendering
+engines that must translate SPIR-V shaders into High-Level Shader
+Language (HLSL) for DirectX and Metal Shading Language (MSL) for Apple
+platforms while maintaining Vulkan as a primary target.</p>
+<h3 id="what-is-spirv-cross">What Is SPIRV-Cross?</h3>
+<p>SPIR-V is the standard intermediate representation (IR) used by
+modern graphics APIs, most notably Vulkan. While Vulkan natively accepts
+and executes SPIR-V binaries, other major graphics APIs—such as
+Microsoft DirectX and Apple Metal—do not.</p>
+<p>SPIRV-Cross bridges this divide. It ingests SPIR-V bytecode,
+reconstructs the control flow and shader logic into an Abstract Syntax
+Tree (AST), and then emits equivalent code in other high-level
+languages, including HLSL, MSL, GLSL, and raw C++ code. Beyond
+decompilation, it provides reflection capabilities that extract resource
+bindings, struct layouts, and vertex attributes without requiring
+separate metadata files.</p>
+<h3 id="the-role-of-spirv-cross-in-a-multi-api-pipeline">The Role of
+SPIRV-Cross in a Multi-API Pipeline</h3>
+<p>In modern game engines and cross-platform renderers, maintaining
+distinct shader source files for Vulkan, DirectX 11/12, and Metal
+introduces massive maintenance overhead. SPIRV-Cross enables a "write
+once, compile everywhere" shader pipeline.</p>
+<p>In this workflow:</p>
+<ol type="1">
+<li>Developers write shaders in a single source language, typically
+modern HLSL or GLSL.</li>
+<li>An upstream front-end compiler (such as <code>glslang</code> or
+Microsoft's DirectX Shader Compiler, <code>dxc</code>) compiles this
+code directly into SPIR-V.</li>
+<li>The resulting SPIR-V binary is fed directly into Vulkan
+pipelines.</li>
+<li>For non-Vulkan targets, SPIRV-Cross takes the SPIR-V binary and
+translates it downstream into HLSL or MSL.</li>
+<li>The generated HLSL or MSL source code is compiled by the target
+platform’s native compiler (e.g., <code>fxc</code>/<code>dxc</code> for
+DirectX or <code>metallib</code> for macOS/iOS).</li>
+</ol>
+<h3 id="translating-spir-v-to-hlsl">Translating SPIR-V to HLSL</h3>
+<p>Translating SPIR-V back into HLSL enables support for DirectX 11 and
+DirectX 12. Vulkan and DirectX handle shader resources differently,
+requiring SPIRV-Cross to perform several structural conversions during
+the translation process:</p>
+<ul>
+<li><strong>Resource Remapping:</strong> Vulkan organizes resources into
+descriptor sets and bindings (<code>set = X, binding = Y</code>). HLSL
+relies on discrete register spaces and register indices (such as
+<code>register(t0, space0)</code> for SRVs, <code>register(u0)</code>
+for UAVs, and <code>register(b0)</code> for CBVs). SPIRV-Cross can
+automatically flatten Vulkan descriptor sets into distinct HLSL register
+spaces or linear register assignments.</li>
+<li><strong>Combined Image Samplers:</strong> Vulkan supports both
+combined image-samplers and separate textures and samplers. SPIRV-Cross
+splits or joins these constructs into syntax compatible with HLSL's
+<code>Texture2D</code> and <code>SamplerState</code> conventions.</li>
+<li><strong>Vertex In/Out Layouts:</strong> SPIRV-Cross translates
+SPIR-V input and output interfaces into HLSL structs decorated with
+required HLSL semantics (such as <code>SV_Position</code> or custom
+semantic names).</li>
+</ul>
+<h3 id="translating-spir-v-to-msl">Translating SPIR-V to MSL</h3>
+<p>Apple's Metal API operates strictly with Metal Shading Language.
+SPIRV-Cross handles the unique architectural paradigms of MSL when
+converting SPIR-V:</p>
+<ul>
+<li><strong>Argument Buffers and Discrete Bindings:</strong> MSL binds
+resources to indices using platform-specific attributes such as
+<code>[[buffer(n)]]</code>, <code>[[texture(n)]]</code>, or
+<code>[[sampler(n)]]</code>. SPIRV-Cross maps SPIR-V descriptor sets
+directly to these indices or wraps them inside Metal argument buffer
+structures.</li>
+<li><strong>Coordinate Systems:</strong> Vulkan utilizes a clip-space
+depth range of <code>[0, 1]</code> with an inverted Y-axis compared to
+legacy APIs. MSL shares the <code>[0, 1]</code> depth range but handles
+certain viewport conventions differently. SPIRV-Cross injects the
+necessary transformation code to ensure render targets align identically
+across both APIs.</li>
+<li><strong>Simulated Push Constants:</strong> Vulkan provides
+high-speed "push constants" for passing small amounts of uniform data
+directly to the GPU. Metal lacks a 1:1 equivalent feature, so
+SPIRV-Cross translates push constants into a dedicated dynamic buffer
+bound to a reserve index.</li>
+</ul>
+<h3 id="shader-reflection">Shader Reflection</h3>
+<p>In addition to translation, SPIRV-Cross acts as a shader reflection
+engine. It analyzes the SPIR-V module and reports the exact layout
+of:</p>
+<ul>
+<li>Uniform buffers and push constant blocks (including variable offsets
+and padding).</li>
+<li>Input attributes and output semantics.</li>
+<li>Texture, sampler, and storage buffer bindings.</li>
+</ul>
+<p>This reflection data allows developers to configure pipeline layout
+objects, descriptor tables, and root signatures across Vulkan, DirectX,
+and Metal dynamically at runtime using a single set of layout data
+derived directly from the compiled SPIR-V shader.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

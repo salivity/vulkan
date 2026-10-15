@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Execution Barrier vs Memory Barrier - vulkan</title>
+    <meta name="description" content="In Vulkan synchronization, pipeline barriers are the primary mechanism for coordinating work between different GPU operations. While developers often configure them together inside a single vkCmdPipelineBarrier command, synchronization in Vulkan strictly">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-execution-barrier-vs-memory-barrier">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Execution Barrier vs Memory Barrier - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-execution-barrier-vs-memory-barrier" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Vulkan synchronization, pipeline barriers are the primary mechanism for coordinating work between different GPU operations. While developers often configure them together inside a single vkCmdPipelineBarrier command, synchronization in Vulkan strictly" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-execution-barrier-vs-memory-barrier">Vulkan Execution
+Barrier vs Memory Barrier</h1>
+<p>In Vulkan synchronization, pipeline barriers are the primary
+mechanism for coordinating work between different GPU operations. While
+developers often configure them together inside a single
+<code>vkCmdPipelineBarrier</code> command, synchronization in Vulkan
+strictly decouples the order of operations from the visibility of data.
+An execution barrier controls the timeline of GPU pipeline stages,
+ensuring specific operations finish before others start. A memory
+barrier controls cache coherence, ensuring that memory writes produced
+by earlier operations are flushed and made visible to subsequent
+operations.</p>
+<h3 id="execution-barriers">Execution Barriers</h3>
+<p>An execution barrier establishes an <strong>execution
+dependency</strong> between two sets of operations. It is configured
+using the source stage mask (<code>srcStageMask</code>) and destination
+stage mask (<code>dstStageMask</code>).</p>
+<ul>
+<li><strong>Purpose:</strong> It dictates <em>when</em> tasks run
+relative to one another in the GPU pipeline.</li>
+<li><strong>Mechanism:</strong> When you specify a source stage (such as
+<code>VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT</code>) and a
+destination stage (such as
+<code>VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT</code>), the GPU ensures
+that all work submitted prior to the barrier reaches completion in the
+source stage before any work submitted after the barrier begins in the
+destination stage.</li>
+<li><strong>Limitation:</strong> An execution barrier does not guarantee
+that data modified in the source stage can be read by the destination
+stage. Modern GPUs feature distributed, non-coherent caches. An
+execution dependency ensures instructions run in sequence, but written
+data might still reside in local, private L1 or L2 caches.</li>
+</ul>
+<h3 id="memory-barriers">Memory Barriers</h3>
+<p>A memory barrier establishes a <strong>memory dependency</strong> to
+solve the cache coherence problem. It is configured using access masks
+(<code>srcAccessMask</code> and <code>dstAccessMask</code>) inside
+descriptors like <code>VkMemoryBarrier</code>,
+<code>VkBufferMemoryBarrier</code>, or
+<code>VkImageMemoryBarrier</code>.</p>
+<p>A memory dependency operates in two discrete steps:</p>
+<ol type="1">
+<li><strong>Availability:</strong> The <code>srcAccessMask</code> (e.g.,
+<code>VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT</code>) marks written data as
+<em>available</em>. This triggers a cache flush or write-back operation,
+moving data from private stage caches into a central or globally
+accessible memory space.</li>
+<li><strong>Visibility:</strong> The <code>dstAccessMask</code> (e.g.,
+<code>VK_ACCESS_SHADER_READ_BIT</code>) marks the data as
+<em>visible</em>. This triggers a cache invalidation for the target
+unit, ensuring that subsequent read operations do not consume stale data
+from local caches, but instead fetch the newly available data.</li>
+</ol>
+<p>A memory barrier cannot exist on its own in Vulkan; it is always
+tethered to an execution barrier. The execution barrier defines the
+temporal boundary at which the availability and visibility operations
+must take place.</p>
+<h3 id="key-differences-and-practical-usage">Key Differences and
+Practical Usage</h3>
+<ul>
+<li><strong>Execution Barrier = Timing:</strong> Answers <em>when</em>
+GPU pipeline stages are allowed to execute.</li>
+<li><strong>Memory Barrier = Coherence:</strong> Answers <em>how</em>
+written data is made accessible to other operations.</li>
+</ul>
+<p>If you omit the memory barrier and only use an execution barrier,
+your commands will run in the correct chronological order, but the
+receiving shader or fixed-function stage may read undefined or stale
+data due to un-flushed caches. Conversely, if you include access masks
+without specifying the correct pipeline stages, the cache flush and
+invalidation operations may occur at the wrong time, resulting in race
+conditions. Correct Vulkan synchronization requires setting the
+execution stages accurately to define the sequence, and specifying the
+access flags to ensure the data is properly transferred across
+caches.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

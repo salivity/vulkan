@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Transform Feedback vs Compute Shader Writes - vulkan</title>
+    <meta name="description" content="This article examines the limitations of using Vulkan&#39;s transform feedback extension compared to compute shader storage buffer writes. While transform feedback provides a legacy-compatible mechanism for capturing vertex stream data, modern Vulkan developm">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-transform-feedback-vs-compute-shader-writes">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Transform Feedback vs Compute Shader Writes - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-transform-feedback-vs-compute-shader-writes" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article examines the limitations of using Vulkan&#39;s transform feedback extension compared to compute shader storage buffer writes. While transform feedback provides a legacy-compatible mechanism for capturing vertex stream data, modern Vulkan developm" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-transform-feedback-vs-compute-shader-writes">Vulkan
+Transform Feedback vs Compute Shader Writes</h1>
+<p>This article examines the limitations of using Vulkan's transform
+feedback extension compared to compute shader storage buffer writes.
+While transform feedback provides a legacy-compatible mechanism for
+capturing vertex stream data, modern Vulkan development predominantly
+favors compute shaders. By analyzing memory access patterns, hardware
+compatibility, pipeline flexibility, and synchronization, this breakdown
+highlights why compute shaders provide a superior approach to dynamic
+geometry generation and manipulation.</p>
+<h3 id="memory-access-and-addressing-flexibility">Memory Access and
+Addressing Flexibility</h3>
+<p>Transform feedback (<code>VK_EXT_transform_feedback</code>) is
+constrained to linear, sequential streaming output. Vertices produced by
+the vertex or geometry shader must be written sequentially into bound
+buffers according to fixed-function vertex stream declarations. This
+eliminates the possibility of random-access writes (scatter) or
+arbitrary in-place data modifications.</p>
+<p>Conversely, compute shaders utilize Shader Storage Buffer Objects
+(SSBOs) to perform arbitrary read, write, and atomic operations. Threads
+within a compute workgroup can dynamically calculate memory offsets,
+write to non-contiguous addresses, and share data via workgroup shared
+memory (<code>shared</code>). This makes compute shaders capable of
+executing complex spatial partitioning, prefix sums, and compaction
+algorithms that are impossible within the rigid stream-out paradigm of
+transform feedback.</p>
+<h3
+id="hardware-architecture-and-tile-based-deferred-renderers">Hardware
+Architecture and Tile-Based Deferred Renderers</h3>
+<p>Transform feedback was introduced into Vulkan primarily to assist
+translation layers (such as DXVK and vkd3d-proton) running Direct3D and
+OpenGL applications. Consequently, modern GPU hardware does not always
+natively accelerate this feature.</p>
+<p>Tile-Based Deferred Rendering (TBDR) architectures, standard in
+mobile devices and Apple Silicon, heavily penalize transform feedback.
+Stream output requires dumping intermediate vertex data out of on-chip
+tile memory to external VRAM, breaking the tiled execution pipeline and
+degrading memory bandwidth efficiency. In contrast, compute shaders run
+on standard compute units natively across desktop and mobile hardware,
+allowing predictable performance scaling and efficient cache
+utilization.</p>
+<h3 id="pipeline-coupling-and-invocation-granularity">Pipeline Coupling
+and Invocation Granularity</h3>
+<p>Transform feedback is tightly bound to the traditional graphics
+pipeline. Invocations are dictated by primitive topology and the
+execution rates of prior pipeline stages, such as vertex or geometry
+shaders. When a geometry shader is introduced to vary vertex output
+dynamically, it frequently induces substantial pipeline stalls and
+degrades execution parallelism.</p>
+<p>Compute shaders decouple data generation from the rasterization
+pipeline entirely. Workgroup counts, thread dimensions, and dispatch
+sizes are dictated explicitly by the developer via
+<code>vkCmdDispatch</code> or <code>vkCmdDispatchIndirect</code>.
+Compute shaders bypass the fixed-function primitive assembler,
+rasterizer, and input assembler entirely, executing solely on the GPU’s
+general-purpose compute units without unnecessary graphics state
+overhead.</p>
+<h3 id="dynamic-buffering-and-indirect-execution">Dynamic Buffering and
+Indirect Execution</h3>
+<p>Transform feedback requires tracking the generated primitive counts
+via dedicated counter buffers and queries
+(<code>vkCmdDrawIndirectByteCountEXT</code> or stream query pools).
+Managing these counters requires specialized Vulkan commands and
+synchronization primitives that complicate multi-pass rendering.</p>
+<p>Using compute shaders with SSBOs standardizes dynamic geometry
+workflows. A compute shader can directly calculate primitive counts and
+populate <code>VkDrawIndirectCommand</code> or
+<code>VkDrawIndexedIndirectCommand</code> structures directly in
+device-local memory. Subsequent drawing passes can consume these
+indirect buffers natively with <code>vkCmdDrawIndirect</code>,
+eliminating the need for specialized transform feedback extensions and
+minimizing CPU-GPU synchronization bottlenecks.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Video Decode and Swapchain Presentation - vulkan</title>
+    <meta name="description" content="Vulkan Video extensions bring hardware-accelerated video decoding directly into the Vulkan ecosystem, allowing applications to process compressed video streams on the GPU. Displaying these decoded frames requires seamless interaction with Vulkan&#39;s present">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-video-decode-and-swapchain-presentation">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Video Decode and Swapchain Presentation - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-video-decode-and-swapchain-presentation" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Vulkan Video extensions bring hardware-accelerated video decoding directly into the Vulkan ecosystem, allowing applications to process compressed video streams on the GPU. Displaying these decoded frames requires seamless interaction with Vulkan&#39;s present" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-video-decode-and-swapchain-presentation">Vulkan Video
+Decode and Swapchain Presentation</h1>
+<p>Vulkan Video extensions bring hardware-accelerated video decoding
+directly into the Vulkan ecosystem, allowing applications to process
+compressed video streams on the GPU. Displaying these decoded frames
+requires seamless interaction with Vulkan's presentation engine via the
+<code>VK_KHR_swapchain</code> extension. This integration relies on
+efficient GPU-native resource management, queue family transfers, format
+conversion, and robust synchronization, enabling smooth playback without
+round-tripping video data through host CPU memory.</p>
+<h3 id="resource-allocation-and-image-creation">Resource Allocation and
+Image Creation</h3>
+<p>When decoding video frames using extensions like
+<code>VK_KHR_video_decode_queue</code>, the decoder writes uncompressed
+video data directly into destination images (<code>VkImage</code>).
+These destination images must be created with the
+<code>VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR</code> usage flag,
+alongside decode-specific profiles.</p>
+<p>Swapchain images, by contrast, are allocated by the presentation
+engine and typically require usage flags like
+<code>VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT</code> or
+<code>VK_IMAGE_USAGE_TRANSFER_DST_BIT</code>. Because video decoders
+output in planar or semi-planar YCbCr formats (such as NV12 or P010) and
+display swapchains generally expect packed RGB formats (such as
+B8G8R8A8_SRGB), decoded images cannot usually serve directly as
+swapchain presentation targets. Instead, the decoded
+<code>VkImage</code> acts as a source resource that is converted and
+transferred into an acquired swapchain image.</p>
+<h3 id="format-conversion-via-ycbcr-samplers">Format Conversion via
+YCbCr Samplers</h3>
+<p>To bridge the gap between YCbCr video output and RGB swapchain input,
+Vulkan uses sampler YCbCr conversion
+(<code>VK_KHR_sampler_ycbcr_conversion</code>).</p>
+<ol type="1">
+<li>The decoded picture is marked with
+<code>VK_IMAGE_USAGE_SAMPLED_BIT</code>.</li>
+<li>A <code>VkSamplerYcbcrConversion</code> object is created to define
+the color model, color range, chroma reconstruction, and component
+swizzle.</li>
+<li>The graphics or compute pipeline samples the decoded YCbCr image and
+converts it into standard RGB color space.</li>
+<li>The converted output is rendered directly onto the acquired
+swapchain image or copied via a blit operation.</li>
+</ol>
+<h3 id="queue-family-ownership-transfers">Queue Family Ownership
+Transfers</h3>
+<p>Video decoding and display presentation often execute on distinct
+hardware engines exposed as different Vulkan queue families: a video
+decode queue family (<code>VK_QUEUE_VIDEO_DECODE_BIT_KHR</code>) and a
+graphics or presentation-capable queue family
+(<code>VK_QUEUE_GRAPHICS_BIT</code>).</p>
+<p>When sharing an image between these engines:</p>
+<ul>
+<li><strong>Exclusive Sharing:</strong> If images are created with
+<code>VK_SHARING_MODE_EXCLUSIVE</code>, an explicit queue family
+ownership transfer must occur. This requires executing a pipeline
+barrier on the decode queue releasing the resource, followed by a
+matching pipeline barrier on the graphics or compute queue acquiring the
+resource.</li>
+<li><strong>Concurrent Sharing:</strong> If created with
+<code>VK_SHARING_MODE_CONCURRENT</code>, explicit ownership transfers
+are omitted, though proper execution dependencies must still be
+observed.</li>
+</ul>
+<h3 id="synchronization-pipeline">Synchronization Pipeline</h3>
+<p>Displaying a decoded frame requires tight synchronization across
+decoding, processing, and presentation:</p>
+<ol type="1">
+<li><strong>Acquire Swapchain Image:</strong> The application calls
+<code>vkAcquireNextImageKHR</code>, signaling an acquire semaphore when
+the presentation engine releases an image.</li>
+<li><strong>Decode Execution:</strong> The decode operation submits to
+the video decode queue via <code>vkCmdDecodeVideoKHR</code>. Once
+decoding completes, it signals a decode-complete timeline or binary
+semaphore.</li>
+<li><strong>Color Conversion and Composition:</strong> A graphics or
+compute command buffer waits on both the swapchain acquire semaphore and
+the decode-complete semaphore. It converts the decoded frame, renders
+any UI overlays, targets the swapchain image, and signals a
+render-complete semaphore.</li>
+<li><strong>Queue Presentation:</strong> The application calls
+<code>vkQueuePresentKHR</code>, configuring the presentation engine to
+wait for the render-complete semaphore before scanning out the swapchain
+image to the physical display.</li>
+</ol></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

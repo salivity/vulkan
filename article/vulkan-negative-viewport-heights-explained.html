@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Negative Viewport Heights Explained - vulkan</title>
+    <meta name="description" content="This article examines why the Khronos Group introduced negative viewport heights in Vulkan 1.1, addressing the coordinate system differences between Vulkan, OpenGL, and DirectX. By allowing a negative height in the viewport definition, Vulkan provides dev">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-negative-viewport-heights-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Negative Viewport Heights Explained - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-negative-viewport-heights-explained" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article examines why the Khronos Group introduced negative viewport heights in Vulkan 1.1, addressing the coordinate system differences between Vulkan, OpenGL, and DirectX. By allowing a negative height in the viewport definition, Vulkan provides dev" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-negative-viewport-heights-explained">Vulkan Negative
+Viewport Heights Explained</h1>
+<p>This article examines why the Khronos Group introduced negative
+viewport heights in Vulkan 1.1, addressing the coordinate system
+differences between Vulkan, OpenGL, and DirectX. By allowing a negative
+height in the viewport definition, Vulkan provides developers with a
+native, efficient mechanism to flip the vertical axis, simplifying
+cross-API porting and eliminating the need for shader hacks or inverted
+face-winding settings.</p>
+<h3 id="the-coordinate-system-discrepancy">The Coordinate System
+Discrepancy</h3>
+<p>In Vulkan 1.0, the normalized device coordinate (NDC) space features
+a Y-axis that points downwards, matching the standard framebuffer
+coordinate system where the origin <span
+class="math inline">\((0,0)\)</span> resides at the upper-left corner.
+Conversely, APIs such as OpenGL and Direct3D define NDC space with the
+Y-axis pointing upwards.</p>
+<p>When porting rendering engines from Direct3D or OpenGL to Vulkan 1.0,
+this discrepancy created significant friction. Because the vertical axis
+was inverted relative to traditional conventions, developers were forced
+to apply workarounds to prevent rendered scenes from appearing upside
+down.</p>
+<h3 id="common-workarounds-in-vulkan-10">Common Workarounds in Vulkan
+1.0</h3>
+<p>Prior to Vulkan 1.1, developers typically solved the coordinate
+mismatch using one of several suboptimal techniques:</p>
+<ul>
+<li><strong>Inverting the Projection Matrix:</strong> Multiplying the
+<span class="math inline">\((1,1)\)</span> element of the projection
+matrix by <span class="math inline">\(-1\)</span> flips the geometry
+vertically. However, this also inverts the triangle winding order,
+turning counter-clockwise triangles into clockwise triangles and
+breaking back-face culling unless the front-face state is explicitly
+inverted.</li>
+<li><strong>Shader Modifications:</strong> Manually negating the Y
+component of <code>gl_Position</code> in vertex shaders
+(<code>gl_Position.y = -gl_Position.y</code>). This required maintaining
+separate shader variants for Vulkan or altering SPIR-V bytecode.</li>
+<li><strong>Framebuffer Flips:</strong> Rendering to an offscreen target
+and performing a blit or secondary pass to invert the image vertically,
+which introduced unnecessary performance overhead and memory bandwidth
+consumption.</li>
+</ul>
+<h3 id="the-purpose-of-negative-viewport-heights">The Purpose of
+Negative Viewport Heights</h3>
+<p>To eliminate these workarounds, Vulkan 1.1 integrated the
+<code>VK_KHR_maintenance1</code> extension into core specification,
+allowing the <code>height</code> field of the <code>VkViewport</code>
+structure to be negative.</p>
+<p>The primary purpose of a negative viewport height is to instruct the
+rasterizer to invert the mapping between clip space and framebuffer
+space directly at the viewport transformation stage. When specifying a
+negative height:</p>
+<ol type="1">
+<li>The viewport origin <span class="math inline">\(y\)</span> is set to
+the lower boundary of the intended viewport (typically <span
+class="math inline">\(y + \text{height}\)</span>).</li>
+<li>The <code>height</code> property is assigned a negative value (<span
+class="math inline">\(-\text{height}\)</span>).</li>
+</ol>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>VkViewport viewport<span class="op">{};</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>viewport<span class="op">.</span>x <span class="op">=</span> <span class="fl">0.0</span><span class="bu">f</span><span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>viewport<span class="op">.</span>y <span class="op">=</span> <span class="op">(</span><span class="dt">float</span><span class="op">)</span>framebufferHeight<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>viewport<span class="op">.</span>width <span class="op">=</span> <span class="op">(</span><span class="dt">float</span><span class="op">)</span>framebufferWidth<span class="op">;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>viewport<span class="op">.</span>height <span class="op">=</span> <span class="op">-(</span><span class="dt">float</span><span class="op">)</span>framebufferHeight<span class="op">;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>viewport<span class="op">.</span>minDepth <span class="op">=</span> <span class="fl">0.0</span><span class="bu">f</span><span class="op">;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>viewport<span class="op">.</span>maxDepth <span class="op">=</span> <span class="fl">1.0</span><span class="bu">f</span><span class="op">;</span></span></code></pre></div>
+<h3 id="key-advantages">Key Advantages</h3>
+<ul>
+<li><strong>Identical Projection Math:</strong> Engine code written for
+Direct3D or OpenGL can share the exact same projection matrices in
+Vulkan without manual inversion.</li>
+<li><strong>Preserved Triangle Winding:</strong> Because the
+transformation occurs during the viewport stage rather than in clip
+space, the geometric winding order of primitives remains unchanged.
+Developers do not need to toggle between clockwise and counter-clockwise
+culling states.</li>
+<li><strong>Zero Performance Cost:</strong> The vertical inversion is
+handled by the fixed-function viewport transformation hardware,
+incurring zero runtime performance penalty and avoiding shader
+bloat.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

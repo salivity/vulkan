@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How Vulkan WSI Works with Native Window Systems - vulkan</title>
+    <meta name="description" content="Vulkan is inherently platform-agnostic, meaning the core API has no built-in knowledge of operating system displays, windows, or screen compositors. To display rendered images on a screen, Vulkan relies on the Window System Integration (WSI) subsystem. WS">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/how-vulkan-wsi-works-with-native-window-systems">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How Vulkan WSI Works with Native Window Systems - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/how-vulkan-wsi-works-with-native-window-systems" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Vulkan is inherently platform-agnostic, meaning the core API has no built-in knowledge of operating system displays, windows, or screen compositors. To display rendered images on a screen, Vulkan relies on the Window System Integration (WSI) subsystem. WS" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-vulkan-wsi-works-with-native-window-systems">How Vulkan WSI
+Works with Native Window Systems</h1>
+<p>Vulkan is inherently platform-agnostic, meaning the core API has no
+built-in knowledge of operating system displays, windows, or screen
+compositors. To display rendered images on a screen, Vulkan relies on
+the Window System Integration (WSI) subsystem. WSI is a set of
+Khronos-defined extensions that bridge the gap between Vulkan’s
+device-level rendering commands and platform-specific windowing
+environments such as Windows, Wayland, X11, macOS, and Android. This
+article details how WSI operates, creates surfaces, coordinates buffer
+swapping, and presents frames to native windows.</p>
+<h3 id="the-role-of-wsi">The Role of WSI</h3>
+<p>Because Vulkan treats hardware as raw compute and graphics dispatch
+targets, it avoids direct interaction with display managers. Without an
+integration layer, Vulkan could only render off-screen images to
+allocated memory.</p>
+<p>WSI serves as the abstraction layer that allows Vulkan to:</p>
+<ul>
+<li>Identify which hardware display outputs are accessible.</li>
+<li>Wrap platform-specific native window handles into Vulkan-compatible
+handles.</li>
+<li>Allocate presentation images compatible with native OS display
+compositors.</li>
+<li>Synchronize rendering execution with the display refresh cycle.</li>
+</ul>
+<h3 id="platform-specific-surface-extensions">Platform-Specific Surface
+Extensions</h3>
+<p>The integration process begins by wrapping an existing native window
+into a generic <code>VkSurfaceKHR</code> object. Because every operating
+system represents windows differently, WSI provides distinct
+platform-specific instance extensions to initialize this surface:</p>
+<ul>
+<li><strong>Windows:</strong> <code>VK_KHR_win32_surface</code> connects
+to <code>HWND</code> and <code>HINSTANCE</code> handles.</li>
+<li><strong>Linux (Wayland):</strong>
+<code>VK_KHR_wayland_surface</code> connects to <code>wl_display</code>
+and <code>wl_surface</code> pointers.</li>
+<li><strong>Linux (X11):</strong> <code>VK_KHR_xcb_surface</code> or
+<code>VK_KHR_xlib_surface</code> wraps native X11 window
+identifiers.</li>
+<li><strong>Android:</strong> <code>VK_KHR_android_surface</code> binds
+to <code>ANativeWindow</code>.</li>
+<li><strong>macOS / iOS:</strong> <code>VK_EXT_metal_surface</code>
+connects to a <code>CAMetalLayer</code>.</li>
+</ul>
+<p>When calling surface creation functions (such as
+<code>vkCreateWin32SurfaceKHR</code>), the developer passes the native
+window handles inside a platform-specific creation structure. The output
+is a unified <code>VkSurfaceKHR</code> handle that shields the remainder
+of the rendering code from operating system dependencies.</p>
+<h3 id="verifying-presentation-support">Verifying Presentation
+Support</h3>
+<p>Not all graphics queues on a physical device are capable of
+presenting to a given surface. Before rendering, the application queries
+queue family capabilities using
+<code>vkGetPhysicalDeviceSurfaceSupportKHR</code>.</p>
+<p>This step verifies whether a chosen queue family on the GPU can
+interact with the created <code>VkSurfaceKHR</code>. In configurations
+with multiple GPUs or complex driver architectures, rendering commands
+might be processed on one queue while presentation occurs via another,
+requiring synchronization between queues.</p>
+<h3 id="the-swapchain-vkswapchainkhr">The Swapchain
+(<code>VkSwapchainKHR</code>)</h3>
+<p>Once a surface is established and presentation support is confirmed,
+the core component of WSI—the <code>VK_KHR_swapchain</code> extension—is
+used to create a swapchain (<code>VkSwapchainKHR</code>).</p>
+<p>The swapchain manages the array of presentation image buffers that
+alternate between being rendered to and being displayed on the screen.
+During swapchain creation, the application negotiates several parameters
+with the windowing system:</p>
+<ul>
+<li><strong>Surface Capabilities and Formats:</strong> The window system
+dictates supported pixel formats (e.g.,
+<code>VK_FORMAT_B8G8R8A8_SRGB</code>) and color spaces via
+<code>vkGetPhysicalDeviceSurfaceFormatsKHR</code>.</li>
+<li><strong>Image Extents:</strong> The resolution of the swapchain
+buffers, which typically matches the pixel dimensions of the client area
+of the native window.</li>
+<li><strong>Present Modes:</strong> The presentation behavior, which
+governs how buffers are swapped and how frame pacing is handled. Common
+modes include:
+<ul>
+<li><code>VK_PRESENT_MODE_FIFO_KHR</code>: A traditional vertical-sync
+(V-Sync) mode that prevents tearing by placing frame presentation
+requests into a queue processed on display refresh.</li>
+<li><code>VK_PRESENT_MODE_MAILBOX_KHR</code>: A low-latency
+triple-buffering mode where newer rendered frames replace older pending
+frames in the presentation queue.</li>
+<li><code>VK_PRESENT_MODE_IMMEDIATE_KHR</code>: Images are displayed
+immediately, which may cause screen tearing.</li>
+</ul></li>
+</ul>
+<h3 id="the-presentation-lifecycle">The Presentation Lifecycle</h3>
+<p>With the swapchain active, the runtime loop follows a synchronized
+cycle between Vulkan and the OS window compositor:</p>
+<ol type="1">
+<li><strong>Acquiring an Image:</strong> The application requests a free
+buffer from the swapchain using <code>vkAcquireNextImageKHR</code>. This
+function signals a semaphore or fence when the presentation engine has
+finished displaying the buffer and released it for rendering.</li>
+<li><strong>Rendering:</strong> The GPU records and executes command
+buffers that target the acquired image's framebuffer or image view.
+Synchronization primitives ensure rendering does not begin until the
+acquire semaphore signals.</li>
+<li><strong>Presenting:</strong> Once rendering commands are submitted,
+the application invokes <code>vkQueuePresentKHR</code>. This passes
+ownership of the rendered image back to the native windowing system's
+presentation engine, conditioned on the completion of the rendering
+commands.</li>
+</ol>
+<h3 id="resizing-and-surface-changes">Resizing and Surface Changes</h3>
+<p>Native windows are dynamic; users can resize, minimize, or move
+windows across monitors with different DPI settings. When a native
+window changes size, its corresponding swapchain becomes
+invalidated.</p>
+<p>WSI signals this through error codes:</p>
+<ul>
+<li><code>VK_SUBOPTIMAL_KHR</code>: The swapchain can still present
+frames, but surface properties no longer match the native window
+optimally.</li>
+<li><code>VK_ERROR_OUT_OF_DATE_KHR</code>: The surface has changed
+fundamentally (such as a window resize), and the swapchain cannot
+present further images.</li>
+</ul>
+<p>When these codes are returned, the application must query the new
+dimensions of the native window, destroy the old swapchain, and
+construct a new <code>VkSwapchainKHR</code> that references the updated
+surface geometry, allowing Vulkan to seamlessly adapt to the operating
+system's UI changes.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cooperative Vector Processing in Vulkan - vulkan</title>
+    <meta name="description" content="Cooperative vector and matrix processing in Vulkan enables high-throughput arithmetic by allowing a subgroup of GPU threads to collaboratively hold, share, and process multi-dimensional data across their combined register space. This article explores the">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/cooperative-vector-processing-in-vulkan">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Cooperative Vector Processing in Vulkan - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/cooperative-vector-processing-in-vulkan" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Cooperative vector and matrix processing in Vulkan enables high-throughput arithmetic by allowing a subgroup of GPU threads to collaboratively hold, share, and process multi-dimensional data across their combined register space. This article explores the" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="cooperative-vector-processing-in-vulkan">Cooperative Vector
+Processing in Vulkan</h1>
+<p>Cooperative vector and matrix processing in Vulkan enables
+high-throughput arithmetic by allowing a subgroup of GPU threads to
+collaboratively hold, share, and process multi-dimensional data across
+their combined register space. This article explores the architecture of
+cooperative processing, examines how modern hardware executes these
+workloads using specialized matrix engines, and details how the Vulkan
+API interfaces directly with this hardware through extensions like
+<code>VK_KHR_cooperative_matrix</code>.</p>
+<h3
+id="understanding-cooperative-vector-and-matrix-processing">Understanding
+Cooperative Vector and Matrix Processing</h3>
+<p>In traditional SIMD (Single Instruction, Multiple Data) or SIMT
+(Single Instruction, Multiple Threads) compute models, each thread or
+invocation operates largely on its own private registers. When handling
+large vector or matrix operations, an individual thread can quickly
+suffer from register spilling, reducing memory bandwidth efficiency and
+latency hiding.</p>
+<p>Cooperative processing fundamentally changes this paradigm. Instead
+of isolating data to a single invocation, a group of invocations
+(defined in Vulkan as a subgroup or warp) acts cooperatively. A
+mathematical entity, such as a vector or matrix tile, is sliced and
+distributed across the registers of all participating invocations in the
+subgroup. Operations performed on this cooperative type are executed
+collectively across the subgroup, allowing the GPU to process larger
+data blocks natively without overflowing per-thread register files.</p>
+<h3 id="the-role-of-dedicated-matrix-multiplication-units">The Role of
+Dedicated Matrix Multiplication Units</h3>
+<p>Modern GPUs incorporate dedicated fixed-function or semi-programmable
+silicon specifically designed to accelerate dense linear algebra, often
+referred to as Tensor Cores (NVIDIA), Matrix Cores (AMD), or XMX Units
+(Intel).</p>
+<p>Unlike standard arithmetic logic units (ALUs) that handle scalar or
+short-vector fused multiply-add (FMA) instructions, matrix
+multiplication units are designed for tile-based operations. They
+typically execute operations of the form:</p>
+<p><span class="math display">\[D = A \times B + C\]</span></p>
+<p>In this equation, <span class="math inline">\(A\)</span>, <span
+class="math inline">\(B\)</span>, <span
+class="math inline">\(C\)</span>, and <span
+class="math inline">\(D\)</span> are small matrix tiles (for example,
+<span class="math inline">\(16 \times 16\)</span> or <span
+class="math inline">\(8 \times 8\)</span>) of mixed or uniform precision
+(e.g., FP16, BF16, INT8, or FP32). To keep these specialized execution
+pipelines saturated, data must be provided simultaneously by multiple
+threads in an aligned, lock-step manner.</p>
+<h3 id="how-vulkan-interfaces-with-matrix-hardware">How Vulkan
+Interfaces with Matrix Hardware</h3>
+<p>Vulkan bridges the gap between high-level compute shaders and
+low-level matrix units through standardized extensions, primarily
+<code>VK_KHR_cooperative_matrix</code>.</p>
+<h4 id="1-abstracting-hardware-layouts-with-cooperative-types">1.
+Abstracting Hardware Layouts with Cooperative Types</h4>
+<p>The extension introduces opaque types into SPIR-V and high-level
+shading languages (GLSL/HLSL), known as cooperative matrices. A
+cooperative matrix type defines:</p>
+<ul>
+<li><strong>Element Type:</strong> The numerical precision (e.g.,
+<code>float16_t</code>, <code>float32_t</code>,
+<code>int8_t</code>).</li>
+<li><strong>Scope:</strong> The execution scope that shares the matrix
+(typically <code>gl_ScopeSubgroup</code>).</li>
+<li><strong>Dimensions (<span class="math inline">\(M, N,
+K\)</span>):</strong> The row and column configuration supported by the
+underlying target hardware.</li>
+<li><strong>Matrix Use:</strong> The intended role of the tile
+(<code>MatrixA</code>, <code>MatrixB</code>, or
+<code>MatrixAccumulator</code>).</li>
+</ul>
+<p>Because different hardware architectures lay out thread-to-data
+mappings differently, Vulkan abstracts the physical register allocation.
+Developers do not manually assign matrix coordinates to specific lane
+IDs; the Vulkan driver and compiler map the logical matrix to the
+vendor's physical register layout automatically.</p>
+<h4 id="2-querying-supported-configurations">2. Querying Supported
+Configurations</h4>
+<p>Hardware implementations vary in the tile dimensions and precision
+types they support. Vulkan requires developers to query support
+dynamically using
+<code>vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR</code>. This
+query returns a list of supported tuples detailing:</p>
+<ul>
+<li>Matrix dimensions (<span class="math inline">\(M\)</span>, <span
+class="math inline">\(N\)</span>, <span
+class="math inline">\(K\)</span>)</li>
+<li>Component datatypes for <span class="math inline">\(A\)</span>,
+<span class="math inline">\(B\)</span>, <span
+class="math inline">\(C\)</span>, and <span
+class="math inline">\(D\)</span></li>
+<li>Scope compatibility</li>
+</ul>
+<h4 id="3-shading-language-pipeline">3. Shading Language Pipeline</h4>
+<p>In shader code, the interface relies on cooperative load, store, and
+multiply-accumulate intrinsics:</p>
+<ul>
+<li><strong>Cooperative Load:</strong> Invocations within the subgroup
+execute a collective load intrinsic, reading contiguous or strided data
+from device memory or Workgroup Shared Memory (<code>shared</code>) and
+partitioning it into the subgroup's collective registers.</li>
+<li><strong>Matrix Multiply-Accumulate (MMA):</strong> The
+<code>coopMatMulAdd()</code> instruction issues the multiply-accumulate
+instruction. The Vulkan driver compiles this intrinsic directly into
+hardware-level instructions (such as <code>mma.sync</code> on NVIDIA PTX
+or <code>v_mfma</code> on AMD CDNA/RDNA).</li>
+<li><strong>Cooperative Store:</strong> Once the calculation completes,
+another cooperative intrinsic writes the accumulator tile back out to
+linear memory.</li>
+</ul>
+<h3 id="synchronization-and-memory-considerations">Synchronization and
+Memory Considerations</h3>
+<p>Because cooperative operations depend on subgroup-level execution,
+synchronization must be tightly controlled. All threads within the
+subgroup must execute cooperative matrix instructions synchronously;
+divergence within a subgroup during a cooperative call leads to
+undefined behavior.</p>
+<p>To maximize throughput, developers commonly stage global memory into
+Vulkan's workgroup shared memory using cooperative vector loads. Once in
+shared memory, tiles are fed into cooperative matrices, enabling
+sustained matrix core utilization while bypassing the latency of the
+GPU's global memory hierarchy.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Accelerating AI Inference with Vulkan Cooperative Matrix - vulkan</title>
+    <meta name="description" content="This article provides an overview of how the Vulkan graphics and compute API leverages cooperative matrix operations to accelerate neural network inferencing. It examines the architecture of the VKKHRcooperativematrix extension, explains how matrix comput">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/accelerating-ai-inference-with-vulkan-cooperative-matrix">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Accelerating AI Inference with Vulkan Cooperative Matrix - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/accelerating-ai-inference-with-vulkan-cooperative-matrix" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article provides an overview of how the Vulkan graphics and compute API leverages cooperative matrix operations to accelerate neural network inferencing. It examines the architecture of the VKKHRcooperativematrix extension, explains how matrix comput" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="accelerating-ai-inference-with-vulkan-cooperative-matrix">Accelerating
+AI Inference with Vulkan Cooperative Matrix</h1>
+<p>This article provides an overview of how the Vulkan graphics and
+compute API leverages cooperative matrix operations to accelerate neural
+network inferencing. It examines the architecture of the
+<code>VK_KHR_cooperative_matrix</code> extension, explains how matrix
+computations are mapped across hardware execution units, and details how
+developers utilize these capabilities to achieve low-latency,
+cross-vendor machine learning performance.</p>
+<h3 id="understanding-cooperative-matrices-in-vulkan">Understanding
+Cooperative Matrices in Vulkan</h3>
+<p>In traditional GPU compute shaders, each thread (or invocation) works
+independently on individual scalar or vector elements. Neural network
+inference, however, relies predominantly on General Matrix
+Multiplication (GEMM) and fused multiply-accumulate operations. To
+bridge the gap between general-purpose SIMD computing and dedicated AI
+hardware, Vulkan introduces cooperative matrix operations through the
+<code>VK_KHR_cooperative_matrix</code> extension.</p>
+<p>A cooperative matrix is a multi-dimensional data type where the
+matrix elements are cooperatively held and computed across a collection
+of invocations within a subgroup or workgroup. Rather than a single
+invocation managing an entire sub-matrix in its private register file,
+the invocations collectively load, compute, and store the matrix data.
+This design directly targets low-level hardware structures, such as
+NVIDIA Tensor Cores, AMD RDNA AI accelerators, and Intel Xe Matrix
+Extensions (XMX).</p>
+<h3 id="hardware-mapping-and-execution-model">Hardware Mapping and
+Execution Model</h3>
+<p>Vulkan exposes specialized SPIR-V instructions that map directly to
+underlying matrix hardware instructions:</p>
+<ol type="1">
+<li><strong>Subgroup-Level Distribution</strong>: Matrices are divided
+into tiles—commonly sized at <span class="math inline">\(8 \times
+8\)</span>, <span class="math inline">\(16 \times 16\)</span>, or other
+vendor-defined dimensions. When an operation is executed, each
+invocation in a subgroup holds an opaque, implementation-defined slice
+of matrix <span class="math inline">\(A\)</span>, <span
+class="math inline">\(B\)</span>, and accumulator <span
+class="math inline">\(C\)</span>.</li>
+<li><strong>Matrix Multiply-Accumulate (MMA)</strong>: The primary
+workload is the operation <span class="math inline">\(C = A \times B +
+C\)</span>. Vulkan coordinates this natively at the hardware level,
+executing the full matrix tile multiplication in vastly fewer cycles
+than equivalent software-emulated vector loops.</li>
+<li><strong>Optimized Memory Transfers</strong>: The extension
+introduces cooperative load and store primitives. Invocations cooperate
+to read continuous blocks of matrix data from shared memory or device
+memory into the distributed registers, maximizing memory bandwidth
+saturation and cache utilization.</li>
+</ol>
+<h3 id="supported-data-types-and-precision">Supported Data Types and
+Precision</h3>
+<p>Neural network inference often demands high throughput over high
+numerical precision. Vulkan’s cooperative matrix extension supports
+mixed-precision computation, allowing input matrices to be stored in
+lower precision formats while accumulating results at higher precision
+to preserve numerical stability. Key supported formats typically
+include:</p>
+<ul>
+<li><strong>FP16 / BFloat16</strong>: Reduces memory bandwidth and
+footprint while maintaining sufficient range for standard deep learning
+layers.</li>
+<li><strong>INT8 / UINT8</strong>: Heavily used for quantized inference
+models, providing maximal compute density on modern hardware.</li>
+<li><strong>FP32</strong>: Primarily utilized for accumulator types
+(<span class="math inline">\(C\)</span> and output) or high-precision
+verification.</li>
+</ul>
+<h3 id="integration-in-the-inference-pipeline">Integration in the
+Inference Pipeline</h3>
+<p>Developers target cooperative matrix operations within GLSL or HLSL
+shaders compiled to SPIR-V. The runtime pipeline queries hardware
+properties via
+<code>vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR</code> to
+identify the supported matrix dimensions, component types, and
+scope.</p>
+<p>During execution, standard deep learning operations—such as fully
+connected layers, multi-head self-attention mechanisms in transformers,
+and <span class="math inline">\(1 \times 1\)</span> convolutions—are
+transformed into tiled matrix multiplication kernels. By eliminating the
+overhead of vendor-locked proprietary runtimes, Vulkan provides a
+unified, cross-platform path to high-performance local AI deployment
+across diverse mobile, desktop, and embedded GPUs.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

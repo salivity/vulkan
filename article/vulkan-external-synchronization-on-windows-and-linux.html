@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan External Synchronization on Windows and Linux - vulkan</title>
+    <meta name="description" content="This article provides an overview of how the Vulkan graphics and compute API interoperates with external operating system synchronization primitives. By leveraging dedicated Vulkan extensions, developers can import and export semaphores and fences as nati">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-external-synchronization-on-windows-and-linux">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan External Synchronization on Windows and Linux - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-external-synchronization-on-windows-and-linux" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article provides an overview of how the Vulkan graphics and compute API interoperates with external operating system synchronization primitives. By leveraging dedicated Vulkan extensions, developers can import and export semaphores and fences as nati" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-external-synchronization-on-windows-and-linux">Vulkan
+External Synchronization on Windows and Linux</h1>
+<p>This article provides an overview of how the Vulkan graphics and
+compute API interoperates with external operating system synchronization
+primitives. By leveraging dedicated Vulkan extensions, developers can
+import and export semaphores and fences as native Windows handles or
+Linux file descriptors. This functionality facilitates cross-process
+synchronization and low-overhead interoperability with native platform
+APIs, display servers, and other graphics frameworks like Direct3D,
+OpenGL, and CUDA.</p>
+<h3 id="the-external-synchronization-architecture">The External
+Synchronization Architecture</h3>
+<p>Vulkan separates the concept of internal synchronization from
+external handle exchange through a modular extension structure:</p>
+<ol type="1">
+<li><strong>Base Extensions:</strong>
+<code>VK_KHR_external_memory_capabilities</code>,
+<code>VK_KHR_external_semaphore_capabilities</code>, and
+<code>VK_KHR_external_fence_capabilities</code> define the queries used
+to determine platform support for external handle types.</li>
+<li><strong>Core Abstractions:</strong>
+<code>VK_KHR_external_semaphore</code> and
+<code>VK_KHR_external_fence</code> define the mechanics of associating
+Vulkan synchronization primitives with external payloads.</li>
+<li><strong>Platform-Specific Bindings:</strong> Specific extensions map
+these primitives to operating system objects, including Win32 handles on
+Windows and POSIX file descriptors on Linux.</li>
+</ol>
+<p>When a synchronization primitive is exported, ownership of the
+underlying sync payload can either be shared or transferred (payload
+copy vs. handle transfer), depending on the platform object type and
+handle flags.</p>
+<h3 id="integration-on-windows">Integration on Windows</h3>
+<p>On Microsoft Windows, Vulkan integrates with native synchronization
+objects via <code>VK_KHR_external_semaphore_win32</code> and
+<code>VK_KHR_external_fence_win32</code>. These extensions allow
+synchronization primitives to interface with Win32 <code>HANDLE</code>
+types.</p>
+<h4 id="handle-types">Handle Types</h4>
+<ul>
+<li><strong>NT Handles
+(<code>VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT</code>):</strong>
+Secure, reference-counted operating system handles. They require
+explicit duplication via <code>DuplicateHandle</code> or
+process-to-process passing and can have Windows security attributes
+applied.</li>
+<li><strong>KMT Handles
+(<code>VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_KMT_BIT</code>):</strong>
+Legacy global handles representing kernel-mode objects. They are faster
+to instantiate but lack fine-grained security controls and cannot cross
+session boundaries.</li>
+<li><strong>Direct3D Interoperability
+(<code>VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_D3D12_FENCE_BIT</code>):</strong>
+Directly maps a Vulkan timeline semaphore to a Direct3D 12 ID3D12Fence
+object. This enables direct GPU-side synchronization between Vulkan and
+DirectX 12 queues without CPU intervention.</li>
+</ul>
+<h4 id="windows-workflow">Windows Workflow</h4>
+<ol type="1">
+<li><strong>Creation:</strong> A
+<code>VkExportSemaphoreCreateInfo</code> structure containing the target
+handle type is chained to the <code>VkSemaphoreCreateInfo</code>
+<code>pNext</code> pointer.</li>
+<li><strong>Exporting:</strong> After creation, the application
+retrieves the native Win32 handle using
+<code>vkGetSemaphoreWin32HandleKHR</code>.</li>
+<li><strong>Importing:</strong> Another process or native API imports
+the handle using <code>vkImportSemaphoreWin32HandleInfoKHR</code>. If
+importing a D3D12 fence, the application specifies the shared NT handle
+created by the Direct3D runtime.</li>
+</ol>
+<h3 id="integration-on-linux">Integration on Linux</h3>
+<p>On Linux, Vulkan relies on POSIX file descriptors (FDs) through
+<code>VK_KHR_external_semaphore_fd</code> and
+<code>VK_KHR_external_fence_fd</code>. Synchronization models on Linux
+fall into two primary paradigms: explicit sync files and DRM
+synchronization objects.</p>
+<h4 id="handle-types-1">Handle Types</h4>
+<ul>
+<li><strong>Opaque File Descriptors
+(<code>VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT</code>):</strong>
+Transfers an opaque GPU driver-specific payload encapsulated within a
+standard POSIX file descriptor.</li>
+<li><strong>Sync Files
+(<code>VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT</code>):</strong>
+Represents the Linux kernel's explicit synchronization framework
+(<code>sync_file</code> objects). This is widely used on Android and
+modern Linux Wayland compositors to track buffer availability and GPU
+completion.</li>
+<li><strong>DRM Sync Objects
+(<code>VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_DRM_SYNCOBJ_BIT</code>):</strong>
+Directly exposes Linux Direct Rendering Manager (DRM) synchronization
+objects. DRM syncobjs support both binary and timeline synchronization,
+making them the standard synchronization primitive for modern Wayland
+window systems and cross-driver coordination.</li>
+</ul>
+<h4 id="linux-workflow">Linux Workflow</h4>
+<ol type="1">
+<li><strong>Creation:</strong> The application configures
+<code>VkExportSemaphoreCreateInfo</code> with the appropriate handle
+type (e.g., <code>SYNC_FD_BIT</code> or
+<code>OPAQUE_FD_BIT</code>).</li>
+<li><strong>Exporting:</strong> The native file descriptor is generated
+via <code>vkGetSemaphoreFdKHR</code>. For <code>SYNC_FD_BIT</code>, the
+handle must be exported after a GPU batch is submitted because sync
+files represent single-use kernel fence snapshots. Exporting a
+<code>sync_file</code> temporarily invalidates or consumes the Vulkan
+semaphore's signal state.</li>
+<li><strong>Importing:</strong> A consuming application imports the file
+descriptor using <code>vkImportSemaphoreFdInfoKHR</code>. Once imported,
+the target application uses native POSIX calls (such as
+<code>poll()</code> or <code>epoll()</code>) or binds the handle
+directly to another GPU context to await signal completion.</li>
+</ol>
+<h3 id="timeline-semaphores-and-future-compatibility">Timeline
+Semaphores and Future Compatibility</h3>
+<p>With the introduction of timeline semaphores
+(<code>VK_KHR_timeline_semaphore</code> / Vulkan 1.2), external
+synchronization expanded from strictly binary states
+(signaled/unsignaled) to monotonic counter-based synchronization. On
+Windows, this maps directly to ID3D12Fence handles. On Linux, timeline
+semaphores map to DRM syncobj timeline points. This alignment ensures
+that modern low-level APIs across Windows and Linux can synchronize
+execution pipelines without CPU-side stalls.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

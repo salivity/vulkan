@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conditions That Disable Vulkan Early-Z Testing - vulkan</title>
+    <meta name="description" content="Early depth testing (early-Z) is a critical hardware optimization in Vulkan that discards occluded fragments before the fragment shader executes, significantly reducing GPU memory bandwidth and computation costs. Under standard pipeline conditions, the ra">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/conditions-that-disable-vulkan-early-z-testing">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Conditions That Disable Vulkan Early-Z Testing - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/conditions-that-disable-vulkan-early-z-testing" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Early depth testing (early-Z) is a critical hardware optimization in Vulkan that discards occluded fragments before the fragment shader executes, significantly reducing GPU memory bandwidth and computation costs. Under standard pipeline conditions, the ra" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="conditions-that-disable-vulkan-early-z-testing">Conditions That
+Disable Vulkan Early-Z Testing</h1>
+<p>Early depth testing (early-Z) is a critical hardware optimization in
+Vulkan that discards occluded fragments before the fragment shader
+executes, significantly reducing GPU memory bandwidth and computation
+costs. Under standard pipeline conditions, the rasterizer compares a
+fragment's interpolated depth value against the depth buffer and
+immediately drops hidden fragments. However, specific shader operations
+and pipeline configurations prevent the hardware from determining
+visibility prior to shader execution, forcing the GPU to fall back to
+late depth testing (late-Z). Understanding these triggers is essential
+for writing high-performance Vulkan shaders.</p>
+<h2 id="1-writing-to-depth-in-the-fragment-shader-gl_fragdepth">1.
+Writing to Depth in the Fragment Shader (<code>gl_FragDepth</code>)</h2>
+<p>The most common reason early-Z is completely disabled is modifying
+the depth value within the fragment shader.</p>
+<p>When a shader writes to <code>gl_FragDepth</code>, the hardware
+cannot know the final depth of the fragment at the rasterization stage.
+Consequently, both early depth testing and early depth writes are
+bypassed, and the depth test is deferred until the fragment shader
+finishes executing.</p>
+<h3 id="conservative-depth-exception">Conservative Depth Exception</h3>
+<p>If modifying depth is mandatory, you can preserve partial hardware
+early-Z by declaring conservative depth layout qualifiers in GLSL:</p>
+<ul>
+<li><code>layout(depth_greater) out float gl_FragDepth;</code></li>
+<li><code>layout(depth_less) out float gl_FragDepth;</code></li>
+<li><code>layout(depth_unchanged) out float gl_FragDepth;</code></li>
+</ul>
+<p>These qualifiers inform the driver that the calculated depth will
+only move in a specific direction relative to the hardware-interpolated
+depth, allowing hardware to perform conservative early depth culling
+(e.g., HiZ).</p>
+<h2 id="2-dynamic-fragment-discarding-discard-or-demote">2. Dynamic
+Fragment Discarding (<code>discard</code> or <code>demote</code>)</h2>
+<p>Using the <code>discard</code> keyword (or the <code>demote</code>
+instruction via <code>SPV_EXT_demote_to_helper_invocation</code>)
+introduces conditional fragment termination based on runtime
+calculations, such as alpha testing or cutout textures.</p>
+<ul>
+<li><strong>Impact on Depth Writes:</strong> The GPU cannot write depth
+values early. If an early depth write occurred, an occluding fragment
+that is later discarded would leave an erroneous "hole" in the depth
+buffer, blocking valid background geometry.</li>
+<li><strong>Impact on Depth Tests:</strong> Many modern GPU
+architectures can still perform an early-Z <em>read</em> (test-only) to
+cull fragments hidden behind existing geometry. However, early depth
+<em>writes</em> are deferred to late-Z.</li>
+</ul>
+<h2 id="3-modifying-sample-masks-gl_samplemask">3. Modifying Sample
+Masks (<code>gl_SampleMask</code>)</h2>
+<p>In multisample anti-aliasing (MSAA) pipelines, writing to the
+<code>gl_SampleMask</code> output array inside the fragment shader
+dynamically alters which sample locations are covered.</p>
+<p>Because coverage directly dictates which samples pass the depth test
+and receive depth updates, writing to the sample mask forces depth
+evaluation and writes to occur after the fragment shader stage
+completes.</p>
+<h2 id="4-enabling-alpha-to-coverage">4. Enabling Alpha-to-Coverage</h2>
+<p>Alpha-to-coverage converts the fragment's alpha output component into
+a temporary coverage mask used during MSAA.</p>
+<p>Because the fragment shader must first evaluate the alpha value
+before the final coverage mask can be generated, early depth writes must
+be disabled. As with <code>discard</code>, the hardware cannot write
+depth prematurely without risking false occlusion of background
+objects.</p>
+<h2 id="5-side-effects-in-shaders-ssbo-and-storage-image-writes">5. Side
+Effects in Shaders (SSBO and Storage Image Writes)</h2>
+<p>If a fragment shader performs writes to storage buffers (SSBOs) or
+storage images, the execution of the shader constitutes a visible side
+effect beyond the framebuffer attachments.</p>
+<p>By default, GPUs are free to discard fragments using early-Z even if
+the shader has side effects. However, if your shader algorithm relies on
+executing side effects for every rasterized fragment regardless of
+whether it is occluded, early-Z must be explicitly bypassed or managed,
+otherwise occluded invocations will never trigger memory writes.</p>
+<h2 id="overriding-with-early_fragment_tests">Overriding with
+<code>early_fragment_tests</code></h2>
+<p>You can explicitly force early depth and stencil testing by declaring
+the execution mode in your shader:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">early_fragment_tests</span><span class="op">)</span> <span class="dt">in</span><span class="op">;</span></span></code></pre></div>
+<p>When this qualifier is present:</p>
+<ul>
+<li>Depth and stencil tests execute before the fragment shader
+runs.</li>
+<li>Fragments failing the test are immediately discarded without
+invoking the shader.</li>
+<li>Writing to <code>gl_FragDepth</code> while using
+<code>early_fragment_tests</code> is illegal according to the
+specification.</li>
+<li>If used in a shader containing <code>discard</code>, depth writes
+occur early. Consequently, if a fragment passes the early depth test,
+writes its depth, and is subsequently discarded in the shader, it will
+leave an empty depth footprint that incorrectly occludes geometry behind
+it.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inverting Vulkan Viewport Height for OpenGL - vulkan</title>
+    <meta name="description" content="Migrating rendering pipelines from OpenGL to Vulkan often introduces coordinate system mismatches, as OpenGL uses a normalized device coordinate (NDC) system where the Y-axis points upward, whereas Vulkan&#39;s Y-axis points downward. This article details how">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/inverting-vulkan-viewport-height-for-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Inverting Vulkan Viewport Height for OpenGL - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/inverting-vulkan-viewport-height-for-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Migrating rendering pipelines from OpenGL to Vulkan often introduces coordinate system mismatches, as OpenGL uses a normalized device coordinate (NDC) system where the Y-axis points upward, whereas Vulkan&#39;s Y-axis points downward. This article details how" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="inverting-vulkan-viewport-height-for-opengl">Inverting Vulkan
+Viewport Height for OpenGL</h1>
+<p>Migrating rendering pipelines from OpenGL to Vulkan often introduces
+coordinate system mismatches, as OpenGL uses a normalized device
+coordinate (NDC) system where the Y-axis points upward, whereas Vulkan's
+Y-axis points downward. This article details how to dynamically invert
+the viewport height in Vulkan to match traditional OpenGL projection
+matrices directly, eliminating the need to alter vertex shaders or
+adjust triangle winding orders manually.</p>
+<h3 id="the-coordinate-system-discrepancy">The Coordinate System
+Discrepancy</h3>
+<p>In OpenGL, NDC space has its origin <code>(0, 0)</code> at the center
+of the screen, with positive Y extending upward and Z spanning from
+<code>-1.0</code> to <code>1.0</code>. In contrast, Vulkan’s NDC origin
+is also at the center, but positive Y points downward, and Z spans from
+<code>0.0</code> to <code>1.0</code>.</p>
+<p>Simply negating the Y-axis component inside a projection matrix
+(e.g., multiplying the <code>[1][1]</code> matrix element by
+<code>-1</code>) aligns the Y-axis but also inverts the geometric
+winding order. As a result, clockwise faces become counter-clockwise,
+forcing developers to invert their pipeline's front-face winding or
+culling settings.</p>
+<h3 id="the-dynamic-negative-viewport-solution">The Dynamic Negative
+Viewport Solution</h3>
+<p>Starting in Vulkan 1.1 (and available via the
+<code>VK_KHR_maintenance1</code> extension in Vulkan 1.0), Vulkan allows
+the <code>height</code> field of <code>VkViewport</code> to be negative.
+Specifying a negative viewport height automatically flips the Y-axis
+transformation while simultaneously preserving the primitive winding
+order, allowing standard OpenGL projection matrices and cull modes to
+work seamlessly.</p>
+<h3 id="implementation-steps">Implementation Steps</h3>
+<h4 id="1-enable-dynamic-state-in-the-pipeline">1. Enable Dynamic State
+in the Pipeline</h4>
+<p>When constructing your <code>VkGraphicsPipelineCreateInfo</code>, add
+<code>VK_DYNAMIC_STATE_VIEWPORT</code> to the dynamic states list. This
+allows you to modify the viewport at command recording time without
+recreating the entire pipeline:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>VkDynamicState dynamicStates<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    VK_DYNAMIC_STATE_VIEWPORT<span class="op">,</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    VK_DYNAMIC_STATE_SCISSOR</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>VkPipelineDynamicStateCreateInfo dynamicStateCreateInfo<span class="op">{};</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>dynamicStateCreateInfo<span class="op">.</span>sType <span class="op">=</span> VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO<span class="op">;</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>dynamicStateCreateInfo<span class="op">.</span>dynamicStateCount <span class="op">=</span> <span class="dv">2</span><span class="op">;</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>dynamicStateCreateInfo<span class="op">.</span>pDynamicStates <span class="op">=</span> dynamicStates<span class="op">;</span></span></code></pre></div>
+<h4 id="2-set-up-the-negative-viewport-dynamically">2. Set Up the
+Negative Viewport Dynamically</h4>
+<p>When recording your render pass commands using
+<code>vkCmdSetViewport</code>, define the viewport by setting the
+<code>y</code> offset to the bottom of the viewport area (typically the
+render target's height) and assigning a negative value to
+<code>height</code>:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>VkViewport viewport<span class="op">{};</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>viewport<span class="op">.</span>x <span class="op">=</span> <span class="fl">0.0</span><span class="bu">f</span><span class="op">;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>viewport<span class="op">.</span>y <span class="op">=</span> static_cast<span class="op">&lt;</span><span class="dt">float</span><span class="op">&gt;(</span>surfaceHeight<span class="op">);</span> <span class="co">// Start at the bottom</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>viewport<span class="op">.</span>width <span class="op">=</span> static_cast<span class="op">&lt;</span><span class="dt">float</span><span class="op">&gt;(</span>surfaceWidth<span class="op">);</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>viewport<span class="op">.</span>height <span class="op">=</span> <span class="op">-</span>static_cast<span class="op">&lt;</span><span class="dt">float</span><span class="op">&gt;(</span>surfaceHeight<span class="op">);</span> <span class="co">// Negative height flips Y</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>viewport<span class="op">.</span>minDepth <span class="op">=</span> <span class="fl">0.0</span><span class="bu">f</span><span class="op">;</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>viewport<span class="op">.</span>maxDepth <span class="op">=</span> <span class="fl">1.0</span><span class="bu">f</span><span class="op">;</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>vkCmdSetViewport<span class="op">(</span>commandBuffer<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">1</span><span class="op">,</span> <span class="op">&amp;</span>viewport<span class="op">);</span></span></code></pre></div>
+<h4 id="3-define-the-scissor-rectangle">3. Define the Scissor
+Rectangle</h4>
+<p>The scissor rectangle does not accept negative values and remains
+defined from the top-left corner:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>VkRect2D scissor<span class="op">{};</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>scissor<span class="op">.</span>offset <span class="op">=</span> <span class="op">{</span><span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">};</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>scissor<span class="op">.</span>extent <span class="op">=</span> <span class="op">{</span>surfaceWidth<span class="op">,</span> surfaceHeight<span class="op">};</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>vkCmdSetScissor<span class="op">(</span>commandBuffer<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">1</span><span class="op">,</span> <span class="op">&amp;</span>scissor<span class="op">);</span></span></code></pre></div>
+<h3 id="depth-range-considerations">Depth Range Considerations</h3>
+<p>While flipping the viewport height resolves the X and Y axes,
+OpenGL's default clip-space depth range is <code>[-1.0, 1.0]</code>,
+whereas Vulkan expects <code>[0.0, 1.0]</code>. To use existing OpenGL
+camera setups completely, you must still adapt the projection matrix's
+Z-mapping to the <code>[0.0, 1.0]</code> range (often provided via GLM
+using <code>#define GLM_FORCE_DEPTH_ZERO_TO_ONE</code>) or utilize depth
+clamping configurations where appropriate.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

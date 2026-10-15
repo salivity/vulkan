@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anisotropic Filtering in Vulkan Image Sampling - vulkan</title>
+    <meta name="description" content="This article provides an overview of how anisotropic filtering integrates into the Vulkan graphics API&#39;s image sampling pipeline. It details the hardware feature requirements, the configuration parameters within VkSamplerCreateInfo, how the GPU calculates">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/anisotropic-filtering-in-vulkan-image-sampling">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Anisotropic Filtering in Vulkan Image Sampling - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/anisotropic-filtering-in-vulkan-image-sampling" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article provides an overview of how anisotropic filtering integrates into the Vulkan graphics API&#39;s image sampling pipeline. It details the hardware feature requirements, the configuration parameters within VkSamplerCreateInfo, how the GPU calculates" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="anisotropic-filtering-in-vulkan-image-sampling">Anisotropic
+Filtering in Vulkan Image Sampling</h1>
+<p>This article provides an overview of how anisotropic filtering
+integrates into the Vulkan graphics API's image sampling pipeline. It
+details the hardware feature requirements, the configuration parameters
+within <code>VkSamplerCreateInfo</code>, how the GPU calculates
+non-square sample footprints across oblique angles, and the practical
+implementation steps required to enhance texture quality without
+compromising pipeline performance.</p>
+<h3 id="device-feature-verification-and-enablement">Device Feature
+Verification and Enablement</h3>
+<p>Before utilizing anisotropic filtering, an application must verify
+that the underlying physical device supports it. Vulkan exposes this
+functionality through the <code>samplerAnisotropy</code> member of the
+<code>VkPhysicalDeviceFeatures</code> structure.</p>
+<p>To query and enable anisotropic filtering:</p>
+<ol type="1">
+<li>Query available features using
+<code>vkGetPhysicalDeviceFeatures</code>.</li>
+<li>Inspect <code>VkPhysicalDeviceLimits::maxSamplerAnisotropy</code>
+using <code>vkGetPhysicalDeviceProperties</code> to determine the
+maximum supported level of anisotropy (typically up to 16.0f on modern
+discrete GPUs).</li>
+<li>Explicitly set <code>samplerAnisotropy</code> to
+<code>VK_TRUE</code> within the <code>VkPhysicalDeviceFeatures</code>
+struct passed to <code>VkDeviceCreateInfo</code> during logical device
+creation. If this feature is not enabled at device creation, requesting
+it in subsequent sampler states will result in validation errors or
+undefined behavior.</li>
+</ol>
+<h3 id="sampler-configuration-vksamplercreateinfo">Sampler Configuration
+(<code>VkSamplerCreateInfo</code>)</h3>
+<p>In Vulkan, anisotropic filtering is configured as a state of the
+texture sampler object (<code>VkSampler</code>). When creating a sampler
+with <code>vkCreateSampler</code>, the following fields in
+<code>VkSamplerCreateInfo</code> control anisotropic behavior:</p>
+<ul>
+<li><strong><code>anisotropyEnable</code></strong>: Set to
+<code>VK_TRUE</code> to activate anisotropic filtering for this sampler,
+or <code>VK_FALSE</code> to restrict the sampler to isotropic
+filtering.</li>
+<li><strong><code>maxAnisotropy</code></strong>: A floating-point value
+that defines the maximum ratio of anisotropy to apply. Higher values
+(such as 8.0f or 16.0f) allow the sampler to stretch the sampling
+footprint further along the axis of maximum distortion, preserving
+detail on steep surfaces at the cost of additional texture read
+operations. This value is clamped by the implementation to
+<code>maxSamplerAnisotropy</code>.</li>
+</ul>
+<h3 id="the-sampling-execution-pipeline">The Sampling Execution
+Pipeline</h3>
+<p>During shader execution, texture sampling typically occurs via SPIR-V
+sampling instructions (such as <code>OpImageSampleImplicitLod</code>
+generated by GLSL functions like <code>texture()</code>). The
+integration of anisotropic filtering alters how the hardware computes
+the Level of Detail (LoD) and texture footprint:</p>
+<ol type="1">
+<li><strong>Derivative Calculation</strong>: The GPU determines
+screen-space derivatives of texture coordinates (<span
+class="math inline">\(\frac{\partial u}{\partial x}, \frac{\partial
+v}{\partial x}, \frac{\partial u}{\partial y}, \frac{\partial
+v}{\partial y}\)</span>) across pixel quads.</li>
+<li><strong>Footprint Construction</strong>: For surfaces viewed at
+oblique angles, isotropic filtering maps a square pixel to an elongated
+ellipse in texture space, selecting a blurry mipmap level to prevent
+aliasing along the major axis. Anisotropic filtering instead models this
+distortion directly.</li>
+<li><strong>Multi-tap Fetching</strong>: Rather than selecting a single
+blurred mip level, the hardware samples multiple texels along the major
+axis of the ellipse at an appropriate, sharper mip level determined by
+the minor axis.</li>
+<li><strong>Filtering and Blending</strong>: The gathered samples are
+weighted and blended together (alongside standard bilinear or trilinear
+interpolation defined by <code>minFilter</code>, <code>magFilter</code>,
+and <code>mipmapMode</code>) to produce the final sampled color.</li>
+</ol>
+<h3 id="interaction-with-sampler-states">Interaction with Sampler
+States</h3>
+<ul>
+<li><strong>Mipmap Modes</strong>: Anisotropic filtering works in tandem
+with <code>VkSamplerMipmapMode</code>. When anisotropic filtering is
+active, it modifies the calculation of the isotropic mip level, using
+multiple samples to compensate for the difference between the major and
+minor texture coordinate derivatives.</li>
+<li><strong>Magnification</strong>: Anisotropic filtering only takes
+effect during minification. When a surface is close enough to the camera
+that texels are larger than screen pixels, <code>magFilter</code>
+settings govern the output.</li>
+<li><strong>Unnormalized Coordinates</strong>: Anisotropic filtering is
+incompatible with unnormalized texture coordinates
+(<code>unnormalizedCoordinates = VK_TRUE</code>). Standard normalized
+coordinates in the range <span class="math inline">\([0.0, 1.0]\)</span>
+must be used.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

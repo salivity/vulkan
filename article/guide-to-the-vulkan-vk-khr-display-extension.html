@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guide to the Vulkan VK_KHR_display Extension - vulkan</title>
+    <meta name="description" content="The VKKHRdisplay extension is a specialized Vulkan API feature that enables applications to directly target physical display hardware without requiring an underlying windowing system or desktop compositor. By exposing display controllers, modes, and plane">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/guide-to-the-vulkan-vk-khr-display-extension">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Guide to the Vulkan VK_KHR_display Extension - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/guide-to-the-vulkan-vk-khr-display-extension" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The VKKHRdisplay extension is a specialized Vulkan API feature that enables applications to directly target physical display hardware without requiring an underlying windowing system or desktop compositor. By exposing display controllers, modes, and plane" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="guide-to-the-vulkan-vk_khr_display-extension">Guide to the
+Vulkan VK_KHR_display Extension</h1>
+<p>The <code>VK_KHR_display</code> extension is a specialized Vulkan API
+feature that enables applications to directly target physical display
+hardware without requiring an underlying windowing system or desktop
+compositor. By exposing display controllers, modes, and planes directly
+to the developer, it allows direct-to-display rendering with minimal
+latency and overhead. This article explains the technical purpose of
+<code>VK_KHR_display</code>, how it functions, and the primary
+industries and environments where it is deployed, such as embedded
+hardware, virtual reality runtimes, and standalone display engines.</p>
+<h3 id="what-is-vk_khr_display">What is VK_KHR_display?</h3>
+<p>In standard Vulkan desktop workflows, rendering targets a surface
+created by a platform-specific windowing system, such as Win32 on
+Windows or X11/Wayland on Linux (via extensions like
+<code>VK_KHR_win32_surface</code> or
+<code>VK_KHR_wayland_surface</code>). The operating system's compositor
+then composites this window onto the final display output.</p>
+<p><code>VK_KHR_display</code> removes the window manager entirely. It
+provides an interface to enumerate physical display devices connected to
+a graphics card, query supported resolutions and refresh rates (display
+modes), and create a <code>VkSurfaceKHR</code> directly tied to a
+physical display output.</p>
+<p>Key capabilities provided by the extension include:</p>
+<ul>
+<li><strong>Display Enumeration:</strong> Querying physical display
+properties, such as dimensions, supported native resolutions, and
+refresh rates.</li>
+<li><strong>Plane Control:</strong> Accessing hardware display planes to
+control layering, scaling, and z-ordering directly on the display
+controller.</li>
+<li><strong>Direct Surface Creation:</strong> Generating a Vulkan
+swapchain directly attached to a specific display plane rather than an
+application window.</li>
+</ul>
+<h3 id="common-deployments-and-use-cases">Common Deployments and Use
+Cases</h3>
+<p>Because <code>VK_KHR_display</code> bypasses desktop environments, it
+is commonly utilized in environments requiring direct hardware access,
+low latency, or minimal software overhead.</p>
+<h4 id="1-virtual-reality-vr-and-augmented-reality-ar-runtimes">1.
+Virtual Reality (VR) and Augmented Reality (AR) Runtimes</h4>
+<p>Virtual reality headsets require the lowest possible latency to
+prevent motion sickness. Desktop compositors introduce latency by
+buffering frames and managing window states. VR runtimes (such as OpenXR
+implementations and SteamVR on Linux) use <code>VK_KHR_display</code> to
+engage "Direct Mode." This allows the runtime to acquire the headset
+display exclusively, push rendered frames straight to the hardware, and
+maintain precise control over frame presentation timing.</p>
+<h4 id="2-embedded-and-automotive-systems">2. Embedded and Automotive
+Systems</h4>
+<p>Embedded systems—such as automotive digital instrument clusters,
+in-vehicle infotainment (IVI), and medical imaging devices—frequently
+run lightweight Linux distributions stripped of desktop environments
+like GNOME or KDE. In these setups, <code>VK_KHR_display</code> enables
+single-purpose rendering engines to draw directly to custom dashboard
+screens or diagnostic panels without the overhead or security risks of
+maintaining a window server.</p>
+<h4 id="3-display-compositors-and-window-managers">3. Display
+Compositors and Window Managers</h4>
+<p>Wayland compositors (such as Weston or wlroots-based compositors) and
+custom window managers must draw directly to the physical screen before
+displaying client windows. A compositor can use
+<code>VK_KHR_display</code> as a hardware abstraction backend to
+interface with the display hardware directly through Vulkan, managing
+output modes and presentation without relying on older graphics
+interfaces.</p>
+<h4 id="4-kiosks-digital-signage-and-arcade-hardware">4. Kiosks, Digital
+Signage, and Arcade Hardware</h4>
+<p>Dedicated computing devices that run a single, full-screen
+application—such as digital billboards, ATM interfaces, and arcade
+cabinets—often implement <code>VK_KHR_display</code>. It ensures that no
+operating system window artifacts (dialog boxes, desktop toolbars, or
+window borders) appear on screen, while also reducing system resource
+usage.</p>
+<h3 id="key-benefits-of-direct-display-rendering">Key Benefits of Direct
+Display Rendering</h3>
+<ul>
+<li><strong>Reduced Latency:</strong> Frame presentation bypasses
+operating system composition layers, allowing frames to hit the display
+as quickly as the graphics controller allows.</li>
+<li><strong>Deterministic Timing:</strong> Developers gain direct
+control over presentation modes and vertical synchronization, critical
+for real-time simulations and high-framerate VR.</li>
+<li><strong>Smaller Footprint:</strong> Devices do not need to ship with
+X11, Wayland, or desktop libraries, reducing disk footprint, memory
+consumption, and attack surface.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

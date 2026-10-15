@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Buffer Device Address vs Virtual Memory Pointers - vulkan</title>
+    <meta name="description" content="This article explains the core differences in Vulkan between physical storage buffer addresses and virtual memory pointers, detailing how each is addressed, where they execute, and how they interact with system and device hardware. While both concepts dea">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-buffer-device-address-vs-virtual-memory-pointers">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Buffer Device Address vs Virtual Memory Pointers - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-buffer-device-address-vs-virtual-memory-pointers" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains the core differences in Vulkan between physical storage buffer addresses and virtual memory pointers, detailing how each is addressed, where they execute, and how they interact with system and device hardware. While both concepts dea" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-buffer-device-address-vs-virtual-memory-pointers">Vulkan
+Buffer Device Address vs Virtual Memory Pointers</h1>
+<p>This article explains the core differences in Vulkan between physical
+storage buffer addresses and virtual memory pointers, detailing how each
+is addressed, where they execute, and how they interact with system and
+device hardware. While both concepts deal with memory locations,
+physical storage buffer addresses provide 64-bit GPU-accessible pointers
+directly inside shader code to eliminate descriptor overhead, whereas
+virtual memory pointers encompass either CPU-side host virtual addresses
+obtained through mapping or traditional descriptor-abstracted GPU memory
+references.</p>
+<h2 id="understanding-physical-storage-buffer-addresses">Understanding
+Physical Storage Buffer Addresses</h2>
+<p>A physical storage buffer address (introduced widely via the
+<code>VK_KHR_buffer_device_address</code> extension and core in Vulkan
+1.2) is a 64-bit integer (<code>VkDeviceAddress</code>) representing a
+direct GPU memory address. In shaders, this corresponds to the
+<code>PhysicalStorageBuffer</code> storage class in SPIR-V or the
+<code>GL_EXT_buffer_reference</code> extension in GLSL.</p>
+<p>Key characteristics include:</p>
+<ul>
+<li><strong>Shader Execution:</strong> The GPU can dereference these
+addresses natively within shaders using standard C-style pointer
+mechanics.</li>
+<li><strong>Descriptor Bypass:</strong> Shaders do not need to bind
+buffers to descriptor sets. Instead, 64-bit addresses can be passed via
+push constants, uniform buffers, or embedded within other buffers.</li>
+<li><strong>Complex Data Structures:</strong> It enables pointer chasing
+on the GPU, making it straightforward to implement graphs, linked lists,
+trees, and acceleration structures for ray tracing.</li>
+<li><strong>Safety:</strong> There is no hardware-enforced bounds
+checking by default; invalid memory dereferences cause device-loss
+errors or GPU hangs.</li>
+</ul>
+<h2 id="understanding-virtual-memory-pointers">Understanding Virtual
+Memory Pointers</h2>
+<p>In Vulkan programming, virtual memory pointers generally refer to two
+distinct mechanisms: CPU host virtual addresses and traditional GPU
+virtual memory abstractions.</p>
+<h3 id="host-virtual-memory-pointers">Host Virtual Memory Pointers</h3>
+<p>When allocating memory with <code>vkAllocateMemory</code> using a
+host-visible memory type, you retrieve a CPU virtual memory pointer
+using <code>vkMapMemory</code>.</p>
+<ul>
+<li><strong>Execution Context:</strong> Exists strictly within the
+operating system’s virtual memory space for the CPU.</li>
+<li><strong>Accessibility:</strong> Accessible only by the CPU host
+application. The GPU cannot read or write to this pointer directly; it
+interacts with the underlying memory via Vulkan synchronization commands
+and caches.</li>
+<li><strong>Purpose:</strong> Primarily used for staging, uploading
+data, and updating dynamic uniforms from the host.</li>
+</ul>
+<h3 id="abstracted-gpu-virtual-memory">Abstracted GPU Virtual
+Memory</h3>
+<p>Historically, Vulkan handles GPU virtual memory via handles
+(<code>VkDeviceMemory</code>, <code>VkBuffer</code>) and bindings
+(<code>VkDescriptorSet</code>). The GPU's Memory Management Unit (MMU)
+maps allocations into its virtual address space, but these addresses are
+hidden behind resource descriptors and pipeline bindings. The shader
+refers to an index (a binding slot) rather than an explicit memory
+address.</p>
+<h2 id="key-differences">Key Differences</h2>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Feature</th>
+<th style="text-align: left;">Physical Storage Buffer Address</th>
+<th style="text-align: left;">Host Virtual Memory Pointer</th>
+<th style="text-align: left;">Abstracted GPU Memory (Descriptors)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>Execution Target</strong></td>
+<td style="text-align: left;">GPU (Shaders)</td>
+<td style="text-align: left;">CPU (Host Application)</td>
+<td style="text-align: left;">GPU (Shaders)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Representation</strong></td>
+<td style="text-align: left;">64-bit integer
+(<code>VkDeviceAddress</code>)</td>
+<td style="text-align: left;">Standard C/C++ pointer
+(<code>void*</code>)</td>
+<td style="text-align: left;">Opaque handle (<code>VkBuffer</code> /
+Descriptors)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Addressing Method</strong></td>
+<td style="text-align: left;">Direct memory addressing via shader
+pointers</td>
+<td style="text-align: left;">Direct memory addressing via CPU MMU</td>
+<td style="text-align: left;">Indirect addressing via descriptor
+tables</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Descriptor Overhead</strong></td>
+<td style="text-align: left;">Negligible; bypasses descriptor set
+limits</td>
+<td style="text-align: left;">None (not bound to GPU pipeline)</td>
+<td style="text-align: left;">High; requires descriptors and binding
+slots</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Flexibility</strong></td>
+<td style="text-align: left;">High for dynamic GPU data structures</td>
+<td style="text-align: left;">High for CPU data manipulation</td>
+<td style="text-align: left;">Static; defined per pipeline layout</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Bounds Safety</strong></td>
+<td style="text-align: left;">Unchecked (risk of GPU hang)</td>
+<td style="text-align: left;">OS-managed page protection
+(segfaults)</td>
+<td style="text-align: left;">Checked or clamped depending on
+hardware</td>
+</tr>
+</tbody>
+</table>
+<h2 id="architectural-impact">Architectural Impact</h2>
+<p>The primary distinction lies in accessibility and indirection. A host
+virtual memory pointer is managed by the operating system’s MMU for CPU
+execution. A physical storage buffer address is a GPU-side address that
+allows compute and graphics shaders to bypass the Vulkan descriptor
+abstraction layer.</p>
+<p>Although named "physical" storage buffer addresses to distinguish
+them from abstract logical bindings, these addresses are still mapped
+through the GPU's internal MMU virtual address space. However, they
+function as raw pointers from the shader's perspective, removing the
+descriptor indirection layer and allowing the GPU to treat its memory
+with the same pointer-driven flexibility long enjoyed by the CPU.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

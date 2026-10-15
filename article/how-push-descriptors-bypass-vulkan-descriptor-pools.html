@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How Push Descriptors Bypass Vulkan Descriptor Pools - vulkan</title>
+    <meta name="description" content="In the standard Vulkan workflow, binding resources like buffers and textures requires allocating descriptor sets from explicit descriptor pools, updating them, and tracking their lifetimes across execution frames. The push descriptors extension (VKKHRpush">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/how-push-descriptors-bypass-vulkan-descriptor-pools">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How Push Descriptors Bypass Vulkan Descriptor Pools - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/how-push-descriptors-bypass-vulkan-descriptor-pools" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In the standard Vulkan workflow, binding resources like buffers and textures requires allocating descriptor sets from explicit descriptor pools, updating them, and tracking their lifetimes across execution frames. The push descriptors extension (VKKHRpush" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-push-descriptors-bypass-vulkan-descriptor-pools">How Push
+Descriptors Bypass Vulkan Descriptor Pools</h1>
+<p>In the standard Vulkan workflow, binding resources like buffers and
+textures requires allocating descriptor sets from explicit descriptor
+pools, updating them, and tracking their lifetimes across execution
+frames. The push descriptors extension
+(<code>VK_KHR_push_descriptor</code>) simplifies this process by
+allowing developers to write descriptor updates directly into a command
+buffer at recording time. This article explains how the extension
+functions, how it eliminates the overhead of explicit descriptor pool
+allocations for dynamic data, and how the underlying driver handles
+resource binding internally.</p>
+<h3 id="the-traditional-descriptor-model">The Traditional Descriptor
+Model</h3>
+<p>Standard Vulkan resource binding relies on a multi-step allocation
+and update cycle:</p>
+<ol type="1">
+<li><strong>Descriptor Set Layout Creation:</strong> Defines the
+interface between shaders and resource bindings
+(<code>VkDescriptorSetLayout</code>).</li>
+<li><strong>Pool Allocation:</strong> A <code>VkDescriptorPool</code> is
+created to pre-allocate memory chunks for specific descriptor
+types.</li>
+<li><strong>Descriptor Set Allocation:</strong> Sets
+(<code>VkDescriptorSet</code>) are explicitly allocated from the pool
+using <code>vkAllocateDescriptorSets</code>.</li>
+<li><strong>Updating Descriptors:</strong> The CPU updates descriptor
+structures using <code>vkUpdateDescriptorSets</code>.</li>
+<li><strong>Binding:</strong> Sets are bound to the pipeline via
+<code>vkCmdBindDescriptorSets</code>.</li>
+</ol>
+<p>While this model enables efficient reuse of static resource bindings,
+it creates heavy overhead for resources that change frequently between
+draw calls. Developers must implement complex ring buffers, dynamic
+pooling schemes, or multi-frame allocation tracking to prevent writing
+to descriptor sets currently in use by the GPU.</p>
+<h3 id="how-push-descriptors-eliminate-explicit-pools">How Push
+Descriptors Eliminate Explicit Pools</h3>
+<p>The push descriptor extension alters the traditional pipeline by
+embedding descriptor updates directly within the command stream,
+functioning similarly to push constants.</p>
+<h4 id="1-layout-flagging">1. Layout Flagging</h4>
+<p>To use push descriptors, the descriptor set layout must be created
+with the
+<code>VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR</code>
+flag. This informs the driver that this specific layout will not be
+backed by an allocated <code>VkDescriptorSet</code> handle.</p>
+<h4 id="2-direct-command-buffer-recording">2. Direct Command Buffer
+Recording</h4>
+<p>Instead of calling <code>vkAllocateDescriptorSets</code> and updating
+the allocated handles with CPU writes, the application records
+descriptor writes straight to the command buffer using
+<code>vkCmdPushDescriptorSetKHR</code>:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>vkCmdPushDescriptorSetKHR<span class="op">(</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    commandBuffer<span class="op">,</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    VK_PIPELINE_BIND_POINT_GRAPHICS<span class="op">,</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    pipelineLayout<span class="op">,</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    setIndex<span class="op">,</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    descriptorWriteCount<span class="op">,</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    pDescriptorWrites</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="op">);</span></span></code></pre></div>
+<p>Because the command buffer stores the descriptors inline at the point
+of recording, there is no need to create or manage a
+<code>VkDescriptorPool</code> for that set.</p>
+<h3 id="internal-driver-handling">Internal Driver Handling</h3>
+<p>When <code>vkCmdPushDescriptorSetKHR</code> is invoked, the
+responsibility of memory allocation and lifetime tracking shifts
+entirely from the application to the Vulkan driver:</p>
+<ul>
+<li><strong>Internal Scratch Memory:</strong> The driver writes the
+descriptor payloads into internal command buffer memory, internal ring
+buffers, or hardware-specific descriptor tables.</li>
+<li><strong>Automatic Synchronization:</strong> Because the data is
+recorded directly into the command stream, resource updates are
+inherently serialized with preceding and succeeding draw calls. This
+removes hazards associated with modifying a descriptor set while the GPU
+is reading from it.</li>
+<li><strong>Hardware Parity:</strong> On modern architectures, push
+descriptors map closely to hardware implementations such as DirectX 12
+root descriptors or inline hardware registers, allowing the GPU to
+consume dynamic bindings without extra pointer indirections.</li>
+</ul>
+<h3 id="practical-trade-offs">Practical Trade-offs</h3>
+<p>Push descriptors are ideal for dynamic, frequently changing resources
+(such as per-object transforms or dynamic uniform buffers) because they
+remove the CPU management cost of pooling and lifetime tracking.
+However, they are not intended to replace all traditional descriptor
+sets. Because push descriptors are written directly to the command
+buffer, pushing large numbers of static resources on every draw call can
+bloat the command buffer size and consume command stream bandwidth.</p>
+<p>A standard architectural pattern is to combine both methods: use
+traditional, pool-allocated descriptor sets for static, infrequently
+updated global resources (like material libraries or scene
+environments), and use push descriptors for rapidly changing, per-draw
+data.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

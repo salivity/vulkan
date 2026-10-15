@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Asynchronous Occlusion Queries Without CPU Stalls - vulkan</title>
+    <meta name="description" content="This article provides an overview of how game and rendering engines read occlusion query results asynchronously in Vulkan without introducing CPU pipeline bubbles. By replacing synchronous query polling with multi-frame readback latency, non-blocking flag">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-asynchronous-occlusion-queries-without-cpu-stalls">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Asynchronous Occlusion Queries Without CPU Stalls - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-asynchronous-occlusion-queries-without-cpu-stalls" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article provides an overview of how game and rendering engines read occlusion query results asynchronously in Vulkan without introducing CPU pipeline bubbles. By replacing synchronous query polling with multi-frame readback latency, non-blocking flag" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-asynchronous-occlusion-queries-without-cpu-stalls">Vulkan
+Asynchronous Occlusion Queries Without CPU Stalls</h1>
+<p>This article provides an overview of how game and rendering engines
+read occlusion query results asynchronously in Vulkan without
+introducing CPU pipeline bubbles. By replacing synchronous query polling
+with multi-frame readback latency, non-blocking flags, and GPU-driven
+rendering techniques like conditional rendering and compute-based
+indirect draws, engines can leverage occlusion culling while maintaining
+maximum GPU and CPU parallelism.</p>
+<h2 id="the-bottleneck-synchronous-query-reads">The Bottleneck:
+Synchronous Query Reads</h2>
+<p>In Vulkan, occlusion queries count the number of fragments or samples
+that pass depth and stencil tests using a <code>VkQueryPool</code>. The
+most straightforward way to retrieve these results is via the
+<code>vkGetQueryPoolResults</code> function.</p>
+<p>However, calling <code>vkGetQueryPoolResults</code> with the
+<code>VK_QUERY_RESULT_WAIT_BIT</code> flag forces the CPU to wait until
+the GPU has fully processed all geometry associated with that query.
+Because the CPU typically runs one or two frames ahead of the GPU,
+synchronizing here stalls the CPU thread, destroys parallelism, and
+severely impacts frame rates. To avoid this, engines employ asynchronous
+approaches.</p>
+<h2 id="method-1-multi-frame-latency-with-non-blocking-flags">Method 1:
+Multi-Frame Latency with Non-Blocking Flags</h2>
+<p>The simplest asynchronous CPU-side approach is to introduce frame
+latency (typically 1 to 2 frames) before reading the query results.</p>
+<ol type="1">
+<li><strong>Issue the Query</strong>: On Frame <span
+class="math inline">\(N\)</span>, issue the occlusion test between
+<code>vkCmdBeginQuery</code> and <code>vkCmdEndQuery</code>.</li>
+<li><strong>Postpone the Read</strong>: Do not attempt to read the query
+within Frame <span class="math inline">\(N\)</span>. Instead, read it on
+Frame <span class="math inline">\(N+1\)</span> or Frame <span
+class="math inline">\(N+2\)</span>.</li>
+<li><strong>Use Non-Blocking Retrieval</strong>: Call
+<code>vkGetQueryPoolResults</code> <em>without</em>
+<code>VK_QUERY_RESULT_WAIT_BIT</code>. Instead, pass
+<code>VK_QUERY_RESULT_WITH_AVAILABILITY_BIT</code>.</li>
+<li><strong>Evaluate Availability</strong>: This flag writes an extra
+integer along with the query result indicating whether the data is
+actually ready. If the data is ready, update the visibility state. If
+the data is not ready (<code>VK_NOT_READY</code>), employ a conservative
+fallback heuristic: assume the object is visible to avoid popping
+artifacts, and retain the previous frame's visibility state.</li>
+</ol>
+<p>Because queries from two frames ago are almost always completed by
+the time the CPU processes the current frame, this approach yields high
+hit rates with zero CPU wait time.</p>
+<h2 id="method-2-gpu-to-buffer-copy-vkcmdcopyquerypoolresults">Method 2:
+GPU-to-Buffer Copy (<code>vkCmdCopyQueryPoolResults</code>)</h2>
+<p>Rather than pulling data directly to host memory using CPU commands,
+you can instruct the GPU to write query results into a
+<code>VkBuffer</code> using <code>vkCmdCopyQueryPoolResults</code>.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>vkCmdCopyQueryPoolResults<span class="op">(</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    commandBuffer<span class="op">,</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    queryPool<span class="op">,</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    firstQuery<span class="op">,</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    queryCount<span class="op">,</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    dstBuffer<span class="op">,</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    dstOffset<span class="op">,</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    stride<span class="op">,</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    VK_QUERY_RESULT_64_BIT <span class="op">|</span> VK_QUERY_RESULT_WAIT_BIT</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="op">);</span></span></code></pre></div>
+<p>In this context, <code>VK_QUERY_RESULT_WAIT_BIT</code> only makes the
+GPU execution wait for the query to finish within the GPU pipeline; it
+<strong>does not stall the CPU</strong>.</p>
+<p>The engine can then handle the destination buffer in two ways:</p>
+<ul>
+<li><strong>Asynchronous Host Readback</strong>: Use a persistently
+mapped, host-coherent buffer ring corresponding to the engine's
+frames-in-flight. The CPU only maps and reads the buffer when the
+corresponding frame fence signals completion.</li>
+<li><strong>Keep Data on GPU</strong>: Leave the results in VRAM for
+direct consumption by subsequent compute passes or indirect
+commands.</li>
+</ul>
+<h2
+id="method-3-completely-gpu-driven-occlusion-zero-cpu-involvement">Method
+3: Completely GPU-Driven Occlusion (Zero CPU Involvement)</h2>
+<p>High-performance modern engines eliminate the CPU from the occlusion
+loop entirely. Transferring query data back to the CPU introduces
+temporal lag, which causes visible popping when the camera moves
+quickly. GPU-driven approaches solve this issue completely.</p>
+<h3 id="conditional-rendering-vk_ext_conditional_rendering">Conditional
+Rendering (<code>VK_EXT_conditional_rendering</code>)</h3>
+<p>Using the <code>VK_EXT_conditional_rendering</code> extension, the
+GPU determines whether to execute draw commands based on values in a
+<code>VkBuffer</code>.</p>
+<ol type="1">
+<li>Render bounding boxes into the query pool.</li>
+<li>Call <code>vkCmdCopyQueryPoolResults</code> to write the results
+into a <code>VkBuffer</code>.</li>
+<li>Wrap subsequent high-detail mesh draws with
+<code>vkCmdBeginConditionalRenderingEXT</code> and
+<code>vkCmdEndConditionalRenderingEXT</code>, pointing directly to the
+query result in that buffer.</li>
+<li>If the sample count is zero, the GPU automatically discards the draw
+call without CPU intervention.</li>
+</ol>
+<h3 id="compute-shader-compaction">Compute Shader Compaction</h3>
+<p>Alternatively, the engine can copy query results to a storage buffer
+and dispatch a compute shader. The compute shader reads the visibility
+count, evaluates the object’s visibility, and populates a
+<code>VkDrawIndexedIndirectCommand</code> buffer. Visible objects are
+packed into the draw buffer, and hidden objects are omitted. The engine
+then calls <code>vkCmdDrawIndexedIndirectCount</code> to render only the
+visible meshes.</p>
+<h2 id="proper-query-pool-recycling">Proper Query Pool Recycling</h2>
+<p>To maintain asynchronous execution, the engine must handle query pool
+lifecycles correctly:</p>
+<ul>
+<li><strong>Per-Frame Allocation</strong>: Allocate separate query pools
+(or separate segments of a larger pool) for each frame-in-flight to
+prevent race conditions.</li>
+<li><strong>Asynchronous Resets</strong>: Use
+<code>vkCmdResetQueryPool</code> within a command buffer rather than
+<code>vkResetQueryPool</code> on the host. This ensures that queries are
+reset on the GPU timeline strictly after past reads have completed and
+immediately before new queries are begun.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

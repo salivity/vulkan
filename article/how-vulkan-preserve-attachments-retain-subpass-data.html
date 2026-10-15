@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How Vulkan Preserve Attachments Retain Subpass Data - vulkan</title>
+    <meta name="description" content="Vulkan’s render pass architecture is designed to optimize memory bandwidth by dividing rendering workloads into discrete subpasses, particularly on tile-based GPUs. In multi-subpass pipelines, intermediate data written in an early subpass may not be neede">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/how-vulkan-preserve-attachments-retain-subpass-data">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How Vulkan Preserve Attachments Retain Subpass Data - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/how-vulkan-preserve-attachments-retain-subpass-data" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Vulkan’s render pass architecture is designed to optimize memory bandwidth by dividing rendering workloads into discrete subpasses, particularly on tile-based GPUs. In multi-subpass pipelines, intermediate data written in an early subpass may not be neede" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-vulkan-preserve-attachments-retain-subpass-data">How Vulkan
+Preserve Attachments Retain Subpass Data</h1>
+<p>Vulkan’s render pass architecture is designed to optimize memory
+bandwidth by dividing rendering workloads into discrete subpasses,
+particularly on tile-based GPUs. In multi-subpass pipelines,
+intermediate data written in an early subpass may not be needed in the
+immediate next subpass, but might be required in a later one. Preserve
+attachments (<code>pPreserveAttachments</code>) solve this lifecycle
+challenge by explicitly telling the Vulkan driver to maintain an
+attachment's contents intact across subpasses where it is neither
+written to nor read from, preventing data corruption and hardware-level
+cache eviction.</p>
+<h2 id="the-subpass-attachment-problem">The Subpass Attachment
+Problem</h2>
+<p>In a Vulkan <code>VkRenderPass</code>, each
+<code>VkSubpassDescription</code> defines the attachments it actively
+interacts with:</p>
+<ul>
+<li>Color attachments (<code>pColorAttachments</code>)</li>
+<li>Input attachments (<code>pInputAttachments</code>)</li>
+<li>Depth/stencil attachments
+(<code>pDepthStencilAttachment</code>)</li>
+<li>Resolve attachments (<code>pResolveAttachments</code>)</li>
+</ul>
+<p>When an attachment is referenced in these arrays, the Vulkan
+implementation knows it must allocate resources and manage state for
+that data during the subpass. However, if a subpass does not explicitly
+reference an attachment in any of these roles, the implementation
+assumes the subpass has no interest in that attachment's current
+contents.</p>
+<p>On Tile-Based Deferred Rendering (TBDR) architectures—common in
+mobile and integrated graphics hardware—render pass data often lives in
+fast, on-chip tile memory rather than external VRAM. If a subpass does
+not bind an attachment, the hardware is free to repurpose that fast
+on-chip memory space for other operations, effectively discarding or
+overwriting the intermediate data.</p>
+<h2 id="how-preserve-attachments-work">How Preserve Attachments
+Work</h2>
+<p>To ensure intermediate data survives across subpasses where it
+remains idle, Vulkan provides the <code>pPreserveAttachments</code>
+field within <code>VkSubpassDescription</code>.</p>
+<p>An attachment listed in <code>pPreserveAttachments</code> is defined
+strictly by its integer index pointing to the <code>pAttachments</code>
+array in <code>VkRenderPassCreateInfo</code>. When specified:</p>
+<ol type="1">
+<li><strong>Hardware Reservation:</strong> The driver is instructed that
+the specified attachment's data must persist through the execution of
+the current subpass, even though the shaders and fixed-function stages
+in this subpass do not bind or modify it.</li>
+<li><strong>Preventing Premature Eviction:</strong> On TBDR hardware,
+the driver will either preserve the fast tile-local storage for that
+attachment across the subpass or, if memory pressure demands it, safely
+spill the data and restore it before the subsequent subpass that
+consumes it.</li>
+<li><strong>Synchronization Guarantees:</strong> Combined with proper
+<code>VkSubpassDependency</code> definitions, preserve attachments
+ensure that pipeline barrier dependencies accurately track the lifetime
+and memory consistency of the data across the entire execution
+graph.</li>
+</ol>
+<h2 id="a-practical-scenario">A Practical Scenario</h2>
+<p>Consider a three-subpass render pass:</p>
+<ul>
+<li><strong>Subpass 0:</strong> Generates geometric data and writes to
+Attachment A (G-Buffer) and Attachment B (Material IDs).</li>
+<li><strong>Subpass 1:</strong> Performs screen-space ambient occlusion
+(SSAO), reading Attachment A as an input attachment and writing to
+Attachment C. Subpass 1 does not use Attachment B.</li>
+<li><strong>Subpass 2:</strong> Executes final composition, reading
+Attachment A, Attachment B, and Attachment C to produce the final
+image.</li>
+</ul>
+<p>Without intervention, Attachment B is vulnerable during Subpass 1.
+Because Subpass 1 does not bind Attachment B as an input or color
+attachment, the implementation might discard Attachment B's contents to
+optimize memory.</p>
+<p>By listing the index of Attachment B in Subpass 1’s
+<code>pPreserveAttachments</code> array, the developer guarantees that
+the data written in Subpass 0 remains intact until Subpass 2 reads
+it.</p>
+<h2 id="architectural-efficiency">Architectural Efficiency</h2>
+<p>Preserve attachments allow Vulkan applications to keep complex,
+multi-stage rendering pipelines confined to a single
+<code>VkRenderPass</code>. Without preserve attachments, an application
+would have to split rendering workloads into separate render passes,
+forcing data to be flushed to high-bandwidth external VRAM and reloaded.
+By preserving data within the subpass structure, applications maximize
+the use of on-chip caches and maintain optimal memory efficiency.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

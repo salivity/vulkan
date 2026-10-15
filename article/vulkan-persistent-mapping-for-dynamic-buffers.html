@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Persistent Mapping for Dynamic Buffers - vulkan</title>
+    <meta name="description" content="Persistent memory mapping in the Vulkan API streamlines frequent, continuous buffer updates across frames by keeping host-visible device memory mapped to a CPU virtual address throughout the application&#39;s lifecycle. Rather than continuously incurring CPU">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-persistent-mapping-for-dynamic-buffers">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Persistent Mapping for Dynamic Buffers - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-persistent-mapping-for-dynamic-buffers" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Persistent memory mapping in the Vulkan API streamlines frequent, continuous buffer updates across frames by keeping host-visible device memory mapped to a CPU virtual address throughout the application&#39;s lifecycle. Rather than continuously incurring CPU" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-persistent-mapping-for-dynamic-buffers">Vulkan Persistent
+Mapping for Dynamic Buffers</h1>
+<p>Persistent memory mapping in the Vulkan API streamlines frequent,
+continuous buffer updates across frames by keeping host-visible device
+memory mapped to a CPU virtual address throughout the application's
+lifecycle. Rather than continuously incurring CPU driver overhead by
+mapping and unmapping memory ranges on every frame, persistent mapping
+allows developers to treat GPU-accessible buffers like standard system
+memory pointers. This overview explains how this mechanism simplifies
+data streaming for dynamic objects, uniform buffers, and vertex arrays
+while maintaining synchronization between the CPU and GPU.</p>
+<h3 id="the-traditional-mapping-problem">The Traditional Mapping
+Problem</h3>
+<p>In conventional dynamic buffer workflows, an application typically
+calls <code>vkMapMemory</code>, writes new per-frame data (such as
+transform matrices or dynamic vertex lists) to the returned pointer, and
+calls <code>vkUnmapMemory</code> before issuing draw calls. Repeating
+this process every frame for multiple resources introduces measurable
+CPU overhead. Each mapping operation forces the Vulkan driver to
+configure and validate virtual memory page table mappings, leading to
+unnecessary CPU cycles and code complexity when handling streaming
+resources.</p>
+<h3 id="how-persistent-mapping-works">How Persistent Mapping Works</h3>
+<p>Persistent mapping fundamentally changes dynamic resource updates by
+invoking <code>vkMapMemory</code> only once when the buffer or its
+backing <code>VkDeviceMemory</code> is allocated. The application
+retains the resulting host pointer for the entire lifetime of the
+buffer, writing directly to it during frame generation, and only calls
+<code>vkUnmapMemory</code> when the resource is finally destroyed.</p>
+<p>To implement persistent mapping:</p>
+<ol type="1">
+<li>Allocate memory backed by the
+<code>VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT</code> flag.</li>
+<li>Call <code>vkMapMemory</code> immediately after allocation to
+acquire a valid CPU pointer.</li>
+<li>Cache this pointer in the CPU-side representation of the
+buffer.</li>
+<li>Write updates directly to this pointer every frame using standard
+operations like <code>memcpy</code> or direct struct assignment.</li>
+<li>Call <code>vkUnmapMemory</code> right before calling
+<code>vkFreeMemory</code> during resource cleanup.</li>
+</ol>
+<h3 id="cache-coherency-and-flushes">Cache Coherency and Flushes</h3>
+<p>When writing to persistently mapped pointers, cache consistency
+between the CPU and GPU must be managed based on the selected memory
+properties:</p>
+<ul>
+<li><strong>Host-Coherent Memory
+(<code>VK_MEMORY_PROPERTY_HOST_COHERENT_BIT</code>):</strong> Writes
+made by the CPU are automatically made visible to the GPU without
+explicit management. This provides the simplest programming model,
+requiring no additional cache flush calls.</li>
+<li><strong>Non-Coherent Memory:</strong> If the memory lacks the
+coherent property, writes sit inside the CPU cache. The application must
+explicitly call <code>vkFlushMappedMemoryRanges</code> after writing
+dynamic data to ensure that modified cache lines are written back to
+memory where the GPU can access them. Even with this manual step,
+explicit range flushing is significantly lighter on CPU performance than
+repeated map and unmap calls.</li>
+</ul>
+<h3 id="managing-concurrency-with-multi-buffering">Managing Concurrency
+with Multi-Buffering</h3>
+<p>Because persistent mapping exposes memory continuously, updating the
+buffer directly can create race conditions if the GPU is concurrently
+reading data from an in-flight frame. To prevent data corruption,
+applications combine persistent mapping with multi-buffering
+techniques:</p>
+<ul>
+<li><strong>Ring Buffering and Offsetting:</strong> A single, large
+persistently mapped buffer is partitioned into multiple chunks or
+segments. The CPU writes to one segment while the GPU reads from
+another, utilizing dynamic offsets (such as via dynamic descriptor sets
+like <code>VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC</code>) in draw
+commands.</li>
+<li><strong>Frame-Based Buffering:</strong> Allocating distinct dynamic
+buffers per frame in flight (e.g., across double or triple buffering)
+ensures that the CPU only writes into the chunk assigned to the current
+frame index, guarded by standard CPU-GPU synchronization primitives like
+<code>VkFence</code>.</li>
+</ul>
+<p>By pairing persistent mapping with multi-buffering strategies,
+developers achieve zero-overhead pointer writes, remove recurring driver
+bookkeeping, and establish clean, maintainable streaming pipelines for
+high-frequency Vulkan render workloads.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

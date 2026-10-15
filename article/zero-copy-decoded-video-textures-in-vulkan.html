@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zero-Copy Decoded Video Textures in Vulkan - vulkan</title>
+    <meta name="description" content="This article examines how the Vulkan graphics and compute API enables developers to sample hardware-decoded video frames directly as textures without round-trip memory copies. It covers the specific Vulkan Video extensions, memory sharing mechanisms, YCbC">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/zero-copy-decoded-video-textures-in-vulkan">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Zero-Copy Decoded Video Textures in Vulkan - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/zero-copy-decoded-video-textures-in-vulkan" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article examines how the Vulkan graphics and compute API enables developers to sample hardware-decoded video frames directly as textures without round-trip memory copies. It covers the specific Vulkan Video extensions, memory sharing mechanisms, YCbC" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="zero-copy-decoded-video-textures-in-vulkan">Zero-Copy Decoded
+Video Textures in Vulkan</h1>
+<p>This article examines how the Vulkan graphics and compute API enables
+developers to sample hardware-decoded video frames directly as textures
+without round-trip memory copies. It covers the specific Vulkan Video
+extensions, memory sharing mechanisms, YCbCr format conversion, and
+synchronization requirements necessary to maintain a fully GPU-resident
+zero-copy pipeline from video decoding to final rendering.</p>
+<h2 id="direct-frame-sampling-in-vulkan">Direct Frame Sampling in
+Vulkan</h2>
+<p>Decoded video frames can be sampled directly as textures without
+round-trip memory copies to the host (CPU) or redundant intermediate
+copies on the device (GPU). Vulkan provides native capabilities to
+stream, decode, and render video content entirely within GPU-accessible
+memory.</p>
+<p>Achieving a zero-copy pipeline depends on whether the decoding
+process takes place via native Vulkan Video extensions or through an
+external hardware decoding API.</p>
+<h2 id="native-vulkan-video-pipeline">Native Vulkan Video Pipeline</h2>
+<p>The Khronos Group standardized native video decoding directly within
+the API using core extensions:</p>
+<ul>
+<li><code>VK_KHR_video_queue</code></li>
+<li><code>VK_KHR_video_decode_queue</code></li>
+<li>Codec-specific extensions (such as
+<code>VK_KHR_video_decode_h264</code>,
+<code>VK_KHR_video_decode_h265</code>, and
+<code>VK_KHR_video_decode_av1</code>)</li>
+</ul>
+<p>Under this native framework, destination frames—often stored in the
+Decoded Picture Buffer (DPB)—are allocated as standard
+<code>VkImage</code> handles backed by <code>VkDeviceMemory</code>.</p>
+<h3 id="dual-usage-image-allocation">Dual-Usage Image Allocation</h3>
+<p>To avoid intermediate copies, the destination <code>VkImage</code>
+must be created with combined usage flags:</p>
+<ul>
+<li><code>VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR</code> (allows the
+video decode hardware to write output frames).</li>
+<li><code>VK_IMAGE_USAGE_SAMPLED_BIT</code> (allows graphics and compute
+pipelines to sample the image in shaders).</li>
+</ul>
+<p>By setting both flags at creation time, the decoded frame resides
+directly in memory that shaders can read without an intervening blit or
+copy operation.</p>
+<h2 id="handling-ycbcr-formats">Handling YCbCr Formats</h2>
+<p>Video codecs output data in multi-planar YCbCr formats, such as NV12
+(8-bit) or P010 (10-bit), rather than traditional RGBA formats. Vulkan
+handles these natively via the <strong>Sampler YCbCr Conversion</strong>
+feature (<code>VK_KHR_sampler_ycbcr_conversion</code>, integrated into
+core Vulkan 1.1).</p>
+<ol type="1">
+<li><strong><code>VkSamplerYcbcrConversion</code></strong>: Configures
+the color model, range (full vs. narrow), chroma siting, and component
+swizzle.</li>
+<li><strong>Combined Image Sampler</strong>: The sampler converts YCbCr
+color spaces to RGB directly during texture lookups in the fragment or
+compute shader.</li>
+<li><strong>Multi-Planar Views</strong>: Shaders sample the multi-planar
+image seamlessly through a unified descriptor, bypassing the need for
+manual shader-side matrix math or multi-pass texture blending.</li>
+</ol>
+<h2 id="synchronization-and-queue-family-ownership">Synchronization and
+Queue Family Ownership</h2>
+<p>Because video decoding and graphics rendering typically run on
+different hardware engines on the GPU, they use distinct Vulkan queue
+families:</p>
+<ol type="1">
+<li><strong>Queue Family Transfer</strong>: After decoding completes, a
+pipeline barrier (<code>VkImageMemoryBarrier2</code>) must release
+ownership of the <code>VkImage</code> from the decode queue family and
+acquire it on the graphics or compute queue family.</li>
+<li><strong>Layout Transition</strong>: The barrier transitions the
+image layout from <code>VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR</code> to
+<code>VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL</code>.</li>
+<li><strong>Synchronization</strong>: Execution dependencies ensure the
+decoder finishes writing to the specific DPB slot before the fragment
+shader begins reading it, preventing read-after-write hazards.</li>
+</ol>
+<h2 id="external-decoders-and-zero-copy-imports">External Decoders and
+Zero-Copy Imports</h2>
+<p>When using platform-specific hardware decoders—such as NVIDIA NVDEC,
+Intel VA-API, or Android MediaCodec—Vulkan supports zero-copy texturing
+through external memory and synchronization extensions:</p>
+<ul>
+<li><code>VK_KHR_external_memory</code> paired with platform extensions
+(e.g., <code>VK_KHR_external_memory_fd</code> on Linux,
+<code>VK_KHR_external_memory_win32</code> on Windows, or
+<code>VK_ANDROID_external_memory_android_hardware_buffer</code> on
+Android).</li>
+<li><code>VK_KHR_external_semaphore</code> to coordinate completion
+signals between the external decoder and the Vulkan queue.</li>
+</ul>
+<p>These extensions allow Vulkan to bind an existing native GPU buffer
+directly to a <code>VkImage</code>, enabling shaders to sample decoded
+video frames with zero CPU round-trips and zero memory duplication.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Acceleration Structure Update vs Rebuild - vulkan</title>
+    <meta name="description" content="In Vulkan ray tracing, managing acceleration structures requires balancing GPU build time against runtime ray traversal efficiency. When geometry moves or deforms, developers must choose between updating an existing acceleration structure (refitting) or r">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-acceleration-structure-update-vs-rebuild">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Acceleration Structure Update vs Rebuild - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-acceleration-structure-update-vs-rebuild" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Vulkan ray tracing, managing acceleration structures requires balancing GPU build time against runtime ray traversal efficiency. When geometry moves or deforms, developers must choose between updating an existing acceleration structure (refitting) or r" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-acceleration-structure-update-vs-rebuild">Vulkan
+Acceleration Structure Update vs Rebuild</h1>
+<p>In Vulkan ray tracing, managing acceleration structures requires
+balancing GPU build time against runtime ray traversal efficiency. When
+geometry moves or deforms, developers must choose between updating an
+existing acceleration structure (refitting) or rebuilding it from
+scratch. While updating refits the existing bounding volume hierarchy
+(BVH) significantly faster with minimal scratch memory, rebuilding
+generates a brand-new, optimal tree topology that yields faster ray
+traversal at the cost of higher build overhead.</p>
+<h2 id="rebuilding-from-scratch">Rebuilding from Scratch</h2>
+<p>Rebuilding an acceleration structure involves generating a completely
+new Bounding Volume Hierarchy using the
+<code>VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR</code> flag. The
+driver analyzes the current primitives and constructs an optimized tree
+structure from the bottom up or top down.</p>
+<ul>
+<li><strong>Traversal Efficiency:</strong> Rebuilding produces an
+optimal BVH with minimal bounding box overlap, leading to the fastest
+ray traversal and intersection tests.</li>
+<li><strong>Structural Flexibility:</strong> It supports arbitrary
+modifications, including changes in primitive counts, topology, vertex
+positions, or object visibility.</li>
+<li><strong>Resource Cost:</strong> Rebuilding is computationally
+expensive for the GPU, consuming considerable frame time and requiring a
+larger scratch buffer during execution.</li>
+</ul>
+<h2 id="updating-an-existing-structure">Updating an Existing
+Structure</h2>
+<p>Updating—often referred to as "refitting"—uses the
+<code>VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR</code> flag. It
+adjusts the existing bounding boxes around the modified vertices without
+changing the underlying hierarchy or connectivity of the tree nodes.</p>
+<ul>
+<li><strong>Execution Speed:</strong> Refitting is significantly faster
+than a full rebuild, often by an order of magnitude, making it ideal for
+tight per-frame performance budgets.</li>
+<li><strong>Topology Constraints:</strong> The acceleration structure
+must have been initially created with the
+<code>VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR</code> flag.
+The number of primitives and geometry types must remain identical; only
+vertex positions and transformation matrices can change.</li>
+<li><strong>Degradation of Traversal Performance:</strong> Because the
+tree topology does not adapt to large structural changes, bounding boxes
+can grow, stretch, and heavily overlap. Over multiple frames, this
+degradation causes ray traversal performance to drop significantly.</li>
+</ul>
+<h2 id="key-technical-comparisons">Key Technical Comparisons</h2>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Feature</th>
+<th style="text-align: left;">Rebuilding</th>
+<th style="text-align: left;">Updating (Refitting)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>Vulkan Build Flag</strong></td>
+<td style="text-align: left;"><code>MODE_BUILD_KHR</code></td>
+<td style="text-align: left;"><code>MODE_UPDATE_KHR</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Initial Creation
+Flag</strong></td>
+<td style="text-align: left;">None required</td>
+<td style="text-align: left;"><code>ALLOW_UPDATE_BIT_KHR</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Build Time</strong></td>
+<td style="text-align: left;">High</td>
+<td style="text-align: left;">Very Low</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Ray Traversal Speed</strong></td>
+<td style="text-align: left;">Optimal</td>
+<td style="text-align: left;">Degrades with significant deformation</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Geometry Changes</strong></td>
+<td style="text-align: left;">Vertex, index, and primitive count
+changes</td>
+<td style="text-align: left;">Vertex positions and transforms only</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Scratch Buffer Size</strong></td>
+<td style="text-align: left;">Larger</td>
+<td style="text-align: left;">Smaller</td>
+</tr>
+</tbody>
+</table>
+<h2 id="practical-implementation-strategy">Practical Implementation
+Strategy</h2>
+<p>In production engines, a hybrid approach yields the best results:</p>
+<ul>
+<li><strong>Top-Level Acceleration Structures (TLAS):</strong> Always
+rebuild the TLAS every frame. Because instances are represented as
+simple oriented bounding boxes, rebuilding a TLAS is computationally
+cheap and ensures optimal instance culling.</li>
+<li><strong>Bottom-Level Acceleration Structures (BLAS):</strong>
+<ul>
+<li>Use <strong>rebuilds</strong> for rigid bodies (apply movement via
+the TLAS instance matrix instead of changing the BLAS), geometry with
+changing primitive counts (such as particle meshes or procedural
+surfaces), or when dramatic topology changes occur.</li>
+<li>Use <strong>updates</strong> for continuous, organic deformations
+like skinned skeletal meshes or cloth simulations.</li>
+<li>Implement periodic rebuilds for continuously updating dynamic meshes
+to restore BVH quality and prevent ray traversal degradation over
+time.</li>
+</ul></li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

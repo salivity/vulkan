@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Transform Feedback: Streaming Geometry to Buffers - vulkan</title>
+    <meta name="description" content="Vulkan captures and streams processed vertex and geometry primitives directly into GPU buffers through the VKEXTtransformfeedback extension. This mechanism intercepts vertices after the vertex, tessellation, or geometry processing stages—prior to rasteriz">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-transform-feedback-streaming-geometry-to-buffers">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Transform Feedback: Streaming Geometry to Buffers - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-transform-feedback-streaming-geometry-to-buffers" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Vulkan captures and streams processed vertex and geometry primitives directly into GPU buffers through the VKEXTtransformfeedback extension. This mechanism intercepts vertices after the vertex, tessellation, or geometry processing stages—prior to rasteriz" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-transform-feedback-streaming-geometry-to-buffers">Vulkan
+Transform Feedback: Streaming Geometry to Buffers</h1>
+<p>Vulkan captures and streams processed vertex and geometry primitives
+directly into GPU buffers through the
+<code>VK_EXT_transform_feedback</code> extension. This mechanism
+intercepts vertices after the vertex, tessellation, or geometry
+processing stages—prior to rasterization—and writes their attribute data
+sequentially into dedicated buffer storage. It enables workflows such as
+GPU-driven particle simulations, cloth physics, dynamic tessellation
+caching, and primitive queries without requiring compute shader
+workarounds or round-trips to the CPU.</p>
+<h3 id="enabling-the-extension-and-pipeline-states">Enabling the
+Extension and Pipeline States</h3>
+<p>Because core Vulkan natively relies on compute shaders or storage
+buffers for writing arbitrary data from the pipeline, transform feedback
+is supported via the <code>VK_EXT_transform_feedback</code> device
+extension. Applications must query physical device support and enable
+<code>VkPhysicalDeviceTransformFeedbackFeaturesEXT</code>, specifically
+setting the <code>transformFeedback</code> feature flag to
+<code>VK_TRUE</code>.</p>
+<p>During graphics pipeline creation, you can selectively disable the
+fragment stage if the sole intent is to generate geometry. Setting
+<code>rasterizerDiscardEnable = VK_TRUE</code> in
+<code>VkPipelineRasterizationStateCreateInfo</code> halts the pipeline
+immediately after the pre-rasterization stages, allowing the GPU to
+capture vertices into the bound buffers without invoking rasterization
+or fragment shading overhead.</p>
+<h3 id="spir-v-and-shader-configuration">SPIR-V and Shader
+Configuration</h3>
+<p>The shader determines which vertex attributes are captured, their
+layout, and which buffer index they target. In GLSL, variables are
+explicitly marked with transform feedback layout qualifiers:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">xfb_buffer</span> <span class="op">=</span> <span class="dv">0</span><span class="op">,</span> <span class="dt">xfb_offset</span> <span class="op">=</span> <span class="dv">0</span><span class="op">,</span> <span class="dt">xfb_stride</span> <span class="op">=</span> <span class="dv">32</span><span class="op">)</span> <span class="dt">out</span> <span class="dt">vec4</span> outPosition<span class="op">;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">xfb_buffer</span> <span class="op">=</span> <span class="dv">0</span><span class="op">,</span> <span class="dt">xfb_offset</span> <span class="op">=</span> <span class="dv">16</span><span class="op">)</span> <span class="dt">out</span> <span class="dt">vec4</span> outNormal<span class="op">;</span></span></code></pre></div>
+<p>When compiled to SPIR-V, these declarations generate
+<code>XfbBuffer</code>, <code>XfbOffset</code>, and
+<code>XfbStride</code> execution decorations. Vulkan supports streaming
+to multiple buffers simultaneously (up to the hardware-defined
+<code>maxTransformFeedbackBuffers</code>), allowing interleaved
+attributes in a single buffer or separate attributes distributed across
+distinct buffer arrays.</p>
+<h3 id="buffer-allocation-and-binding">Buffer Allocation and
+Binding</h3>
+<p>Destination storage requires buffers created with the
+<code>VK_BUFFER_USAGE_TRANSFORM_FEEDBACK_BUFFER_BIT_EXT</code> flag. If
+the application tracks the exact number of primitives written, it can
+also allocate counter buffers created with
+<code>VK_BUFFER_USAGE_TRANSFORM_FEEDBACK_COUNTER_BUFFER_BIT_EXT</code>.</p>
+<p>Before issuing drawing commands, the buffers are bound within a
+command buffer using:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>vkCmdBindTransformFeedbackBuffersEXT<span class="op">(</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    commandBuffer<span class="op">,</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    firstBinding<span class="op">,</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    bindingCount<span class="op">,</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    pBuffers<span class="op">,</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    pOffsets<span class="op">,</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    pSizes</span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="op">);</span></span></code></pre></div>
+<h3 id="command-recording-and-execution">Command Recording and
+Execution</h3>
+<p>Streaming geometry into the bound memory is controlled explicitly
+through command recording:</p>
+<ol type="1">
+<li><strong>Begin Capture</strong>: Call
+<code>vkCmdBeginTransformFeedbackEXT</code>. This call can optionally
+take counter buffers to resume recording from previous draw offsets or
+reset the stream to offset zero.</li>
+<li><strong>Execute Draws</strong>: Standard rendering commands
+(<code>vkCmdDraw</code>, <code>vkCmdDrawIndexed</code>, or indirect
+equivalents) are dispatched. The output primitives generated by the
+active pre-rasterization shader stages stream into the bound transform
+feedback buffers.</li>
+<li><strong>End Capture</strong>: Call
+<code>vkCmdEndTransformFeedbackEXT</code>. This stops primitive
+recording and can write the final byte or primitive count into a counter
+buffer.</li>
+</ol>
+<h3 id="synchronization-and-data-reuse">Synchronization and Data
+Reuse</h3>
+<p>Data written by transform feedback is not automatically coherent with
+subsequent pipeline reads. To safely consume the output in later
+stages—such as using the buffer as a vertex buffer for another draw call
+or reading it in a compute shader—you must insert a pipeline barrier
+using <code>vkCmdPipelineBarrier</code>:</p>
+<ul>
+<li><strong>Source Stage</strong>:
+<code>VK_PIPELINE_STAGE_TRANSFORM_FEEDBACK_BIT_EXT</code></li>
+<li><strong>Source Access</strong>:
+<code>VK_ACCESS_TRANSFORM_FEEDBACK_WRITE_BIT_EXT</code></li>
+<li><strong>Destination Stage</strong>: Target stage (e.g.,
+<code>VK_PIPELINE_STAGE_VERTEX_INPUT_BIT</code> or
+<code>VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT</code>)</li>
+<li><strong>Destination Access</strong>: Target access mask (e.g.,
+<code>VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT</code> or
+<code>VK_ACCESS_INDIRECT_COMMAND_READ_BIT</code>)</li>
+</ul>
+<p>When paired with <code>vkCmdDrawIndirectByteCountEXT</code>,
+applications can render the exact number of generated primitives
+recorded in the counter buffer directly, completely bypassing CPU
+interaction for dynamic geometry generation.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

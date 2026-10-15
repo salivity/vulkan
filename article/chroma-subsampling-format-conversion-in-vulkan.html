@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chroma Subsampling Format Conversion in Vulkan - vulkan</title>
+    <meta name="description" content="In modern real-time rendering and video playback, handling chroma-subsampled video formats efficiently is critical for performance. Vulkan achieves seamless chroma subsampling format conversion directly within texture samplers via the VkSamplerYcbcrConver">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/chroma-subsampling-format-conversion-in-vulkan">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Chroma Subsampling Format Conversion in Vulkan - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/chroma-subsampling-format-conversion-in-vulkan" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In modern real-time rendering and video playback, handling chroma-subsampled video formats efficiently is critical for performance. Vulkan achieves seamless chroma subsampling format conversion directly within texture samplers via the VkSamplerYcbcrConver" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="chroma-subsampling-format-conversion-in-vulkan">Chroma
+Subsampling Format Conversion in Vulkan</h1>
+<p>In modern real-time rendering and video playback, handling
+chroma-subsampled video formats efficiently is critical for performance.
+Vulkan achieves seamless chroma subsampling format conversion directly
+within texture samplers via the <code>VkSamplerYcbcrConversion</code>
+object introduced in core Vulkan 1.1. This article explains how Vulkan
+couples YCbCr conversion state with image views and samplers, allowing
+shaders to sample multi-planar, subsampled formats like 4:2:0 and 4:2:2
+as if they were standard RGBA textures, offloading reconstruction,
+filtering, and color space conversion entirely to underlying
+hardware.</p>
+<h3 id="the-challenge-of-chroma-subsampling">The Challenge of Chroma
+Subsampling</h3>
+<p>Video compression formats typically store data in YCbCr color spaces
+rather than RGB. To conserve bandwidth, chroma subsampling schemes (such
+as YUV 4:2:0 or 4:2:2) store the chrominance planes (<span
+class="math inline">\(Cb\)</span> and <span
+class="math inline">\(Cr\)</span>) at lower spatial resolutions than the
+luminance plane (<span class="math inline">\(Y\)</span>).</p>
+<p>Traditionally, rendering these formats required developers to write
+custom shader code or execute multi-pass pipelines: separating planes,
+upsampling chrominance data, adjusting sample alignment, and computing
+matrix transformations to map YCbCr values into linear RGB. This process
+increases memory bandwidth usage, consumes general-purpose shader
+arithmetic logic units (ALUs), and complicates rendering pipelines.</p>
+<h3 id="the-vksamplerycbcrconversion-architecture">The
+<code>VkSamplerYcbcrConversion</code> Architecture</h3>
+<p>Vulkan solves this with the <code>VkSamplerYcbcrConversion</code>
+API. This object defines an immutable blueprint for how the GPU hardware
+must decode and reconstruct incoming subsampled data. When creating this
+object via <code>vkCreateSamplerYcbcrConversion</code>, developers
+specify:</p>
+<ul>
+<li><strong>Format:</strong> The planar or semi-planar layout (e.g.,
+<code>VK_FORMAT_G8_B8R8_2PLANE_420_UNORM</code> for NV12).</li>
+<li><strong>Chroma Siting (<code>xChromaOffset</code>,
+<code>yChromaOffset</code>):</strong> The exact spatial alignment of
+chroma samples relative to luma samples
+(<code>VK_CHROMA_LOCATION_COSITED_EVEN</code> or
+<code>VK_CHROMA_LOCATION_MIDPOINT</code>), ensuring accurate
+reconstruction without pixel drift.</li>
+<li><strong>Color Model and Range:</strong> The conversion matrix
+standard (such as BT.709, BT.601, or BT.2020) and whether the data uses
+full or narrow (studio) numerical ranges.</li>
+<li><strong>Chroma Filtering:</strong> Whether chroma reconstruction
+uses nearest-neighbor or linear interpolation
+(<code>chromaFilter</code>).</li>
+</ul>
+<h3 id="coupling-samplers-and-image-views">Coupling Samplers and Image
+Views</h3>
+<p>For the conversion to occur seamlessly, both the sampler and the
+sampled image view must share the exact same conversion
+configuration:</p>
+<ol type="1">
+<li><strong>Sampler Creation:</strong> The
+<code>VkSamplerYcbcrConversion</code> handle is chained into the
+<code>pNext</code> pointer of <code>VkSamplerCreateInfo</code> using a
+<code>VkSamplerYcbcrConversionInfo</code> structure.</li>
+<li><strong>Image View Creation:</strong> The same
+<code>VkSamplerYcbcrConversionInfo</code> structure is chained to the
+<code>pNext</code> pointer of <code>VkImageViewCreateInfo</code>.</li>
+</ol>
+<p>This explicit coupling informs the driver and hardware texture units
+that the target memory represents a multi-planar, subsampled surface
+that requires internal synthesis before reaching the shader stage.</p>
+<h3 id="execution-inside-the-texture-filtering-unit">Execution Inside
+the Texture Filtering Unit</h3>
+<p>When a shader issues a standard sampling instruction (such as GLSL’s
+<code>texture()</code>), the texture sampling hardware executes a
+fixed-function or microcode-driven conversion pipeline:</p>
+<ol type="1">
+<li><strong>Plane Fetching:</strong> The texture unit fetches the
+required <span class="math inline">\(Y\)</span>, <span
+class="math inline">\(Cb\)</span>, and <span
+class="math inline">\(Cr\)</span> texels simultaneously across their
+respective memory planes.</li>
+<li><strong>Chroma Reconstruction:</strong> Using the configured chroma
+siting and filtering rules, the subsampled <span
+class="math inline">\(Cb\)</span> and <span
+class="math inline">\(Cr\)</span> components are upsampled and
+interpolated to match the spatial location of the fetched <span
+class="math inline">\(Y\)</span> texel.</li>
+<li><strong>Range Expansion:</strong> Integer narrow-range inputs are
+normalized and scaled to full dynamic ranges.</li>
+<li><strong>Color Transform:</strong> A hardware-level matrix
+multiplication transforms the <span class="math inline">\((Y, Cb,
+Cr)\)</span> vector into an <span class="math inline">\((R, G,
+B)\)</span> vector.</li>
+</ol>
+<h3 id="shader-integration">Shader Integration</h3>
+<p>From the perspective of the SPIR-V or GLSL shader, the complexity is
+entirely hidden. The shader declares a combined image sampler:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span>set <span class="op">=</span> <span class="dv">0</span><span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="kw">uniform</span> <span class="dt">sampler2D</span> videoTexture<span class="op">;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> color <span class="op">=</span> <span class="bu">texture</span><span class="op">(</span>videoTexture<span class="op">,</span> texCoords<span class="op">);</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="co">// &#39;color&#39; contains directly usable, linear/sRGB RGBA data</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>The shader does not manage planes, offsets, or color matrices. The
+conversion occurs inline within the texture unit's cache and filtering
+pipeline, delivering converted RGBA data with minimal latency and
+optimal memory bandwidth efficiency.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

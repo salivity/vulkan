@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Using VK_MAKE_API_VERSION for Vulkan Compatibility - vulkan</title>
+    <meta name="description" content="Vulkan relies on standardized version macros to manage feature availability and API evolution across a fragmented landscape of operating systems, hardware architectures, and graphics drivers. This article examines how the VKMAKEAPIVERSION macro standardiz">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/using-vk-make-api-version-for-vulkan-compatibility">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Using VK_MAKE_API_VERSION for Vulkan Compatibility - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/using-vk-make-api-version-for-vulkan-compatibility" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Vulkan relies on standardized version macros to manage feature availability and API evolution across a fragmented landscape of operating systems, hardware architectures, and graphics drivers. This article examines how the VKMAKEAPIVERSION macro standardiz" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="using-vk_make_api_version-for-vulkan-compatibility">Using
+VK_MAKE_API_VERSION for Vulkan Compatibility</h1>
+<p>Vulkan relies on standardized version macros to manage feature
+availability and API evolution across a fragmented landscape of
+operating systems, hardware architectures, and graphics drivers. This
+article examines how the <code>VK_MAKE_API_VERSION</code> macro
+standardizes 32-bit integer representations of API versions, how runtime
+queries utilize these values to verify host and device capabilities, and
+how developers leverage version comparison and extraction macros to
+enforce reliable cross-platform compatibility.</p>
+<h3 id="the-structure-of-vulkan-api-versions">The Structure of Vulkan
+API Versions</h3>
+<p>Vulkan encodes its API version into a single 32-bit unsigned integer
+(<code>uint32_t</code>). This format prevents ambiguity when passing
+version specifications across dynamic library boundaries and native
+platform interfaces.</p>
+<p>Starting in Vulkan 1.2/1.3, the Khronos Group introduced
+<code>VK_MAKE_API_VERSION</code> to replace the legacy
+<code>VK_MAKE_VERSION</code> macro. The modern macro divides the 32-bit
+integer into four distinct fields:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>VK_MAKE_API_VERSION<span class="op">(</span>variant<span class="op">,</span> major<span class="op">,</span> minor<span class="op">,</span> patch<span class="op">)</span></span></code></pre></div>
+<p>The bit distribution across the 32-bit integer is structured as
+follows:</p>
+<ul>
+<li><strong>Variant (bits 29 to 31):</strong> A 3-bit field designating
+the API variant (standard Vulkan uses <code>0</code>, while specific
+embedded or specialized profiles may use non-zero identifiers).</li>
+<li><strong>Major (bits 22 to 28):</strong> A 7-bit field designating
+significant API changes that may introduce non-backward-compatible
+behavior.</li>
+<li><strong>Minor (bits 12 to 21):</strong> A 10-bit field designating
+backward-compatible feature additions and core promotions.</li>
+<li><strong>Patch (bits 0 to 11):</strong> A 12-bit field designating
+bug fixes and minor clarifications in the specification.</li>
+</ul>
+<h3 id="runtime-compatibility-negotiation">Runtime Compatibility
+Negotiation</h3>
+<p>Platform compatibility issues frequently arise because the Vulkan
+loader installed on an operating system, the physical GPU driver, and
+the application executable may all target different versions of the
+specification. Version macros resolve this discrepancy during
+application initialization through a two-step handshake.</p>
+<h4 id="1-verifying-loader-capabilities">1. Verifying Loader
+Capabilities</h4>
+<p>Before creating a Vulkan instance, an application must determine the
+maximum version supported by the system's Vulkan loader using
+<code>vkEnumerateInstanceVersion</code>:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="dt">uint32_t</span> supportedInstanceVersion <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="op">(</span>vkEnumerateInstanceVersion<span class="op">(&amp;</span>supportedInstanceVersion<span class="op">)</span> <span class="op">!=</span> VK_SUCCESS<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="co">// If the function is unavailable or fails, Vulkan 1.0 is assumed</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    supportedInstanceVersion <span class="op">=</span> VK_MAKE_API_VERSION<span class="op">(</span><span class="dv">0</span><span class="op">,</span> <span class="dv">1</span><span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="op">(</span>supportedInstanceVersion <span class="op">&lt;</span> VK_MAKE_API_VERSION<span class="op">(</span><span class="dv">0</span><span class="op">,</span> <span class="dv">1</span><span class="op">,</span> <span class="dv">2</span><span class="op">,</span> <span class="dv">0</span><span class="op">))</span> <span class="op">{</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Handle incompatibility: System loader does not support Vulkan 1.2</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>The application passes its required version back to the runtime
+inside the <code>VkApplicationInfo</code> structure using the
+<code>apiVersion</code> member. This informs the loader of the maximum
+API version the application intends to use, ensuring that the driver
+does not expose unsupported behaviors.</p>
+<h4 id="2-evaluating-physical-device-support">2. Evaluating Physical
+Device Support</h4>
+<p>Even if the loader supports a modern version, the underlying physical
+GPU driver on a given platform might not. Applications query the
+device's compatibility via
+<code>vkGetPhysicalDeviceProperties</code>:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>VkPhysicalDeviceProperties deviceProperties<span class="op">;</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>vkGetPhysicalDeviceProperties<span class="op">(</span>physicalDevice<span class="op">,</span> <span class="op">&amp;</span>deviceProperties<span class="op">);</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="dt">uint32_t</span> deviceApiVersion <span class="op">=</span> deviceProperties<span class="op">.</span>apiVersion<span class="op">;</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="op">(</span>deviceApiVersion <span class="op">&lt;</span> VK_MAKE_API_VERSION<span class="op">(</span><span class="dv">0</span><span class="op">,</span> <span class="dv">1</span><span class="op">,</span> <span class="dv">3</span><span class="op">,</span> <span class="dv">0</span><span class="op">))</span> <span class="op">{</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Fall back to Vulkan 1.2 paths or exit gracefully</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="inspecting-versions-with-extraction-macros">Inspecting Versions
+with Extraction Macros</h3>
+<p>Because versions are bit-packed integers, direct numerical comparison
+(<code>&lt;</code>, <code>&gt;</code>, <code>==</code>) works reliably
+for determining overall hierarchy. However, dynamic platforms often
+require inspecting specific version components to execute conditional
+logic or report actionable diagnostics to users.</p>
+<p>Khronos provides complementary macros to unpack these components:</p>
+<ul>
+<li><code>VK_API_VERSION_VARIANT(version)</code></li>
+<li><code>VK_API_VERSION_MAJOR(version)</code></li>
+<li><code>VK_API_VERSION_MINOR(version)</code></li>
+<li><code>VK_API_VERSION_PATCH(version)</code></li>
+</ul>
+<p>These macros allow applications to handle driver anomalies or
+selectively gate core features without breaking code paths across
+diverse platforms:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="dt">uint32_t</span> major <span class="op">=</span> VK_API_VERSION_MAJOR<span class="op">(</span>deviceProperties<span class="op">.</span>apiVersion<span class="op">);</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="dt">uint32_t</span> minor <span class="op">=</span> VK_API_VERSION_MINOR<span class="op">(</span>deviceProperties<span class="op">.</span>apiVersion<span class="op">);</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="op">(</span>major <span class="op">==</span> <span class="dv">1</span> <span class="op">&amp;&amp;</span> minor <span class="op">&gt;=</span> <span class="dv">3</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Dynamic rendering and synchronization2 are core features</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    enableCore13Features<span class="op">();</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="op">}</span> <span class="cf">else</span> <span class="op">{</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Rely on VK_KHR_dynamic_rendering or standard render passes</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    enableExtensionFallback<span class="op">();</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="benefits-for-cross-platform-deployments">Benefits for
+Cross-Platform Deployments</h3>
+<p>Using <code>VK_MAKE_API_VERSION</code> eliminates platform-specific
+assumptions about the Vulkan environment. On Windows, Linux, Android,
+and macOS (via MoltenVK), graphics drivers update on independent release
+cadences. By relying on a mathematically consistent, bit-packed
+representation of the API specification, applications can query hardware
+at runtime, guarantee feature availability before allocating resources,
+and deploy safely across divergent hardware ecosystems.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

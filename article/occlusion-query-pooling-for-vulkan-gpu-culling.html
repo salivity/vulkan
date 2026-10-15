@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Occlusion Query Pooling for Vulkan GPU Culling - vulkan</title>
+    <meta name="description" content="This article examines the critical function of occlusion query pooling in Vulkan for building efficient, GPU-driven geometry culling pipelines. In modern rendering architectures, managing query allocations via VkQueryPool allows developers to test object">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/occlusion-query-pooling-for-vulkan-gpu-culling">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Occlusion Query Pooling for Vulkan GPU Culling - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/occlusion-query-pooling-for-vulkan-gpu-culling" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article examines the critical function of occlusion query pooling in Vulkan for building efficient, GPU-driven geometry culling pipelines. In modern rendering architectures, managing query allocations via VkQueryPool allows developers to test object" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="occlusion-query-pooling-for-vulkan-gpu-culling">Occlusion Query
+Pooling for Vulkan GPU Culling</h1>
+<p>This article examines the critical function of occlusion query
+pooling in Vulkan for building efficient, GPU-driven geometry culling
+pipelines. In modern rendering architectures, managing query allocations
+via <code>VkQueryPool</code> allows developers to test object visibility
+directly on the device, bypass expensive CPU-GPU synchronization
+bottlenecks, and feed visibility data directly into indirect draw calls.
+By orchestrating queries in reusable pools and resolving results
+straight into GPU memory, applications achieve scalable, low-overhead
+occlusion culling entirely on the GPU.</p>
+<h3 id="the-role-of-vkquerypool-in-gpu-pipelines">The Role of
+<code>VkQueryPool</code> in GPU Pipelines</h3>
+<p>In Vulkan, occlusion queries are not individually allocated objects;
+instead, they are managed collectively through <code>VkQueryPool</code>
+configured with <code>VK_QUERY_TYPE_OCCLUSION</code>. In a CPU-driven
+pipeline, developers often read back query results to host memory using
+<code>vkGetQueryPoolResults</code>, which causes pipeline stalls and
+limits scalability.</p>
+<p>In a fully GPU-driven culling architecture, occlusion query pooling
+serves as an on-chip, contiguous registry of visibility tests. Instead
+of pinging the CPU, query pools allow the GPU to record, evaluate, and
+write visibility outcomes directly into device-local storage.</p>
+<h3 id="eliminating-cpu-readback-via-direct-buffer-copies">Eliminating
+CPU Readback via Direct Buffer Copies</h3>
+<p>The primary advantage of pooling occlusion queries in Vulkan is the
+ability to write results directly to a <code>VkBuffer</code> using
+<code>vkCmdCopyQueryPoolResults</code>.</p>
+<ol type="1">
+<li><strong>Batch Testing:</strong> Bounding geometry (such as coarse
+bounding boxes or simplified bounding meshes) is rendered to an existing
+depth buffer using commands bracketed by <code>vkCmdBeginQuery</code>
+and <code>vkCmdEndQuery</code>. Each object maps to an index within the
+allocated <code>VkQueryPool</code>.</li>
+<li><strong>Device-Local Copying:</strong> The results are copied
+directly to a GPU-accessible storage buffer using
+<code>vkCmdCopyQueryPoolResults</code> with flags like
+<code>VK_QUERY_RESULT_WAIT_BIT</code> or
+<code>VK_QUERY_RESULT_64_BIT</code>.</li>
+<li><strong>Compute Shader Processing:</strong> A compute shader reads
+the visibility buffer as a storage buffer (SSBO). If the pixel count for
+an object exceeds zero, the geometry is marked visible. The compute
+shader then dynamically writes the visible draw commands into a
+<code>VkDrawIndexedIndirectCommand</code> buffer.</li>
+</ol>
+<p>This workflow ensures that visibility decisions are made entirely on
+the GPU timeline without CPU intervention.</p>
+<h3 id="amortizing-allocation-and-state-overhead">Amortizing Allocation
+and State Overhead</h3>
+<p>Creating and destroying individual query resources introduces
+substantial driver overhead. <code>VkQueryPool</code> amortizes this by
+pre-allocating an array of query slots.</p>
+<p>Before execution, chunks of the pool are cleared on the command
+buffer timeline using <code>vkCmdResetQueryPool</code>. Because query
+resets and writes occur inside command buffers, synchronization is
+handled purely through Vulkan pipeline barriers
+(<code>VkMemoryBarrier</code> and <code>VkBufferMemoryBarrier</code>),
+preventing pipeline bubbles.</p>
+<h3 id="mitigating-latency-with-temporal-pooling">Mitigating Latency
+with Temporal Pooling</h3>
+<p>GPU occlusion queries suffer from inherent pipeline latency: results
+are rarely available in the immediate draw phase of the same frame
+without causing pipeline bubbles. Query pooling addresses this through
+multi-buffered, frame-delayed tracking.</p>
+<p>Developers typically divide the query pool across multiple frames in
+flight or maintain dual-pool structures:</p>
+<ul>
+<li><strong>Frame <span class="math inline">\(N-1\)</span>
+Results:</strong> Used to generate indirect draws for the current frame,
+exploiting the temporal coherence of moving cameras.</li>
+<li><strong>Frame <span class="math inline">\(N\)</span>
+Generation:</strong> New bounding proxies are rasterized against the
+current depth buffer to populate the next pool slot.</li>
+</ul>
+<h3 id="native-integration-with-conditional-rendering">Native
+Integration with Conditional Rendering</h3>
+<p>Occlusion query pools can also interact directly with
+<code>VK_EXT_conditional_rendering</code>. When query results are copied
+into a buffer via <code>vkCmdCopyQueryPoolResults</code>, that buffer
+can serve directly as a conditional rendering token via
+<code>vkCmdBeginConditionalRenderingEXT</code>. This eliminates the need
+for an intermediate compute pass for simpler geometry, allowing hardware
+to discard unselected indirect draw calls automatically.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

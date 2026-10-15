@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Viewport and Scissor Framebuffer Bounds - vulkan</title>
+    <meta name="description" content="This article explains the mechanical and architectural reasons why viewport and scissor states must align with or stay constrained to the boundaries of the bound framebuffer in the Vulkan API. It covers how the graphics pipeline handles coordinate transfo">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-viewport-and-scissor-framebuffer-bounds">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Viewport and Scissor Framebuffer Bounds - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-viewport-and-scissor-framebuffer-bounds" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains the mechanical and architectural reasons why viewport and scissor states must align with or stay constrained to the boundaries of the bound framebuffer in the Vulkan API. It covers how the graphics pipeline handles coordinate transfo" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-viewport-and-scissor-framebuffer-bounds">Vulkan Viewport
+and Scissor Framebuffer Bounds</h1>
+<p>This article explains the mechanical and architectural reasons why
+viewport and scissor states must align with or stay constrained to the
+boundaries of the bound framebuffer in the Vulkan API. It covers how the
+graphics pipeline handles coordinate transformations, memory-backed
+fragment output, hardware tile binning, and render area validation,
+demonstrating how mismatches lead to rendering artifacts, validation
+layer errors, or hardware crashes.</p>
+<h3 id="coordinate-transformation-and-viewport-scaling">Coordinate
+Transformation and Viewport Scaling</h3>
+<p>The viewport state defines the affine transformation of primitive
+vertices from normalized device coordinates (NDC) to framebuffer
+coordinate space. If the viewport dimensions do not accurately reflect
+the dimensions of the bound framebuffer attachments, the rendered image
+will suffer from incorrect aspect ratios, scaling distortions, or
+off-center projections. Vulkan maps the normalized cube
+<code>[-1, 1]</code> in <span class="math inline">\(X\)</span> and <span
+class="math inline">\(Y\)</span> (and <code>[0, 1]</code> in <span
+class="math inline">\(Z\)</span>) directly to the ranges specified by
+<code>VkViewport</code>. Setting viewport dimensions that exceed the
+target framebuffer forces rasterization into virtual coordinates that
+lack corresponding physical storage, unless explicitly constrained by
+clipping and scissoring.</p>
+<h3 id="memory-safety-and-fragment-discard-via-the-scissor-test">Memory
+Safety and Fragment Discard via the Scissor Test</h3>
+<p>While the viewport guides coordinate mapping, the scissor test
+performs a hard per-fragment discard based on integer pixel coordinates.
+Framebuffer attachments (represented by <code>VkImageView</code> bound
+via <code>VkFramebuffer</code>) are backed by explicit
+<code>VkDeviceMemory</code> allocations with strict row-pitch, width,
+and height limitations. If the rasterizer processes fragments that map
+beyond the memory boundaries of an attachment:</p>
+<ol type="1">
+<li><strong>Out-of-Bounds Memory Writes:</strong> Writing depth,
+stencil, or color data past the allocated bounds can cause GPU page
+faults, system lockups, or driver crashes.</li>
+<li><strong>Undefined Behavior:</strong> Vulkan does not guarantee
+automatic clamping for out-of-bounds framebuffer writes at the API
+level; boundary safety is delegated to hardware clip planes, guard-band
+clipping, and the scissor test.</li>
+</ol>
+<p>Matching the scissor rectangle to the framebuffer boundaries ensures
+that any fragment generated outside the valid pixel array is discarded
+before reaching the blend, depth-test, and color-attachment write
+stages.</p>
+<h3 id="interaction-with-renderarea-and-validation-rules">Interaction
+with <code>renderArea</code> and Validation Rules</h3>
+<p>In Vulkan, rendering commands operate within a render pass instance
+defined by <code>VkRenderPassBeginInfo::renderArea</code>. The Vulkan
+specification strictly requires that
+<code>renderArea.offset + renderArea.extent</code> must be less than or
+equal to the corresponding dimensions of the bound
+<code>VkFramebuffer</code>.</p>
+<p>Because dynamic or static scissor rectangles cannot legally extend
+execution beyond active render areas, aligning the scissor rectangle
+directly with the framebuffer boundaries maintains a valid execution
+state under Vulkan Validation Layers
+(<code>VK_LAYER_KHRONOS_validation</code>). Failing to keep scissors
+within the render area or framebuffer dimensions triggers explicit
+validation errors and can break pipeline state assumptions.</p>
+<h3 id="tile-based-deferred-rendering-tbdr-constraints">Tile-Based
+Deferred Rendering (TBDR) Constraints</h3>
+<p>On mobile architectures and modern unified memory GPUs utilizing
+tile-based rendering, the framebuffer is divided into discrete hardware
+cache tiles (e.g., 16x16 or 32x32 pixels). The hardware primitive
+binning stage uses the scissor and viewport extents to determine which
+tiles must be shaded and resolved to memory. If the viewport and scissor
+configurations exceed or contradict the framebuffer extents:</p>
+<ul>
+<li>Binning algorithms may assign primitives to non-existent tiles.</li>
+<li>Unnecessary memory bandwidth is consumed resolving tiles outside the
+active surface.</li>
+<li>Tile list overflow errors can occur during the binning phase,
+degrading performance or crashing the rendering context.</li>
+</ul>
+<h3 id="guard-band-clipping-vs-framebuffer-matching">Guard-Band Clipping
+vs. Framebuffer Matching</h3>
+<p>While advanced techniques intentionally use viewports larger than the
+framebuffer to leverage hardware guard bands for geometric clipping, the
+scissor state must still be strictly clamped to the framebuffer's real
+extents. For standard rasterization workflows, keeping both the viewport
+and scissor matched 1:1 with the <code>VkFramebuffer</code> dimensions
+ensures predictable linear mapping from NDC space directly to physical
+pixels without clipping artifacts or memory hazards.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulkan Timeline Semaphores for Synchronization - vulkan</title>
+    <meta name="description" content="Timeline semaphores fundamentally modernize Vulkan synchronization by replacing single-use binary flags with monotonically increasing 64-bit integers. Introduced as a core feature in Vulkan 1.2 via the VKKHRtimelinesemaphore extension, they establish a un">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/vulkan-timeline-semaphores-for-synchronization">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vulkan Timeline Semaphores for Synchronization - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/vulkan-timeline-semaphores-for-synchronization" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Timeline semaphores fundamentally modernize Vulkan synchronization by replacing single-use binary flags with monotonically increasing 64-bit integers. Introduced as a core feature in Vulkan 1.2 via the VKKHRtimelinesemaphore extension, they establish a un" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vulkan-timeline-semaphores-for-synchronization">Vulkan Timeline
+Semaphores for Synchronization</h1>
+<p>Timeline semaphores fundamentally modernize Vulkan synchronization by
+replacing single-use binary flags with monotonically increasing 64-bit
+integers. Introduced as a core feature in Vulkan 1.2 via the
+<code>VK_KHR_timeline_semaphore</code> extension, they establish a
+unified mechanism that coordinates workloads across multiple GPU queues
+and host CPU threads. By bridging the gap between GPU-bound binary
+semaphores and CPU-bound fences, timeline semaphores reduce driver
+overhead, streamline resource reclamation, and simplify modern
+asynchronous engine architectures.</p>
+<h3 id="the-shift-from-binary-to-monotonic-counters">The Shift from
+Binary to Monotonic Counters</h3>
+<p>Traditional Vulkan synchronization relied on two distinct primitives:
+binary semaphores for GPU-to-GPU queue synchronization and fences for
+GPU-to-CPU synchronization. Binary semaphores operate in a strict
+two-state toggle (signaled or unsignaled) and require a 1:1 pairing
+between signal and wait operations, often necessitating complex
+management pools to avoid race conditions or leaks.</p>
+<p>Timeline semaphores solve this by holding a monotonically increasing
+64-bit unsigned integer value. Work submissions declare specific target
+values to wait on or signal:</p>
+<ul>
+<li>A <strong>signal operation</strong> increments the semaphore to a
+specified value once an associated batch of GPU or CPU work
+completes.</li>
+<li>A <strong>wait operation</strong> blocks execution until the
+semaphore reaches or exceeds a specified target value.</li>
+</ul>
+<p>This value-based model allows multiple operations to wait on or
+signal the same primitive without resetting or destroying it.</p>
+<h3 id="unified-cpu-and-gpu-interaction">Unified CPU and GPU
+Interaction</h3>
+<p>Before timeline semaphores, host threads could not directly signal a
+GPU semaphore, and the GPU could not signal a fence without dedicated
+command submissions. Timeline semaphores remove this boundary by
+introducing dedicated host APIs:</p>
+<ul>
+<li><code>vkSignalSemaphore</code>: Allows the CPU to immediately
+advance the timeline semaphore value, unblocking dependent GPU
+queues.</li>
+<li><code>vkWaitSemaphores</code>: Enables host threads to block until
+the semaphore reaches a designated payload value, replacing the need for
+binary <code>VkFence</code> objects.</li>
+<li><code>vkGetSemaphoreCounterValue</code>: Allows host threads to
+query the current payload value asynchronously without blocking.</li>
+</ul>
+<p>Because both the host CPU and GPU queues can signal and wait on the
+exact same semaphore instance, synchronization becomes fully
+bidirectional and symmetric.</p>
+<h3 id="complex-multi-queue-and-engine-architectures">Complex
+Multi-Queue and Engine Architectures</h3>
+<p>Timeline semaphores expand synchronization capabilities across
+several key patterns:</p>
+<ol type="1">
+<li><strong>Many-to-Many Dependencies:</strong> A single GPU workload
+can signal a value (e.g., <code>value = 10</code>) that unblocks
+multiple downstream workloads on distinct compute, transfer, or graphics
+queues simultaneously. Conversely, multiple independent passes can
+increment the timeline as they finish, allowing a final composition pass
+to wait on the cumulative highest value.</li>
+<li><strong>Out-of-Order Submissions:</strong> Because synchronization
+depends on reaching a target value rather than submission sequence,
+applications can submit command buffers to the GPU out of execution
+order, provided the dependency values are satisfied at runtime.</li>
+<li><strong>Pipelining and Frame Lifecycles:</strong> Instead of
+allocating arrays of binary semaphores per frame in flight, an engine
+can allocate a single timeline semaphore per frame or per queue.
+Advancing the timeline value per frame (e.g., Frame N signals
+<code>N * 2</code>, CPU waits on <code>N * 2</code>) cleanly dictates
+the lifetime of resources without constant reallocation.</li>
+</ol>
+<h3 id="api-interoperability-and-emulation">API Interoperability and
+Emulation</h3>
+<p>Timeline semaphores align Vulkan directly with other modern low-level
+APIs, specifically Direct3D 12 fences and Metal shared events. This
+design parity significantly simplifies cross-API engines and
+compatibility layers such as VKD3D and DXVK, eliminating the performance
+penalties and synchronization hacks previously required to map monotonic
+fence paradigms onto Vulkan’s legacy binary primitives.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

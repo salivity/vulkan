@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Per-Draw Variable Rate Shading in Vulkan - vulkan</title>
+    <meta name="description" content="Variable Rate Shading (VRS) per-draw is a graphics optimization technique that enables developers to control fragment shading frequency at the granularity of individual draw calls, reducing GPU workload without significantly impacting visual fidelity. Thi">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/per-draw-variable-rate-shading-in-vulkan">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Per-Draw Variable Rate Shading in Vulkan - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/per-draw-variable-rate-shading-in-vulkan" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Variable Rate Shading (VRS) per-draw is a graphics optimization technique that enables developers to control fragment shading frequency at the granularity of individual draw calls, reducing GPU workload without significantly impacting visual fidelity. Thi" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="per-draw-variable-rate-shading-in-vulkan">Per-Draw Variable Rate
+Shading in Vulkan</h1>
+<p>Variable Rate Shading (VRS) per-draw is a graphics optimization
+technique that enables developers to control fragment shading frequency
+at the granularity of individual draw calls, reducing GPU workload
+without significantly impacting visual fidelity. This article explains
+the fundamentals of per-draw VRS and demonstrates how to dynamically
+configure it in Vulkan using the
+<code>VK_KHR_fragment_shading_rate</code> extension.</p>
+<h3 id="understanding-per-draw-variable-rate-shading">Understanding
+Per-Draw Variable Rate Shading</h3>
+<p>Traditional rendering executes the fragment shader once for every
+rasterized pixel (a 1x1 rate). Variable Rate Shading decouples pixel
+coverage from fragment shader invocation rate. By grouping pixels
+together—such as 2x1, 1x2, 2x2, or 4x4 blocks—the GPU executes the
+fragment shader once and broadcasts the resulting color across all
+pixels within that block.</p>
+<p>Per-draw VRS applies a single shading rate across an entire draw
+call. This is particularly effective for rendering passes or geometry
+where fine shading detail is unnecessary. Common use cases include:</p>
+<ul>
+<li>Distant or background objects where high spatial frequency details
+are not perceptible.</li>
+<li>Objects subject to heavy motion blur or depth of field effects.</li>
+<li>Secondary render passes, such as ambient occlusion, shadow maps, or
+velocity buffers.</li>
+</ul>
+<p>Unlike image-based VRS, which determines shading rates from a
+screen-space texture, per-draw VRS requires no additional memory
+attachments or lookups, making it lightweight and simple to
+integrate.</p>
+<h3 id="prerequisites-in-vulkan">Prerequisites in Vulkan</h3>
+<p>To utilize per-draw VRS, the application must enable the
+<code>VK_KHR_fragment_shading_rate</code> device extension.</p>
+<p>During device initialization, query and enable the feature in
+<code>VkPhysicalDeviceFragmentShadingRateFeaturesKHR</code>:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>VkPhysicalDeviceFragmentShadingRateFeaturesKHR shadingRateFeatures <span class="op">=</span> <span class="op">{};</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>shadingRateFeatures<span class="op">.</span>sType <span class="op">=</span> VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_FEATURES_KHR<span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>VkPhysicalDeviceFeatures2 deviceFeatures <span class="op">=</span> <span class="op">{};</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>deviceFeatures<span class="op">.</span>sType <span class="op">=</span> VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2<span class="op">;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>deviceFeatures<span class="op">.</span>pNext <span class="op">=</span> <span class="op">&amp;</span>shadingRateFeatures<span class="op">;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>vkGetPhysicalDeviceFeatures2<span class="op">(</span>physicalDevice<span class="op">,</span> <span class="op">&amp;</span>deviceFeatures<span class="op">);</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="co">// Ensure the pipeline rate is supported</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="op">(</span>shadingRateFeatures<span class="op">.</span>pipelineFragmentShadingRate<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Enable the feature during vkCreateDevice</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="enabling-dynamic-pipeline-state">Enabling Dynamic Pipeline
+State</h3>
+<p>To change the shading rate dynamically on a command buffer without
+creating separate graphics pipelines for each rate, enable
+<code>VK_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR</code> in your pipeline
+dynamic state creation info:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>VkDynamicState dynamicStates<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    VK_DYNAMIC_STATE_VIEWPORT<span class="op">,</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    VK_DYNAMIC_STATE_SCISSOR<span class="op">,</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    VK_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>VkPipelineDynamicStateCreateInfo dynamicStateCI <span class="op">=</span> <span class="op">{};</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>dynamicStateCI<span class="op">.</span>sType <span class="op">=</span> VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO<span class="op">;</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>dynamicStateCI<span class="op">.</span>dynamicStateCount <span class="op">=</span> <span class="dv">3</span><span class="op">;</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>dynamicStateCI<span class="op">.</span>pDynamicStates <span class="op">=</span> dynamicStates<span class="op">;</span></span></code></pre></div>
+<h3 id="setting-the-shading-rate-dynamically">Setting the Shading Rate
+Dynamically</h3>
+<p>Once the dynamic state is part of the pipeline, call
+<code>vkCmdSetFragmentShadingRateKHR</code> during command recording
+before issuing draw commands.</p>
+<p>The function signature requires specifying the fragment dimensions
+and combiner operations:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>VkExtent2D fragmentSize <span class="op">=</span> <span class="op">{</span> <span class="dv">2</span><span class="op">,</span> <span class="dv">2</span> <span class="op">};</span> <span class="co">// Executes one fragment shader invocation per 2x2 pixel block</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>VkFragmentShadingRateCombinerOpKHR combinerOps<span class="op">[</span><span class="dv">2</span><span class="op">]</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR<span class="op">,</span>    <span class="co">// Pipeline vs Primitive rate</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR     <span class="co">// Result vs Attachment rate</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>vkCmdSetFragmentShadingRateKHR<span class="op">(</span>commandBuffer<span class="op">,</span> <span class="op">&amp;</span>fragmentSize<span class="op">,</span> combinerOps<span class="op">);</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="co">// Bind pipeline, vertex buffers, and issue the draw call</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>vkCmdBindPipeline<span class="op">(</span>commandBuffer<span class="op">,</span> VK_PIPELINE_BIND_POINT_GRAPHICS<span class="op">,</span> pipeline<span class="op">);</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>vkCmdDraw<span class="op">(</span>commandBuffer<span class="op">,</span> vertexCount<span class="op">,</span> <span class="dv">1</span><span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span></code></pre></div>
+<h3 id="combiner-operations">Combiner Operations</h3>
+<p>The <code>combinerOps</code> array defines how the per-draw shading
+rate interacts with other potential shading rate sources
+(primitive-level shading rates from the vertex/mesh shader and
+screen-space shading rate attachments):</p>
+<ul>
+<li><code>combinerOps[0]</code> dictates how the pipeline-specified rate
+combines with primitive-level rates.</li>
+<li><code>combinerOps[1]</code> dictates how that intermediate result
+combines with the shading rate attachment.</li>
+</ul>
+<p>Using <code>VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR</code>
+ensures that the per-draw fragment size is preserved directly, bypassing
+modifications from other sources. Other options, such as
+<code>VK_FRAGMENT_SHADING_RATE_COMBINER_OP_MIN_KHR</code> or
+<code>VK_FRAGMENT_SHADING_RATE_COMBINER_OP_MAX_KHR</code>, allow rates
+to blend based on priority or visual quality requirements.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NVIDIA Nsight Vulkan Profiling and Pipeline Timing - vulkan</title>
+    <meta name="description" content="This article examines how the NVIDIA Nsight suite enables developers to profile, debug, and optimize applications utilizing the Vulkan graphics and compute API. It covers the specific roles of Nsight Graphics, Nsight Systems, and Nsight Compute, highlight">
+    <link rel="canonical" href="https://salivity.github.io/vulkan/article/nvidia-nsight-vulkan-profiling-and-pipeline-timing">
+    <link rel="search" type="application/opensearchdescription+xml" title="vulkan" href="/vulkan/opensearch.xml">
+    <link rel="icon" href="/vulkan/favicon.ico">
+    <link rel="stylesheet" href="/vulkan/css/style.css">
+    <link media="print" rel="stylesheet" href="/vulkan/css/print.css">
+    <script src="/vulkan/js/fuse.min.js"></script>
+    <script src="/vulkan/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="NVIDIA Nsight Vulkan Profiling and Pipeline Timing - vulkan" />
+    <meta property="og:url" content="https://salivity.github.io/vulkan/article/nvidia-nsight-vulkan-profiling-and-pipeline-timing" />
+    <meta property="og:image" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/vulkan/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article examines how the NVIDIA Nsight suite enables developers to profile, debug, and optimize applications utilizing the Vulkan graphics and compute API. It covers the specific roles of Nsight Graphics, Nsight Systems, and Nsight Compute, highlight" />
+    <link rel="manifest" href="/vulkan/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/vulkan/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>vulkan</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/vulkan/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="nvidia-nsight-vulkan-profiling-and-pipeline-timing">NVIDIA
+Nsight Vulkan Profiling and Pipeline Timing</h1>
+<p>This article examines how the NVIDIA Nsight suite enables developers
+to profile, debug, and optimize applications utilizing the Vulkan
+graphics and compute API. It covers the specific roles of Nsight
+Graphics, Nsight Systems, and Nsight Compute, highlighting how these
+tools capture detailed pipeline metrics, evaluate hardware bottlenecks,
+and analyze GPU-CPU synchronization to maximize Vulkan rendering
+efficiency.</p>
+<h3 id="core-tools-in-the-nvidia-nsight-suite-for-vulkan">Core Tools in
+the NVIDIA Nsight Suite for Vulkan</h3>
+<p>The NVIDIA Nsight suite tackles Vulkan optimization across multiple
+levels of execution through three primary tools:</p>
+<ul>
+<li><strong>NVIDIA Nsight Graphics:</strong> The primary application for
+Vulkan frame debugging and pipeline timing analysis. It allows
+developers to inspect Vulkan API calls, scrub through frame commands,
+profile ray tracing structures, and perform low-level GPU tracing.</li>
+<li><strong>NVIDIA Nsight Systems:</strong> A system-wide performance
+analysis tool that traces CPU and GPU activity concurrently. It
+identifies frame pacing issues, API call latency, driver overhead, and
+multi-threading bottlenecks during Vulkan command buffer
+generation.</li>
+<li><strong>NVIDIA Nsight Compute:</strong> Dedicated to kernel-level
+compute shader analysis, providing deep-dive performance metrics when
+Vulkan is deployed for heavy compute workloads or machine learning
+tasks.</li>
+</ul>
+<h3 id="gpu-trace-and-pipeline-timing-analysis">GPU Trace and Pipeline
+Timing Analysis</h3>
+<p>Nsight Graphics features <strong>GPU Trace</strong>, a non-intrusive,
+low-overhead profiler that collects precise hardware performance
+counters and timing data across the physical GPU architecture.</p>
+<p>For Vulkan workloads, GPU Trace delivers:</p>
+<ul>
+<li><strong>Sub-Command Timing:</strong> Precise execution time
+measurement for draw calls, dispatch calls, clear commands, and copies
+down to the nanosecond level.</li>
+<li><strong>Pipeline Stage Occupancy:</strong> Real-time visibility into
+the throughput of specific hardware stages, such as the Input Assembler,
+Vertex/Tessellation/Geometry units, Rasterizer, and Streaming
+Multiprocessors (SMs).</li>
+<li><strong>Memory Bandwidth Metrics:</strong> Granular data on L1/L2
+cache hit rates, VRAM bandwidth consumption, and memory stalls during
+texture sampling or buffer reads.</li>
+<li><strong>Asynchronous Compute Visualization:</strong> Tracking of
+simultaneous execution across distinct Vulkan hardware queues (e.g.,
+graphics, compute, and transfer queues) to verify efficient
+overlap.</li>
+</ul>
+<h3 id="vulkan-synchronization-and-barrier-inspection">Vulkan
+Synchronization and Barrier Inspection</h3>
+<p>Vulkan assigns explicit synchronization management to the developer,
+making improper synchronization a primary cause of pipeline stalls.
+Nsight Graphics inspects these mechanisms via dedicated features:</p>
+<ul>
+<li><strong>Pipeline Barrier Analysis:</strong> Evaluates
+<code>vkCmdPipelineBarrier</code> commands to detect unnecessary
+execution or memory stalls. The tool visualizes pipeline drains where
+the GPU idles due to overly broad stage masks or access flags.</li>
+<li><strong>Queue Transitions and Layouts:</strong> Tracks layout
+transition overhead for image resources, pinpointing where layout
+mismatches force pipeline flushes.</li>
+<li><strong>Semaphore and Fence Tracking:</strong> Monitored via Nsight
+Systems to expose CPU-GPU sync latency, showing when the CPU waits
+needlessly on <code>vkWaitForFences</code> or when the GPU stalls
+waiting for timeline semaphores.</li>
+</ul>
+<h3 id="shader-profiling-and-bottleneck-identification">Shader Profiling
+and Bottleneck Identification</h3>
+<p>Nsight Graphics provides shader-level performance analysis for Vulkan
+SPIR-V binaries:</p>
+<ul>
+<li><strong>Instruction-Level Profiling:</strong> Correlates source
+shading code (GLSL/HLSL) and compiled assembly with execution timing,
+highlighting high-latency instructions such as uncoalesced memory loads
+or complex mathematical operations.</li>
+<li><strong>Register Pressure Monitoring:</strong> Measures register
+allocation per thread to highlight occupancy degradation, showing where
+spilling to local memory slows down the pipeline.</li>
+<li><strong>Dynamic Scrubber:</strong> Enables frame capture at exact
+draw calls, permitting live modification of shader code within the tool
+to measure immediate performance gains without recompiling the host
+application.</li>
+</ul>
+<h3 id="vulkan-ray-tracing-pipeline-profiling">Vulkan Ray Tracing
+Pipeline Profiling</h3>
+<p>For applications using <code>VK_KHR_ray_tracing</code> or
+<code>VK_NV_ray_tracing</code>, Nsight Graphics offers specialized
+acceleration structure inspection. Developers can view bottom-level and
+top-level acceleration structures (BLAS and TLAS), analyze Ray
+Generation, Closest Hit, and Any Hit shader timing, and evaluate
+hardware traversal throughput via RT Cores to minimize ray dispatch
+overhead.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/vulkan'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/vulkan/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/vulkan/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>
